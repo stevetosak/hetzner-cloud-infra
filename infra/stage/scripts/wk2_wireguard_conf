@@ -1,0 +1,9 @@
+[Interface]
+Address = 10.100.0.3/24
+PrivateKey = OOMw6FUv5BUc48nLV6Tu+amYUIt2FR0jfkPxDcLuh3Q=
+
+[Peer]
+PublicKey =
+AllowedIps = 10.100.0.0/24
+Endpoint = 46.62.209.249:51820
+PersistentKeepalive = 25

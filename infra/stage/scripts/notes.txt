@@ -1,0 +1,17 @@
+Kreirana e localna mreza so adresa 10.0.0.0/16
+Kreirani se 3 subnets: 10.0.1.0/24, 10.0.2.0/24, 10.0.3.0/24, A,B,C
+Subnet A e namenet za control plane na kubernetes, vusnost glavniot server
+Subnet B e namenet za worker serverite
+Subnet C e namenet za DB/storage
+
+Za remote komunikacija so clusterot se koristi wireguard vpn.
+Control plane serverot deluva kako hub/central peer.
+Preku nego odat site paketi i po potreba gi prenasocuva do soodvetnite workeri
+
+Naprev snapshot na cp serverot i worker serverot. Snapshotot vklucuvat wireguard configruacija i ufw configuracija za kuberenetes, nisto pojke.
+
+ssh root@10.100.0.3 'bash -s' < Projects/Authos/infra/stage/scripts/k8s-setup-all-nodes.sh // to configure kubernetes
+
+Krenat e kuberetes cluster so 3 nodes, a 1 control plane i 2 worker nodes. Koristen e kubedm za inicijalizacija na control plane.
+Configurirani se serverite soodvetno spored k8s-setup-node.sh
+

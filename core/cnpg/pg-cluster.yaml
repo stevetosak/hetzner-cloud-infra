@@ -1,0 +1,26 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: authos-pg-cluster
+  namespace: pg-cluster
+spec:
+  instances: 3
+  bootstrap:
+    initdb:
+      database: authos
+      owner: authos
+      secret:
+        name: db-credentials
+
+  storage:
+    size: 5Gi
+    storageClass: longhorn
+
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+
