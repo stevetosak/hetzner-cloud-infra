@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: authos-ui
+  namespace: authos
+spec:
+  selector:
+    app: authos-ui
+  ports:
+    - port: 80
+  type: ClusterIP
+  

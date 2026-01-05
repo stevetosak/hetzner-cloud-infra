@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authos-ui-config
+  namespace: authos
+data:
+  # kv format
+  API_URL: "http://localhost:9000"
+  BASE_URL: "http://authos-ui"

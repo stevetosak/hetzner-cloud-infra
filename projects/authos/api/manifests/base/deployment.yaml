@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authos-api
+  labels:
+    app: authos-api
+spec:
+  selector:
+    matchLabels:
+      app: authos-api
+  template:
+    metadata:
+      labels:
+        app: authos-api
+    spec:
+      containers:
+        - name: authos-api
+          image: stevetosak/authos-api
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: keystore
+              mountPath: "/etc/keystore/keystore.p12"
+              subPath: keystore.p12
+              readOnly: true
+          envFrom:
+            - configMapRef:
+                name: authos-api-config
+            - secretRef:
+                name: credentials
+            - secretRef:
+                name: keystore-pass
+
+          resources:
+           requests:
+             cpu: 200m
+             memory: 512Mi
+           limits:
+            cpu: 500m
+            memory: 1Gi
+
+      volumes:
+        - name: keystore
+          secret:
+            secretName: keystore
+
+
+

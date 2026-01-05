@@ -32,7 +32,7 @@ if [[ -z "$PRIVATE_IP" ]]; then
   echo "❌ Failed to detect IP on enp7s0"
   exit 1
 fi
-run echo "KUBELET_EXTRA_ARGS=--node-ip=${PRIVATE_IP}" \
+run echo "KUBELET_EXTRA_ARGS=--node-ip=${PRIVATE_IP} --cloud-provider=external" \
       > /etc/default/kubelet
 
 check "kubelet will advertise IP: $PRIVATE_IP"

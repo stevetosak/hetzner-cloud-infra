@@ -22,9 +22,14 @@ resource "hcloud_server" "authos_control_plane" {
   ]
 }
 
+variable "node_suffix" {
+  type = string
+  description = ""
+}
+
 resource "hcloud_server" "workers" {
   for_each = var.workers
-  name        = each.key
+  name        = "${each.key}-${var.node_suffix}"
   server_type = each.value.server_type
   location    = "hel1"
   image       = "ubuntu-24.04"
@@ -46,14 +51,4 @@ resource "hcloud_server" "workers" {
   ]
 
 }
-//todo
-
-# resource "hcloud_load_balancer" "authos_lb" {
-#   load_balancer_type = "lb11"
-#   name               = "authos-lb"
-#   location           = "hel1"
-#   algorithm {
-#     type = "round_robin"
-#   }
-# }
 

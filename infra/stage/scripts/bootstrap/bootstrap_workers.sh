@@ -4,9 +4,9 @@ set -e
 # -------------------------------
 # Config
 # -------------------------------
-SCRIPT_DIR="$HOME/Projects/Authos/infra/stage/scripts/workers/pipeline"
+SCRIPT_DIR="$HOME/k8s/infra/stage/scripts/bootstrap/pipeline"
 SSH_OPTIONS="-o StrictHostKeyChecking=no"
-WORKER_IPS_FILE="$HOME/Projects/Authos/infra/stage/out/worker_ips.txt"
+WORKER_IPS_FILE="$HOME/k8s/infra/stage/out/worker_ips.txt"
 WG_CONF="/etc/wireguard/wg0.conf"
 VPN_BASE="10.100.0"
 
@@ -112,8 +112,6 @@ bootstrap_node() {
 
   }
 #fetch kubeadm join command
-
-
 
 
 # -------------------------------
