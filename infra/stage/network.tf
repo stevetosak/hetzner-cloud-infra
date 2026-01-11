@@ -54,26 +54,4 @@ resource "hcloud_firewall" "authos_cluster_firewall" {
 
 
 
-# resource "hcloud_primary_ip" "cp_authos_ip" {
-#   assignee_type = "server"
-#   auto_delete   = false
-#   type          = "ipv4"
-#   name = "cp-authos-ip"
-#   datacenter = "hel1-dc2"
-#
-#    lifecycle {prevent_destroy = true}
-# }
-# resource "hcloud_primary_ip" "wk_authos_ips" {
-#   count = var.worker_count
-#   datacenter = "hel1-dc2"
-#   name = "wk-authos-${count.index + 1}-ip"
-#   assignee_type = "server"
-#   auto_delete   = false
-#   type          = "ipv4"
-#
-#    lifecycle {prevent_destroy = true}
-# }
-
-
-
 

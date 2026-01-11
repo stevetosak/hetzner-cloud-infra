@@ -8,19 +8,6 @@ variable "worker_count" {
   description = "Number of worker servers to create"
 }
 
-locals {
-  workers = {
-    for i in range(var.worker_count) :
-    "k8s-wk${i + 1}" => {
-      ip          = "10.0.2.${6 + i}"
-      server_type = "cx23"
-      labels = {
-        role = "worker"
-      }
-    }
-  }
-}
-
 variable "workers" {
   type = map(object({
     private_ip = string
