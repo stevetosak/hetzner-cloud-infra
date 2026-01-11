@@ -1,9 +1,7 @@
 #!/bin/bash
 set -e
 
-# -------------------------------
-# Config
-# -------------------------------
+
 SCRIPT_DIR="$HOME/k8s/infra/stage/scripts/bootstrap/pipeline"
 SSH_OPTIONS="-o StrictHostKeyChecking=no"
 WORKER_IPS_FILE="$HOME/k8s/infra/stage/out/worker_ips.txt"
@@ -15,9 +13,7 @@ CONTROL_PLANE_WG_IP="10.100.0.1"
 INTERACTIVE=false
 DRY_RUN=false
 
-# -------------------------------
 # Parse flags
-# -------------------------------
 for arg in "$@"; do
     case "$arg" in
         --interactive) INTERACTIVE=true ;;
@@ -25,9 +21,7 @@ for arg in "$@"; do
     esac
 done
 
-# -------------------------------
-# Validate environment
-# -------------------------------
+# Validate env
 if [[ -z "$CONTROL_PLANE_IP" ]]; then
     echo "❌ CONTROL_PLANE_IP environment variable is not set"
     exit 1
@@ -39,9 +33,7 @@ if [[ ! -f "$WORKER_IPS_FILE" ]]; then
     exit 1
 fi
 
-# -------------------------------
 # Fetch control plane WireGuard public key
-# -------------------------------
 CONTROL_PUBLIC_KEY=$(ssh root@"$CONTROL_PLANE_WG_IP" "cat /etc/wireguard/public.key")
 if [[ -z "$CONTROL_PUBLIC_KEY" ]]; then
     echo "❌ Failed to fetch control plane WireGuard public key"
@@ -49,9 +41,7 @@ if [[ -z "$CONTROL_PUBLIC_KEY" ]]; then
 fi
 echo "✔ Control plane WireGuard public key fetched"
 
-# -------------------------------
 # Read worker nodes
-# -------------------------------
 NODES=()
 while IFS= read -r ip; do
     [[ -n "$ip" ]] && NODES+=("$ip")
@@ -63,9 +53,7 @@ if [[ ${#NODES[@]} -eq 0 ]]; then
 fi
 echo "✔ Found ${#NODES[@]} worker nodes"
 
-# -------------------------------
 # Assign VPN IPs
-# -------------------------------
 VPN_INDEX=2
 declare -A WORKER_VPN_IPS
 for IP in "${NODES[@]}"; do
@@ -73,9 +61,7 @@ for IP in "${NODES[@]}"; do
     VPN_INDEX=$((VPN_INDEX+1))
 done
 
-# -------------------------------
 # Define the modular scripts for node bootstrap
-# -------------------------------
 NODE_SCRIPTS=(
     "$SCRIPT_DIR/bootstrap_node-1-user-sysctl.sh"
     "$SCRIPT_DIR/bootstrap_node-2-wireguard.sh"
@@ -86,9 +72,7 @@ NODE_SCRIPTS=(
 
   KUBE_JOIN_COMMAND=$(ssh root@$CONTROL_PLANE_WG_IP "kubeadm token create --print-join-command")
 
-# -------------------------------
 # Function to run modular scripts on a node
-# -------------------------------
 bootstrap_node() {
     local NODE_IP="$1"
     local VPN_IP="$2"
@@ -99,7 +83,7 @@ bootstrap_node() {
     scp $SSH_OPTIONS "$UTILS_SCRIPT" root@"$NODE_IP":/tmp/bootstrap_utils.sh
     echo "=== Copied bootstrap_utils.sh to $NODE_IP ==="
 
-    # Run each modular script
+    # Run each script
     for SCRIPT in "${NODE_SCRIPTS[@]}"; do
         CMD="bash -s -- '$CONTROL_PUBLIC_KEY' '$VPN_IP' '$CONTROL_PLANE_IP' '$KUBE_JOIN_COMMAND'"
         $INTERACTIVE && CMD+=" --interactive"
@@ -111,44 +95,16 @@ bootstrap_node() {
     done
 
   }
-#fetch kubeadm join command
 
 
-# -------------------------------
-# Bootstrap all nodes in parallel -> NOT DONE IN PARALLEL
-# -------------------------------
+# Bootstrap all nodes
 for NODE_IP in "${NODES[@]}"; do
     bootstrap_node "$NODE_IP" "${WORKER_VPN_IPS[$NODE_IP]}" &
 done
 wait
 echo "✔ All workers bootstrapped"
 
-# -------------------------------
-# Update control plane WireGuard
-# -------------------------------
 echo "Updating control plane WireGuard configuration"
-
-# Collect worker public keys
-declare -A WORKER_KEYS
-for NODE_IP in "${NODES[@]}"; do
-    PUB_KEY=$(ssh $SSH_OPTIONS root@"$NODE_IP" "cat /etc/wireguard/public.key")
-    WORKER_KEYS[$NODE_IP]=$PUB_KEY
-done
-echo "Updating control plane WireGuard configuration..."
-
-# Fetch worker public keys
-declare -A WORKER_KEYS
-for NODE_IP in "${NODES[@]}"; do
-PUB_KEY=$(ssh $SSH_OPTIONS root@"$NODE_IP" "cat /etc/wireguard/public.key")
-WORKER_KEYS[$NODE_IP]=$PUB_KEY
-done
-
-    # Fetch worker public keys
-declare -A WORKER_KEYS
-for NODE_IP in "${NODES[@]}"; do
-PUB_KEY=$(ssh $SSH_OPTIONS root@"$NODE_IP" "cat /etc/wireguard/public.key")
-WORKER_KEYS[$NODE_IP]=$PUB_KEY
-done
 
     # Collect worker public keys
 echo "Fetching worker public keys..."
@@ -165,7 +121,7 @@ TMP_WG_CONF=$(mktemp)
 echo "Fetching control plane private key..."
 CONTROL_PLANE_PRIVATE_KEY=$(ssh $SSH_OPTIONS root@"$CONTROL_PLANE_WG_IP" "cat /etc/wireguard/private.key")
 
-    # Write interface section
+# Write interface section
 cat > "$TMP_WG_CONF" <<EOT
 [Interface]
 Address = 10.100.0.1/24
@@ -173,21 +129,21 @@ PrivateKey = $CONTROL_PLANE_PRIVATE_KEY
 ListenPort = 51820
 EOT
 
-    # Add dynamic worker peers
-    INDEX=2
-    for NODE_IP in "${NODES[@]}"; do
-        cat >> "$TMP_WG_CONF" <<EOP
+# Add dynamic worker peers
+INDEX=2
+for NODE_IP in "${NODES[@]}"; do
+  cat >> "$TMP_WG_CONF" <<EOP
 
 # $NODE_IP
 [Peer]
 PublicKey = ${WORKER_KEYS[$NODE_IP]}
 AllowedIPs = $VPN_BASE.${INDEX}/32
 EOP
-        INDEX=$((INDEX+1))
-    done
+  INDEX=$((INDEX+1))
+done
 
-    # Add static remote peer
-    cat >> "$TMP_WG_CONF" <<EOR
+    # Add my local pc as peer
+cat >> "$TMP_WG_CONF" <<EOR
 
 # remote
 [Peer]
@@ -212,9 +168,6 @@ EOR
 
 
 
-# -------------------------------
-# Validate VPN connectivity
-# -------------------------------
 echo "Validating VPN connectivity to workers"
 for NODE_IP in "${NODES[@]}"; do
     VPN_IP=${WORKER_VPN_IPS[$NODE_IP]}
