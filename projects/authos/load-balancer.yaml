@@ -12,11 +12,6 @@ metadata:
     load-balancer.hetzner.cloud/uses-proxyprotocol: "true"
     load-balancer.hetzner.cloud/private-ipv4: "10.0.4.2"
     load-balancer.hetzner.cloud/algorithm-type: "round_robin"
-    load-balancer.hetzner.cloud/health-check-protocol: http
-    load-balancer.hetzner.cloud/health-check-port: "80"
-    load-balancer.hetzner.cloud/health-check-interval: "30s"
-    load-balancer.hetzner.cloud/health-check-timeout: "5s"
-    load-balancer.hetzner.cloud/health-check-retries: "3"
 
 spec:
   type: LoadBalancer

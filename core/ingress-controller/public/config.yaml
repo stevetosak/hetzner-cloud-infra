@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: public-ingress-controller-config
+  namespace: ingress-public
+data:
+  use-proxy-protocol: "true"
+  use-forwarded-headers: "true"

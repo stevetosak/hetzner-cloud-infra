@@ -4,6 +4,5 @@ metadata:
   name: authos-ui-config
   namespace: authos
 data:
-  # kv format
-  API_URL: "http://localhost:9000"
-  BASE_URL: "http://authos-ui"
+  API_URL: "https://authos-api.tosak.net"
+  BASE_URL: "https://authos.tosak.net"

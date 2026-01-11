@@ -24,6 +24,7 @@ spec:
             - --ingress-class=public-nginx
             - --controller-class=k8s.io/ingress-nginx
             - --watch-ingress-without-class=false
+            - --configmap=$(POD_NAMESPACE)/public-ingress-controller-config
           env:
             - name: POD_NAMESPACE
               valueFrom:

@@ -5,8 +5,14 @@ metadata:
   namespace: authos
   annotations:
     nginx.ingress.kubernetes.io/rewrite-target: /
+    cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
   ingressClassName: public-nginx
+  tls:
+    - hosts:
+        - authos.tosak.net
+        - api.authos.tosak.net
+      secretName: authos-tls
   rules:
     - host: authos.tosak.net
       http:
