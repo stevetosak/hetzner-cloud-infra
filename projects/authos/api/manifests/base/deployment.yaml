@@ -5,6 +5,7 @@ metadata:
   labels:
     app: authos-api
 spec:
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app: authos-api

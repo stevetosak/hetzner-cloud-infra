@@ -11,7 +11,7 @@ spec:
   tls:
     - hosts:
         - authos.tosak.net
-        - api.authos.tosak.net
+        - authos-api.tosak.net
       secretName: authos-tls
   rules:
     - host: authos.tosak.net
@@ -24,7 +24,7 @@ spec:
                 name: authos-ui
                 port:
                   number: 80
-    - host: api.authos.tosak.net
+    - host: authos-api.tosak.net
       http:
         paths:
           - path: /

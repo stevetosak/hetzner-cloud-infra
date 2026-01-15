@@ -5,7 +5,7 @@ metadata:
   labels:
     app: authos-ui
 spec:
-  replicas: 3
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app: authos-ui
