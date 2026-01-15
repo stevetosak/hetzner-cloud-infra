@@ -8,4 +8,4 @@ resources:
 
 images:
 - name: stevetosak/authos-ui
-  newTag: 1.0.18-alpha
+  newTag: 1.0.19-alpha
