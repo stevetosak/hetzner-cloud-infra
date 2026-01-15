@@ -11,5 +11,5 @@ replicas:
     name: authos-ui
 
 images:
-  - name: stevetosak/authos-ui
-    newTag: latest
+- name: stevetosak/authos-ui
+  newTag: 1.0.19-alpha
