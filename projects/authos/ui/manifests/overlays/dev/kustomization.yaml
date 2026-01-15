@@ -4,8 +4,8 @@ kind: Kustomization
 namespace: authos
 
 resources:
-  - ../../base
+- ../../base
 
 images:
-  - name: stevetosak/authos-ui
-    newTag: 1.0.0-alpha
+- name: stevetosak/authos-ui
+  newTag: 1.0.18-alpha
