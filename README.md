@@ -33,6 +33,7 @@ A Hetzner Cloud Firewall is used to protect external acess to the nodes. I have 
 I have 2 ingress controllers set up (using ingress-nginx): 
 - `public nginx ingress controller`
 - `private nginx ingress controller`
+
 With the private ingress controller, i can expose my apps privately only to VPN traffic, for testing or development. For my production apps the public controller is used along with a Hetzner Load Balancer. Both ingress controllers have the option `--watch-ingress-without-class=false` so they only watch ingresses that use the respective class. This ensures no mix ups and each controller is isolated from the other.
 
 #### Private Ingress
