@@ -5,7 +5,6 @@ namespace: authos
 
 resources:
   - ../../base
-  -
 replicas:
   - count: 3
     name: authos-ui
