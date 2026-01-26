@@ -4,15 +4,14 @@ metadata:
   name: private-ingress-service
   namespace: ingress-private
 spec:
-  type: NodePort
+  type: ClusterIP
   selector:
-    app: ingress-nginx
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/component: controller
   ports:
     - port: 80
-      nodePort: 30080
       name: http
       targetPort: http
     - port: 443
-      nodePort: 30443
       name: https
       targetPort: https
