@@ -15,11 +15,10 @@ spec:
       labels:
         app: authos-ui
     spec:
-      restartPolicy: Always
       containers:
         - name: authos-ui
           image: stevetosak/authos-ui
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80
           envFrom:
