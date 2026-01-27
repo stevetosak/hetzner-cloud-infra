@@ -4,11 +4,11 @@ kind: Kustomization
 namespace: authos
 
 resources:
-  - ../../base
+- ../../base
 replicas:
-  - count: 3
-    name: authos-ui
+- count: 3
+  name: authos-ui
 
 images:
 - name: stevetosak/authos-ui
-  newTag: 1.0.19-alpha
+  newTag: 1.0.1-alpha
