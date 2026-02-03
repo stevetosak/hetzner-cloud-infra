@@ -23,23 +23,23 @@ done
 
 # Validate env
 if [[ -z "$CONTROL_PLANE_IP" ]]; then
-    echo "❌ CONTROL_PLANE_IP environment variable is not set"
+    echo "CONTROL_PLANE_IP environment variable is not set"
     exit 1
 fi
-echo "✔ Using public control plane IP: $CONTROL_PLANE_IP"
+echo "Using public control plane IP: $CONTROL_PLANE_IP"
 
 if [[ ! -f "$WORKER_IPS_FILE" ]]; then
-    echo "❌ Worker IPs file not found: $WORKER_IPS_FILE"
+    echo "Worker IPs file not found: $WORKER_IPS_FILE"
     exit 1
 fi
 
 # Fetch control plane WireGuard public key
 CONTROL_PUBLIC_KEY=$(ssh root@"$CONTROL_PLANE_WG_IP" "cat /etc/wireguard/public.key")
 if [[ -z "$CONTROL_PUBLIC_KEY" ]]; then
-    echo "❌ Failed to fetch control plane WireGuard public key"
+    echo "Failed to fetch control plane WireGuard public key"
     exit 1
 fi
-echo "✔ Control plane WireGuard public key fetched"
+echo "Control plane WireGuard public key fetched"
 
 # Read worker nodes
 NODES=()
@@ -48,10 +48,10 @@ while IFS= read -r ip; do
 done < "$WORKER_IPS_FILE"
 
 if [[ ${#NODES[@]} -eq 0 ]]; then
-    echo "❌ No worker nodes found in $WORKER_IPS_FILE"
+    echo "No worker nodes found in $WORKER_IPS_FILE"
     exit 1
 fi
-echo "✔ Found ${#NODES[@]} worker nodes"
+echo "Found ${#NODES[@]} worker nodes"
 
 # Assign VPN IPs
 VPN_INDEX=2
@@ -102,7 +102,7 @@ for NODE_IP in "${NODES[@]}"; do
     bootstrap_node "$NODE_IP" "${WORKER_VPN_IPS[$NODE_IP]}" &
 done
 wait
-echo "✔ All workers bootstrapped"
+echo "All workers bootstrapped"
 
 echo "Updating control plane WireGuard configuration"
 
@@ -164,7 +164,7 @@ EOR
     # Cleanup local temp file
     rm -f "$TMP_WG_CONF"
 
-    echo "✔ Control plane wg0.conf rebuilt and WireGuard restarted"
+    echo "Control plane wg0.conf rebuilt and WireGuard restarted"
 
 
 
@@ -173,13 +173,13 @@ for NODE_IP in "${NODES[@]}"; do
     VPN_IP=${WORKER_VPN_IPS[$NODE_IP]}
     echo -n "Pinging $NODE_IP ($VPN_IP)... "
     if ping -c 2 -W 2 "$VPN_IP" &>/dev/null; then
-        echo "✔ reachable"
+        echo "reachable"
     else
-        echo "❌ unreachable"
+        echo "unreachable"
     fi
 done
 
-echo "✅ Bootstrap complete"
+echo "Bootstrap complete"
 
 echo "Installing longhorn prerequisites.."
 ssh root@$CONTROL_PLANE_WG_IP "export KUBECONFIG=/etc/kubernetes/admin.conf && /root/longhornctl install preflight && /root/longhornctl check preflight"
