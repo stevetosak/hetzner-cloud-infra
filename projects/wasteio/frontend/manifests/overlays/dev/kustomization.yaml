@@ -8,7 +8,7 @@ resources:
 
 images:
 - name: stevetosak/wasteio-frontend
-  newTag: alpha-9a6915a357c676f3cc687d38d86e38a85448d7b1
+  newTag: alpha-353d3d9d1f09096811e23aab9b06787e0282483e
 replicas:
 - count: 1
   name: wasteio-frontend
