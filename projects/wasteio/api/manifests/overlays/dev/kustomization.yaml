@@ -8,7 +8,7 @@ resources:
 
 images:
 - name: stevetosak/wasteio-api
-  newTag: alpha-0738a79b0270b20d83742eb81cfd288ef35553ab
+  newTag: alpha-9a6915a357c676f3cc687d38d86e38a85448d7b1
 replicas:
-  - name: wasteio-api
-    count: 1
+- count: 1
+  name: wasteio-api
