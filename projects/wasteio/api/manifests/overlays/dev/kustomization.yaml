@@ -4,11 +4,11 @@ kind: Kustomization
 namespace: wasteio
 
 resources:
-  - ../../base
+- ../../base
 
 images:
-  - name: stevetosak/wasteio-api
-    newTag: latest
+- name: stevetosak/wasteio-api
+  newTag: alpha-9c2441d8b7eb921b9d333eeca97cd4eac05433b7
 replicas:
-  - name: wasteio-api
-    count: 1
+- count: 1
+  name: wasteio-api
