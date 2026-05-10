@@ -11,4 +11,4 @@ images:
     newTag: latest
 replicas:
   - name: wasteio-frontend
-    count: 1
+    count: 3
