@@ -1,0 +1,49 @@
+name: Kustomize Deploy
+description: Checks out an infra repo, updates a kustomize overlay image tag, and pushes the change.
+
+inputs:
+  infra-repo:
+    description: 'org/repo-name of the infra repository'
+    required: true
+  infra-repo-token:
+    description: 'PAT or token with write access to the infra repo'
+    required: true
+  overlay-dir:
+    description: 'Path inside the infra repo to the kustomize overlay directory'
+    required: true
+  image-tag:
+    description: 'Full image reference to set (e.g. ghcr.io/org/app:sha-abc123)'
+    required: true
+  commit-message:
+    description: 'Git commit message'
+    required: false
+    default: 'chore: update image tag'
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Kustomize
+      uses: imranismail/setup-kustomize@v2.1.0
+
+    - name: Checkout infra repo
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.infra-repo }}
+        token: ${{ inputs.infra-repo-token }}
+        path: _infra
+
+    - name: Update overlay image tag
+      shell: bash
+      run: |
+        cd _infra/${{ inputs.overlay-dir }}
+        kustomize edit set image ${{ inputs.image-tag }}
+
+    - name: Commit and push
+      shell: bash
+      run: |
+        cd _infra
+        git config user.name  "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add .
+        git diff --cached --quiet || git commit -m "${{ inputs.commit-message }}"
+        git push origin HEAD
