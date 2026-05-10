@@ -8,4 +8,4 @@ resources:
 
 images:
 - name: stevetosak/wasteio-simulator
-  newTag: alpha-9c2441d8b7eb921b9d333eeca97cd4eac05433b7
+  newTag: alpha-353d3d9d1f09096811e23aab9b06787e0282483e
