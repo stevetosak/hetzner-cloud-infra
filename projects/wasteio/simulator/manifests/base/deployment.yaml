@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wasteio-simulator
+  labels:
+    app: wasteio-simulator
+spec:
+  revisionHistoryLimit: 3
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wasteio-simulator
+  template:
+    metadata:
+      labels:
+        app: wasteio-simulator
+    spec:
+      containers:
+        - name: wasteio-simulator
+          image: stevetosak/wasteio-simulator
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8090
+          envFrom:
+            - configMapRef:
+                name: wasteio-simulator-config
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

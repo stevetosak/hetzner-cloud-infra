@@ -1,0 +1,10 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: imaps-db
+  namespace: pg-cluster
+spec:
+  name: imaps
+  owner: authos
+  cluster:
+    name: authos-pg-cluster

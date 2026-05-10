@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: imaps-frontend
+  labels:
+    app: imaps-frontend
+spec:
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: imaps-frontend
+  template:
+    metadata:
+      name: imaps-frontend
+      labels:
+        app: imaps-frontend
+    spec:
+      containers:
+        - name: imaps-frontend
+          image: stevetosak/imaps-frontend
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          envFrom:
+            - configMapRef:
+                name: imaps-frontend-config
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+      

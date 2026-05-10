@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wasteio-frontend-config
+  namespace: wasteio
+data:
+  API_URL: "/api"

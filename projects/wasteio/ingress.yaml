@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wasteio-lb-ingress
+  namespace: wasteio
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: public-nginx
+  tls:
+    - hosts:
+        - wasteio.tosak.net
+      secretName: wasteio-tls
+  rules:
+    - host: wasteio.tosak.net
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: wasteio-frontend
+                port:
+                  number: 80

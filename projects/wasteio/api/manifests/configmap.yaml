@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wasteio-api-config
+  namespace: wasteio
+data:
+  DB_URL: "jdbc:postgresql://authos-pg-cluster-rw.pg-cluster.svc.cluster.local:5432"
+  DB_NAME: "wasteio"
+  MQTT_BROKER_URL: "tcp://wasteio-mosquitto.wasteio.svc.cluster.local:1883"
+  SIMULATOR_URL: "http://wasteio-simulator.wasteio.svc.cluster.local:8090"
+  SIMULATOR_DEVICES_PATH: "/app/devices.json"
+  SPRING_PROFILES_ACTIVE: "prod"
+  LOG_LEVEL: "INFO"

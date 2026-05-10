@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: imaps
+
+resources:
+- ../../base
+replicas:
+- count: 3
+  name: imaps-frontend
+
+images:
+- name: stevetosak/imaps-frontend
+  newTag: 1.0.0

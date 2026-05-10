@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: imaps-frontend-config
+  namespace: imaps
+data:
+  API_URL: "https://imaps-api.tosak.net"

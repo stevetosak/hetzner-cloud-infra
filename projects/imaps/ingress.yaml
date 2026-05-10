@@ -1,0 +1,36 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: imaps-lb-ingress
+  namespace: imaps
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: public-nginx
+  tls:
+    - hosts:
+        - imaps.tosak.net
+        - imaps-api.tosak.net
+      secretName: imaps-tls
+  rules:
+    - host: imaps.tosak.net
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: imaps-frontend
+                port:
+                  number: 80
+    - host: imaps-api.tosak.net
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: imaps-backend
+                port:
+                  number: 80

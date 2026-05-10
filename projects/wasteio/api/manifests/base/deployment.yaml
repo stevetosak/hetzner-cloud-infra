@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wasteio-api
+  labels:
+    app: wasteio-api
+spec:
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: wasteio-api
+  template:
+    metadata:
+      labels:
+        app: wasteio-api
+    spec:
+      containers:
+        - name: wasteio-api
+          image: stevetosak/wasteio-api
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: wasteio-api-config
+            - secretRef:
+                name: credentials
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi

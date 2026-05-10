@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wasteio-simulator-config
+  namespace: wasteio
+data:
+  MQTT_BROKER_URL: "tcp://wasteio-mosquitto.wasteio.svc.cluster.local:1883"

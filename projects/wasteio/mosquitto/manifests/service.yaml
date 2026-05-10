@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: wasteio-mosquitto
+  namespace: wasteio
+spec:
+  selector:
+    app: wasteio-mosquitto
+  ports:
+    - port: 1883
+      targetPort: 1883
+  type: ClusterIP
