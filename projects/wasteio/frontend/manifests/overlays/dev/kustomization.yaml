@@ -4,11 +4,11 @@ kind: Kustomization
 namespace: wasteio
 
 resources:
-  - ../../base
+- ../../base
 
 images:
-  - name: stevetosak/wasteio-frontend
-    newTag: latest
+- name: stevetosak/wasteio-frontend
+  newTag: alpha-8c9588830e6da6277e23d165951bcb21ad7f48b9
 replicas:
   - name: wasteio-frontend
     count: 3
