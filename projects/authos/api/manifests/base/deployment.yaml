@@ -45,6 +45,8 @@ spec:
         - name: keystore
           secret:
             secretName: keystore
+  strategy:
+    type: Recreate
 
 
 

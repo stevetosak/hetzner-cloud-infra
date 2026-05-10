@@ -10,5 +10,5 @@ images:
 - name: stevetosak/authos-api
   newTag: alpha-748fc23cfaa85c2ff4100290be9b63f84050132e
 replicas:
-- count: 3
+- count: 1
   name: authos-api

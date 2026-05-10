@@ -11,4 +11,4 @@ images:
   newTag: alpha-0738a79b0270b20d83742eb81cfd288ef35553ab
 replicas:
   - name: wasteio-api
-    count: 3
+    count: 1

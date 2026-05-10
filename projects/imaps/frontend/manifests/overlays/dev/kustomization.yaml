@@ -6,7 +6,7 @@ namespace: imaps
 resources:
 - ../../base
 replicas:
-- count: 3
+- count: 1
   name: imaps-frontend
 
 images:
