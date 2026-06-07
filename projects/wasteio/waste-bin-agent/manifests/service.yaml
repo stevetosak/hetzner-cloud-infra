@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: wasteio-bin-agent
+  namespace: wasteio
+spec:
+  clusterIP: None
+  selector:
+    app: wasteio-bin-agent

@@ -6,7 +6,9 @@ metadata:
 data:
   mosquitto.conf: |
     listener 1883
-    allow_anonymous true
+    allow_anonymous false
     persistence true
     persistence_location /mosquitto/data/
     log_dest stdout
+    plugin /usr/lib/mosquitto_dynamic_security.so
+    plugin_opt_config_file /mosquitto/data/dynsec.json

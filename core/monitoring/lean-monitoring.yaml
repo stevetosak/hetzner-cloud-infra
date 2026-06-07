@@ -1,0 +1,50 @@
+prometheus:
+  prometheusSpec:
+    retention: 3d
+    nodeSelector:
+      kubernetes.io/hostname: k8swk2-20260105-182701
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: [ "ReadWriteOnce" ]
+          resources:
+            requests:
+              storage: 5Gi
+
+grafana:
+  nodeSelector:
+    kubernetes.io/hostname: k8swk2-20260105-182701
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+  adminPassword: "changeme123"
+
+alertmanager:
+  enabled: false
+
+nodeExporter:
+  enabled: true
+
+kubeStateMetrics:
+  enabled: true
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+
+prometheusOperator:
+  nodeSelector:
+    kubernetes.io/hostname: k8swk2-20260105-182701
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi

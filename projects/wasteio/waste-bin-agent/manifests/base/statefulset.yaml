@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: wasteio-bin-agent
+  labels:
+    app: wasteio-bin-agent
+spec:
+  serviceName: wasteio-bin-agent
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: wasteio-bin-agent
+  template:
+    metadata:
+      labels:
+        app: wasteio-bin-agent
+    spec:
+      containers:
+        - name: wasteio-bin-agent
+          image: stevetosak/wasteio-bin-agent
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: wasteio-bin-agent-config
+            - secretRef:
+                name: wasteio-bin-agent-credentials
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: longhorn
+        resources:
+          requests:
+            storage: 50Mi

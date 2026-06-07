@@ -9,7 +9,7 @@ metadata:
     load-balancer.hetzner.cloud/location: hel1
     load-balancer.hetzner.cloud/use-private-ip: "true"
     load-balancer.hetzner.cloud/private-subnet-ip-range: "10.0.4.0/24"
-    load-balancer.hetzner.cloud/uses-proxyprotocol: "true"
+    load-balancer.hetzner.cloud/uses-proxyprotocol: "false"
     load-balancer.hetzner.cloud/private-ipv4: "10.0.4.2"
     load-balancer.hetzner.cloud/algorithm-type: "round_robin"
 
@@ -20,7 +20,10 @@ spec:
   ports:
     - name: http
       port: 80
-      targetPort: http
+      targetPort: "http"
     - name: https
       port: 443
-      targetPort: https
+      targetPort: "https"
+    - name: mqtt
+      port: 1883
+      targetPort: 1883

@@ -1,19 +1,19 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: wasteio-mosquitto
+  name: mosquitto
   labels:
-    app: wasteio-mosquitto
+    app: mosquitto
 spec:
   revisionHistoryLimit: 3
   replicas: 1
   selector:
     matchLabels:
-      app: wasteio-mosquitto
+      app: mosquitto
   template:
     metadata:
       labels:
-        app: wasteio-mosquitto
+        app: mosquitto
     spec:
       containers:
         - name: mosquitto
