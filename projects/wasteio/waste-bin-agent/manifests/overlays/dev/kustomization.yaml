@@ -4,12 +4,12 @@ kind: Kustomization
 namespace: wasteio
 
 resources:
-  - ../../base
+- ../../base
 
 images:
-  - name: stevetosak/wasteio-bin-agent
-    newTag: latest
+- name: stevetosak/wasteio-bin-agent
+  newTag: alpha-6b9c7f3a18d269203d4cbbd0a638ac5e325aaa4e
 
 replicas:
-  - name: wasteio-bin-agent
-    count: 5
+- count: 5
+  name: wasteio-bin-agent
