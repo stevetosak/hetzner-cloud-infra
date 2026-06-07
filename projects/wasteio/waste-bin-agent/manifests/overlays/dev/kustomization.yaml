@@ -8,7 +8,7 @@ resources:
 
 images:
 - name: stevetosak/wasteio-bin-agent
-  newTag: alpha-6b9c7f3a18d269203d4cbbd0a638ac5e325aaa4e
+  newTag: alpha-2417389a7e4a9843c4c9401eb10bbb576709928e
 
 replicas:
 - count: 5
