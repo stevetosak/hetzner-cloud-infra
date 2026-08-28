@@ -11,4 +11,4 @@ replicas:
 
 images:
 - name: stevetosak/authos-ui
-  newTag: alpha-138a853b9cf9a934b7bc3748047f2473b6c4693e
+  newTag: alpha-79fd738af7d1e7c1244fdb6bbef2416afe0142f2
