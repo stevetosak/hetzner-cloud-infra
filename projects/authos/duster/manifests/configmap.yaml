@@ -1,0 +1,13 @@
+# Applied out of band (not part of the kustomize base / ArgoCD sync), the same way
+# authos-api-config is. ArgoCD manages only deployment.yaml via overlays/dev.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authos-duster-config
+  namespace: authos
+data:
+  # Must byte-match the Authos discovery `issuer` — Duster verifies the ID-token `iss`
+  # against this and loads JWKS from it, and every authorize redirect is built from it.
+  AUTHOS_BASE_URL: "https://authos-api.tosak.net"
+  REDIS_HOST: "redis-master.redis.svc.cluster.local"
+  REDIS_PORT: "6379"

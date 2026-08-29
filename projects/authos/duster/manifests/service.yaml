@@ -1,0 +1,14 @@
+# Applied out of band (not part of the kustomize base / ArgoCD sync), like authos-api's Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: duster
+  namespace: authos
+spec:
+  selector:
+    app: duster
+  ports:
+    - name: http
+      port: 8785
+      targetPort: http
+  type: ClusterIP
