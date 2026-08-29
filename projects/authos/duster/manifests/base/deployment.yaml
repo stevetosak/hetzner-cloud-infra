@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: duster
+  labels:
+    app: duster
+spec:
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: duster
+  template:
+    metadata:
+      labels:
+        app: duster
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: duster
+          image: stevetosak/authos-duster
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8785
+          envFrom:
+            - configMapRef:
+                name: authos-duster-config
+          env:
+            # Shared cluster Redis — same password authos-api uses (redis/redis .password).
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: credentials
+                  key: REDIS_PASS
+            - name: DUSTER_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: duster-admin
+                  key: DUSTER_ADMIN_TOKEN
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          # Liveness is process-only (/health/live) — a Redis blip never restarts the pod.
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3
+          # Readiness pings Redis — a Redis outage pulls the pod from the Service only.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: tmp
+          emptyDir: {}
+  strategy:
+    type: Recreate
