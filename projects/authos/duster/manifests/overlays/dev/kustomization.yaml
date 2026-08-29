@@ -8,7 +8,7 @@ resources:
 
 images:
 - name: stevetosak/authos-duster
-  newTag: alpha-a07005d313132cd1d2c6d1a76cc92b027a90c8f6
+  newTag: alpha-e9a30ae12f993dee38b7e3cfd7a3ab9367857406
 
 replicas:
 - count: 1
