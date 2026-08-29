@@ -5,10 +5,15 @@ metadata:
   namespace: wasteio
 data:
   mosquitto.conf: |
-    listener 1883
-    allow_anonymous false
     persistence true
     persistence_location /mosquitto/data/
     log_dest stdout
     plugin /usr/lib/mosquitto_dynamic_security.so
     plugin_opt_config_file /mosquitto/data/dynsec.json
+
+    listener 1883
+    allow_anonymous false
+
+    listener 1884
+    enable_proxy_protocol 1
+    allow_anonymous false

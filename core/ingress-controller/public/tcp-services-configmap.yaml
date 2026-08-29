@@ -4,4 +4,4 @@ metadata:
   name: tcp-services
   namespace: ingress-public
 data:
-  1883: "wasteio/mosquitto:1883"
+  1883: "wasteio/mosquitto:1884"
