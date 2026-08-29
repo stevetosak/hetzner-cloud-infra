@@ -8,7 +8,7 @@ resources:
 
 images:
 - name: stevetosak/authos-api
-  newTag: alpha-abdea13a6593ae7eb0d0516e04320d583f3a06dd
+  newTag: alpha-1f22ddbdd2915b6b4614f24655655d53a2ba07a2
 replicas:
 - count: 1
   name: authos-api
