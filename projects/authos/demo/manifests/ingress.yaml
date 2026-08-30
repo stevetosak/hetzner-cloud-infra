@@ -1,0 +1,43 @@
+# Applied out of band, like projects/authos/ingress.yaml.
+#
+# A SEPARATE Ingress object from authos-lb-ingress on purpose: tier 0 needs NO
+# rewrite-target — `/duster` must reach the Duster Service with its path intact, whereas
+# authos-lb-ingress carries `nginx.ingress.kubernetes.io/rewrite-target: /`. nginx-ingress
+# merges rules across Ingress objects by host, and applies each object's annotations only to
+# its own rules.
+#
+# `/duster` (verbatim) -> the in-cluster `duster` Service:8785, so from the browser Duster is
+# same-origin: no CORS, `SameSite=Lax` cookie, and `Secure` is satisfied by the TLS below.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: authos-demo
+  namespace: authos
+  labels:
+    app: authos-demo
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: public-nginx
+  tls:
+    - hosts:
+        - authos-demo.tosak.net
+      secretName: authos-demo-tls
+  rules:
+    - host: authos-demo.tosak.net
+      http:
+        paths:
+          - path: /duster
+            pathType: Prefix
+            backend:
+              service:
+                name: duster
+                port:
+                  number: 8785
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: authos-demo
+                port:
+                  number: 80
