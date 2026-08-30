@@ -7,9 +7,10 @@ metadata:
   name: authos-demo-config
   namespace: authos
 data:
-  # A public OAuth client_id minted by authos-demo/scripts/bootstrap.ts — NOT a secret.
-  # Replace REPLACE_ME with the value bootstrap prints, then apply (see README).
-  DEMO_DUSTER_CLIENT_ID: "REPLACE_ME"
+  # A public OAuth client_id minted by authos-demo/scripts/bootstrap.ts — NOT a secret
+  # (it ships in the browser bundle). Re-run bootstrap only mints a new one if the Duster
+  # app named `authos-demo` is gone; otherwise it reuses this.
+  DEMO_DUSTER_CLIENT_ID: "48b05869457fa490fa88a99975411c14d1c2969f6c051e92fb84da2c6747666c"
   # Match entrypoint.sh defaults; kept explicit because this is the real prod config.
   DEMO_DUSTER_BASE_PATH: "/duster/api/v1"
   DEMO_AUTHOS_ORIGIN: "https://authos-api.tosak.net"
