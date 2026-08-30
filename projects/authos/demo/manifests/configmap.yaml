@@ -1,0 +1,15 @@
+# Applied out of band (not part of the kustomize base / ArgoCD sync), the same way
+# authos-api-config / authos-duster-config are. ArgoCD manages only deployment.yaml via
+# overlays/dev. entrypoint.sh renders config/config.js from these at container start.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authos-demo-config
+  namespace: authos
+data:
+  # A public OAuth client_id minted by authos-demo/scripts/bootstrap.ts — NOT a secret.
+  # Replace REPLACE_ME with the value bootstrap prints, then apply (see README).
+  DEMO_DUSTER_CLIENT_ID: "REPLACE_ME"
+  # Match entrypoint.sh defaults; kept explicit because this is the real prod config.
+  DEMO_DUSTER_BASE_PATH: "/duster/api/v1"
+  DEMO_AUTHOS_ORIGIN: "https://authos-api.tosak.net"
