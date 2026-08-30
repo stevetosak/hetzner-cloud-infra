@@ -16,6 +16,10 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
+        # Explicit numeric UID/GID — kubelet cannot verify a non-numeric image USER
+        # against runAsNonRoot. Matches the `duster` user baked into the image (uid 10001).
+        runAsUser: 10001
+        runAsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
       containers:

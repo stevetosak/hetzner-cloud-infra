@@ -1,0 +1,24 @@
+# Record of the ArgoCD Application (applied out of band into the `argocd` namespace, the
+# same as authos-api / authos-ui / duster — there is no app-of-apps watching this path yet).
+#   kubectl apply -f projects/authos/demo/argocd-application.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: authos-demo
+  namespace: argocd
+spec:
+  project: authos
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: authos
+  source:
+    repoURL: https://github.com/stevetosak/hetzner-cloud-infra.git
+    targetRevision: HEAD
+    path: projects/authos/demo/manifests/overlays/dev
+    kustomize:
+      namespace: authos
+  syncPolicy:
+    automated:
+      enabled: true
+    syncOptions:
+      - ServerSideApply=true
