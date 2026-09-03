@@ -1,0 +1,31 @@
+# Applied out of band, like projects/authos/ingress.yaml and the other single-app ingresses.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: doma
+  namespace: doma
+  labels:
+    app: doma
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # M7 (SSE) needs an unbuffered, long-lived proxy or the stream looks
+    # dead — set now so it's already correct when that milestone ships.
+    nginx.ingress.kubernetes.io/proxy-buffering: 'off'
+    nginx.ingress.kubernetes.io/proxy-read-timeout: '3600'
+spec:
+  ingressClassName: public-nginx
+  tls:
+    - hosts:
+        - doma.tosak.net
+      secretName: doma-tls
+  rules:
+    - host: doma.tosak.net
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: doma
+                port:
+                  number: 80
