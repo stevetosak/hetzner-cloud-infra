@@ -4,12 +4,12 @@ kind: Kustomization
 namespace: doma
 
 resources:
-  - ../../base
+- ../../base
 
 images:
-  - name: stevetosak/doma
-    newTag: latest
+- name: stevetosak/doma
+  newTag: alpha-0ab5e4d0e8d6a95e130a82a69504060f885f854f
 
 replicas:
-  - count: 1
-    name: doma
+- count: 1
+  name: doma
