@@ -9,6 +9,5 @@ data:
   NODE_ENV: 'production'
   APP_ORIGIN: 'https://doma.tosak.net'
   # A public OAuth client id (not a secret — it's visible in the browser's
-  # redirect URL). Fill in the real value from the Google Cloud Console
-  # step before applying.
-  GOOGLE_CLIENT_ID: 'REPLACE_ME'
+  # redirect URL), from the Google Cloud Console step.
+  GOOGLE_CLIENT_ID: '803629812717-to0q5b2j0c1tbtmssusie1s9pprf6lr1.apps.googleusercontent.com'
