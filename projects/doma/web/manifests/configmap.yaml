@@ -1,0 +1,14 @@
+# Applied out of band (not part of the kustomize base / ArgoCD sync), same convention as
+# authos-api-config / authos-duster-config.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: doma-config
+  namespace: doma
+data:
+  NODE_ENV: 'production'
+  APP_ORIGIN: 'https://doma.tosak.net'
+  # A public OAuth client id (not a secret — it's visible in the browser's
+  # redirect URL). Fill in the real value from the Google Cloud Console
+  # step before applying.
+  GOOGLE_CLIENT_ID: 'REPLACE_ME'
