@@ -31,7 +31,8 @@ kubectl create namespace doma
 bash projects/doma/scripts/init_secrets.sh
 
 # 3. Fill in the real Google OAuth client id (from the Google Cloud Console step — it's
-#    public, not a secret, but doma needs the real value to build its redirect URL).
+#    public, not a secret, but doma needs the real value to build its redirect URL). Also
+#    TELEGRAM_BOT_USERNAME once a bot exists (@BotFather) — optional, leave blank until then.
 $EDITOR projects/doma/web/manifests/configmap.yaml   # GOOGLE_CLIENT_ID: REPLACE_ME -> real value
 
 # 4. Apply the out-of-band manifests.
@@ -49,6 +50,10 @@ The `doma` repo also needs the variable **`INFRA_REPO_DOMA_OVERLAY_DIR`** =
 the secrets `DOCKERHUB_TOKEN` / `INFRA_REPO_TOKEN` (same names every other project's deploy
 workflow in this org uses).
 
-`TELEGRAM_BOT_TOKEN` / `TELEGRAM_WEBHOOK_SECRET` aren't here yet — nothing in the app reads
-them until M8 (the Telegram bot). Add them to `credentials.yaml` / `init_secrets.sh` when that
-milestone actually ships.
+**Telegram reminders (M8):** `TELEGRAM_BOT_TOKEN` / `TELEGRAM_WEBHOOK_SECRET`
+(`credentials.yaml`, prompted by `init_secrets.sh`) and `TELEGRAM_BOT_USERNAME`
+(`configmap.yaml`) are all optional — the app runs fine with them blank, chore reminders and
+account linking just stay unavailable. To turn them on: create a bot with @BotFather, pick any
+random string for the webhook secret (`openssl rand -hex 32`), fill in all three, reapply the
+Secret/ConfigMap, and restart the pod (`kubectl rollout restart deploy/doma -n doma`) — boot
+self-registers the Telegram webhook against `APP_ORIGIN`, no separate `setWebhook` step.

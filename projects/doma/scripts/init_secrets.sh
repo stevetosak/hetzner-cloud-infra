@@ -16,8 +16,18 @@ read -rsp "SESSION_SECRET (openssl rand -hex 32): " SESSION_SECRET
 echo
 read -rsp "GOOGLE_CLIENT_SECRET: " GOOGLE_CLIENT_SECRET
 echo
+# Both optional — leave blank (just press enter) until the Telegram bot
+# exists (@BotFather gives the token; the webhook secret is any random
+# string you choose, e.g. `openssl rand -hex 32`). Chore reminders and
+# account linking simply stay unavailable with these blank.
+read -rsp "TELEGRAM_BOT_TOKEN (optional): " TELEGRAM_BOT_TOKEN
+echo
+read -rsp "TELEGRAM_WEBHOOK_SECRET (optional): " TELEGRAM_WEBHOOK_SECRET
+echo
 
 kubectl create secret generic credentials -n doma \
   --from-literal=DATABASE_URL="$DATABASE_URL" \
   --from-literal=SESSION_SECRET="$SESSION_SECRET" \
-  --from-literal=GOOGLE_CLIENT_SECRET="$GOOGLE_CLIENT_SECRET"
+  --from-literal=GOOGLE_CLIENT_SECRET="$GOOGLE_CLIENT_SECRET" \
+  --from-literal=TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" \
+  --from-literal=TELEGRAM_WEBHOOK_SECRET="$TELEGRAM_WEBHOOK_SECRET"
