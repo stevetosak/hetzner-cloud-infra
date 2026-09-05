@@ -11,3 +11,7 @@ data:
   # A public OAuth client id (not a secret — it's visible in the browser's
   # redirect URL), from the Google Cloud Console step.
   GOOGLE_CLIENT_ID: '803629812717-to0q5b2j0c1tbtmssusie1s9pprf6lr1.apps.googleusercontent.com'
+  # Not a secret — the public @username half of the bot, used to build the
+  # t.me deep link. Leave blank to keep Telegram account-linking hidden
+  # until the bot exists (@BotFather).
+  TELEGRAM_BOT_USERNAME: 'domche_bot'
