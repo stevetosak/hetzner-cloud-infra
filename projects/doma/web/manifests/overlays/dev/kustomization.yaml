@@ -8,7 +8,7 @@ resources:
 
 images:
 - name: stevetosak/doma
-  newTag: alpha-a96402e8da21bb53bbcad63d24c7bafa5224d891
+  newTag: alpha-be935978f08d0adff894e6e8274366fc08917167
 
 replicas:
 - count: 1
