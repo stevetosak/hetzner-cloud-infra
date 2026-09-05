@@ -14,4 +14,4 @@ data:
   # Not a secret — the public @username half of the bot, used to build the
   # t.me deep link. Leave blank to keep Telegram account-linking hidden
   # until the bot exists (@BotFather).
-  TELEGRAM_BOT_USERNAME: ''
+  TELEGRAM_BOT_USERNAME: 'domche_bot'
