@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 const short = (sha) => sha.slice(0, 7)
 
 function shaCell(row, apps) {
+  if (!row.sha) return '-' // digest-pinned / non-sha image ref (see resolve.mjs)
   const repo = apps[row.app]?.repo
   return repo
     ? `[${short(row.sha)}](https://github.com/${repo}/commit/${row.sha})`
@@ -19,7 +20,19 @@ const HEAD =
 
 /** rows: chronological (file order). Returns the full CATALOG.md body. */
 export function renderCatalog(rows, apps) {
-  const byTime = [...rows].sort((a, b) =>
+  // Dedup on app+sha, keeping the first occurrence. A `history.jsonl` line can be
+  // doubled by a `merge=union` resolution, a manual replay, or two parallel workflow
+  // runs -- none of those should show twice here or double-count "Current".
+  const seen = new Set()
+  const deduped = []
+  for (const r of rows) {
+    const key = `${r.app}@${r.sha}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    deduped.push(r)
+  }
+
+  const byTime = [...deduped].sort((a, b) =>
     a.deployed_at.localeCompare(b.deployed_at),
   )
 
@@ -42,8 +55,12 @@ export function renderCatalog(rows, apps) {
     '',
     '## Recent history',
     '',
+    '<details><summary>Recent history</summary>',
+    '',
     HEAD,
     ...recent.map((r) => line(r, apps)),
+    '',
+    '</details>',
     '',
   ].join('\n')
 }

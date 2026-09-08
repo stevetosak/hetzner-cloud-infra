@@ -4,7 +4,10 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { parsePayload, describeVersion } from './resolve.mjs'
+
+const CLI = fileURLToPath(new URL('./resolve.mjs', import.meta.url))
 
 test('parsePayload extracts app, image, sha, revision', () => {
   assert.deepEqual(
@@ -25,6 +28,14 @@ test('parsePayload extracts app, image, sha, revision', () => {
 
 test('parsePayload throws when image is missing', () => {
   assert.throws(() => parsePayload({ app: 'doma' }), /image/)
+})
+
+test('a digest-pinned image ref yields no sha and CLI version "unknown"', () => {
+  const image = 'stevetosak/doma@sha256:' + 'a'.repeat(64)
+  assert.equal(parsePayload({ app: 'doma', image }).sha, '')
+  const payload = JSON.stringify({ app: 'doma', project: 'default', revision: 'abc', image })
+  const out = execFileSync('node', [CLI, payload, '.']).toString()
+  assert.equal(JSON.parse(out).version, 'unknown')
 })
 
 function scratchRepo() {

@@ -9,10 +9,6 @@ on:
         description: 'client_payload JSON for a manual replay'
         required: true
 
-concurrency:
-  group: deploy-catalog
-  cancel-in-progress: false
-
 permissions:
   contents: write
 
@@ -57,44 +53,69 @@ jobs:
 
       - name: Build the row
         id: row
+        env:
+          PAYLOAD: ${{ steps.p.outputs.payload }}
         run: |
           REPO_DIR=_app; [ -d "$REPO_DIR" ] || REPO_DIR=.
-          BASE=$(node deployments/resolve.mjs '${{ steps.p.outputs.payload }}' "$REPO_DIR")
-          ROW=$(node -e 'const r=JSON.parse(process.argv[1]);r.deployed_at=new Date().toISOString().replace(/\.\d+Z$/,"Z");process.stdout.write(JSON.stringify(r))' "$BASE")
+          BASE=$(node deployments/resolve.mjs "$PAYLOAD" "$REPO_DIR")
+          ROW=$(BASE="$BASE" node -e 'const r=JSON.parse(process.env.BASE);r.deployed_at=new Date().toISOString().replace(/\.\d+Z$/,"Z");process.stdout.write(JSON.stringify(r))')
           echo "row=$ROW" >> "$GITHUB_OUTPUT"
           echo "$ROW"
 
       - name: Record + regenerate
         id: rec
+        env:
+          ROW: ${{ steps.row.outputs.row }}
         run: |
-          RESULT=$(node deployments/record.mjs '${{ steps.row.outputs.row }}')
+          RESULT=$(node deployments/record.mjs "$ROW")
           echo "result=$RESULT" >> "$GITHUB_OUTPUT"
           echo "$RESULT"
 
       - name: Commit
         if: steps.rec.outputs.result == 'appended'
+        env:
+          ROW: ${{ steps.row.outputs.row }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          APP=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).app)' '${{ steps.row.outputs.row }}')
-          VER=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).version)' '${{ steps.row.outputs.row }}')
+          APP=$(node -e 'process.stdout.write(JSON.parse(process.env.ROW).app)')
+          VER=$(node -e 'process.stdout.write(JSON.parse(process.env.ROW).version)')
+          MSG="chore: catalog $APP $VER [skip ci]"
           git add deployments/history.jsonl deployments/CATALOG.md
-          git commit -m "chore: catalog $APP $VER [skip ci]"
+          git commit -m "$MSG"
           for i in 1 2 3 4 5; do
-            git pull --rebase --autostash origin master && git push origin HEAD:master && exit 0
+            git fetch origin master || { sleep $((RANDOM % 5 + 2)); continue; }
+            if [ "$(git rev-parse HEAD^)" = "$(git rev-parse FETCH_HEAD)" ]; then
+              git push origin HEAD:master && exit 0
+              sleep $((RANDOM % 5 + 2)); continue
+            fi
+            # Upstream moved. CATALOG.md is a derived file, never merge it: drop our
+            # local commit, re-append the row onto the new tip (record.mjs is
+            # idempotent on app+sha and regenerates CATALOG.md), commit fresh, push.
+            git reset --hard FETCH_HEAD
+            node deployments/record.mjs "$ROW"
+            git add deployments/history.jsonl deployments/CATALOG.md
+            if git diff --cached --quiet; then
+              echo "row already recorded upstream"; exit 0
+            fi
+            git commit -m "$MSG"
+            git push origin HEAD:master && exit 0
             sleep $((RANDOM % 5 + 2))
           done
-          echo "push failed after retries" && exit 1
+          echo "::error::catalog push failed after 5 attempts" && exit 1
 
       - name: GitHub Deployment on the app repo
         if: steps.p.outputs.repo != ''
         env:
           GH_TOKEN: ${{ secrets.APP_DEPLOY_PAT }}
+          ROW: ${{ steps.row.outputs.row }}
+          REPO: ${{ steps.p.outputs.repo }}
         run: |
-          ROW='${{ steps.row.outputs.row }}'
-          SHA=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).sha)' "$ROW")
-          APP=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).app)' "$ROW")
-          REPO='${{ steps.p.outputs.repo }}'
+          [ -n "$GH_TOKEN" ] || { echo "::warning::APP_DEPLOY_PAT unset, skipping GitHub Deployment"; exit 0; }
+          SHA=$(node -e 'process.stdout.write(JSON.parse(process.env.ROW).sha)')
+          APP=$(node -e 'process.stdout.write(JSON.parse(process.env.ROW).app)')
+          [ -n "$SHA" ] || { echo "::warning::no git sha resolved, skipping GitHub Deployment"; exit 0; }
+          HOST=$(node -e 'const a=require("./deployments/apps.json");const n=JSON.parse(process.env.ROW).app;process.stdout.write((a[n]&&a[n].host)||(n+".tosak.net"))')
           COUNT=$(gh api "repos/$REPO/deployments?environment=dev&sha=$SHA" --jq 'length' || echo 0)
           if [ "$COUNT" != "0" ]; then echo "deployment already exists"; exit 0; fi
           DID=$(gh api "repos/$REPO/deployments" --input - --jq '.id' <<JSON
@@ -102,20 +123,21 @@ jobs:
           JSON
           )
           gh api "repos/$REPO/deployments/$DID/statuses" -f state=success \
-            -f environment_url="https://${APP%%-*}.tosak.net" \
+            -f environment_url="https://$HOST" \
             -f log_url="https://github.com/stevetosak/hetzner-cloud-infra/blob/master/deployments/CATALOG.md" \
             -f description="Live in dev"
 
       - name: Telegram
-        if: always() && steps.row.outputs.row != ''
+        if: always() && steps.rec.outputs.result == 'appended'
         env:
           TG_TOKEN: ${{ secrets.INFRA_TELEGRAM_BOT_TOKEN }}
           TG_CHAT: ${{ secrets.INFRA_TELEGRAM_CHAT_ID }}
+          ROW: ${{ steps.row.outputs.row }}
         run: |
-          ROW='${{ steps.row.outputs.row }}'
-          APP=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).app)' "$ROW")
-          VER=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).version)' "$ROW")
-          SHA=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).sha.slice(0,7))' "$ROW")
+          [ -n "$TG_TOKEN" ] && [ -n "$TG_CHAT" ] || { echo "::warning::Telegram secrets unset, skipping"; exit 0; }
+          APP=$(node -e 'process.stdout.write(JSON.parse(process.env.ROW).app)')
+          VER=$(node -e 'process.stdout.write(JSON.parse(process.env.ROW).version)')
+          SHA=$(node -e 'process.stdout.write(JSON.parse(process.env.ROW).sha.slice(0,7))')
           TEXT=$(printf 'Deployed: %s %s (%s)\nhttps://github.com/stevetosak/hetzner-cloud-infra/blob/master/deployments/CATALOG.md' "$APP" "$VER" "$SHA")
           curl -sS --fail-with-body -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${TG_CHAT}" \

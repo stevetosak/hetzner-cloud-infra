@@ -1,10 +1,16 @@
 # ArgoCD Notifications — deploy-live
 
 Emits a GitHub `repository_dispatch` (`event_type: deploy-live`) to
-`stevetosak/hetzner-cloud-infra` when any Application goes `Synced` + `Healthy` on a
-new `sync.revision`. `.github/workflows/deploy-catalog.yml` consumes it. Global
-`subscriptions`, no per-Application annotations — a future ApplicationSet migration
-changes nothing here.
+`stevetosak/hetzner-cloud-infra` when an Application goes `Synced` + `Healthy` with a
+running image set it has not reported before. `.github/workflows/deploy-catalog.yml`
+consumes it. Global `subscriptions`, no per-Application annotations — a future
+ApplicationSet migration changes nothing here.
+
+The trigger keys `oncePer` on `app.status.summary.images`, not `app.status.sync.revision`:
+all 8 Applications track the infra repo unscoped, so `sync.revision` advances for every
+app on every infra commit and would fire this trigger 8x per deploy (into a workflow
+that no longer serializes). Keying on the image set fires once, for the app that
+actually changed.
 
 ## Apply (run by the cluster owner — Claude's classifier blocks `kubectl apply`)
 
@@ -26,6 +32,12 @@ changes nothing here.
       argocd-notifications template notify app-deployed doma --recipient gh-infra
 
     kubectl -n argocd logs deploy/argocd-notifications-controller -f
+
+Before trusting this in production, make a no-op infra commit (e.g. touch a comment,
+push to `master`) and confirm the controller log shows **ONE** `on-deployed` fire, not
+eight — one per Application. If you see eight, `oncePer` is not deduping and the
+`deploy-catalog` workflow will be hammered; re-check the `oncePer` key in
+`argocd-notifications-cm.yaml`.
 
 ## The PAT
 

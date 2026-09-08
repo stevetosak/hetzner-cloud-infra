@@ -63,6 +63,19 @@ test('Recent history is newest-first and capped at 20', () => {
   assert.ok(history.indexOf('s24') < history.indexOf('s5'))
 })
 
+test('a doubled history line (same app+sha, different deployed_at) renders once', () => {
+  const doubled = [
+    rows[0],
+    { ...rows[0], deployed_at: '2026-09-08T19:00:00Z', argocd_revision: 'dup999' },
+  ]
+  const md = renderCatalog(doubled, apps)
+  const history = md.split('## Recent history')[1]
+  const bodyRows = history.split('\n').filter((l) => l.startsWith('| doma |'))
+  assert.equal(bodyRows.length, 1)
+  // and the sha appears exactly once across the whole catalog's history table
+  assert.equal((history.match(/commit\/abc1234def/g) || []).length, 1)
+})
+
 test('an app missing from apps.json still renders, with a plain (unlinked) sha', () => {
   const md = renderCatalog(
     [{ ...rows[0], app: 'mystery', version: 'unknown' }],

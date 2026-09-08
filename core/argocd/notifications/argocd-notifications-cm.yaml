@@ -11,9 +11,14 @@ metadata:
     app.kubernetes.io/name: argocd-notifications-controller
     app.kubernetes.io/part-of: argocd
 data:
+  # oncePer dedups on the running image list, NOT sync.revision: every Application
+  # tracks the infra repo unscoped, so sync.revision advances for all 8 apps on every
+  # commit and would fire this trigger 8x per deploy. Keying on summary.images fires
+  # only for the app whose image actually changed, and also absorbs a
+  # Healthy -> Degraded -> Healthy flap.
   trigger.on-deployed: |
-    - description: Application is synced and healthy. Triggered once per revision.
-      oncePer: app.status.sync.revision
+    - description: Application is synced and healthy. Triggered once per running image set.
+      oncePer: app.status.summary.images
       when: >-
         app.status.operationState != nil and
         app.status.operationState.phase in ['Succeeded'] and

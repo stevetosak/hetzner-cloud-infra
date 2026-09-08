@@ -1,5 +1,5 @@
 {
-  "doma": { "repo": "stevetosak/doma", "tagPrefix": "v" },
+  "doma": { "repo": "stevetosak/doma", "tagPrefix": "v", "host": "doma.tosak.net" },
   "authos-api": { "repo": null, "tagPrefix": "authos-api-v" },
   "authos-ui": { "repo": null, "tagPrefix": "authos-ui-v" },
   "authos-demo": { "repo": null, "tagPrefix": "authos-demo-v" },

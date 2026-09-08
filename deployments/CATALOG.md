@@ -9,5 +9,9 @@ _Generated from `deployments/history.jsonl` by `deployments/render-catalog.mjs`.
 
 ## Recent history
 
+<details><summary>Recent history</summary>
+
 | App | Version | Commit | Env | Deployed (UTC) |
 | --- | --- | --- | --- | --- |
+
+</details>
