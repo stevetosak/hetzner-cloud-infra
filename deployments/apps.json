@@ -1,0 +1,10 @@
+{
+  "doma": { "repo": "stevetosak/doma", "tagPrefix": "v" },
+  "authos-api": { "repo": null, "tagPrefix": "authos-api-v" },
+  "authos-ui": { "repo": null, "tagPrefix": "authos-ui-v" },
+  "authos-demo": { "repo": null, "tagPrefix": "authos-demo-v" },
+  "duster": { "repo": null, "tagPrefix": "duster-v" },
+  "wasteio-api": { "repo": null, "tagPrefix": "wasteio-api-v" },
+  "wasteio-frontend": { "repo": null, "tagPrefix": "wasteio-frontend-v" },
+  "wasteio-bin-agents": { "repo": null, "tagPrefix": "wasteio-bin-agents-v" }
+}
