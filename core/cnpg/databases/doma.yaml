@@ -1,0 +1,10 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: doma-db
+  namespace: pg-cluster
+spec:
+  name: doma
+  owner: authos
+  cluster:
+    name: authos-pg-cluster

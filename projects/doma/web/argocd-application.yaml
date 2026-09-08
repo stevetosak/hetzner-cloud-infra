@@ -1,0 +1,25 @@
+# Record of the ArgoCD Application (applied out of band into the `argocd` namespace) — same
+# convention as authos-api / authos-ui / duster / authos-demo. Apply LAST, only after this
+# overlay path exists on infra master and deploy.yaml has bumped the image tag past `latest`.
+#   kubectl apply -f projects/doma/web/argocd-application.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: doma
+  namespace: argocd
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: doma
+  source:
+    repoURL: https://github.com/stevetosak/hetzner-cloud-infra.git
+    targetRevision: HEAD
+    path: projects/doma/web/manifests/overlays/dev
+    kustomize:
+      namespace: doma
+  syncPolicy:
+    automated:
+      enabled: true
+    syncOptions:
+      - ServerSideApply=true

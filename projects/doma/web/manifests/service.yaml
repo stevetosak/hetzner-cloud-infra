@@ -1,0 +1,14 @@
+# Applied out of band, like authos-api's Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: doma
+  namespace: doma
+spec:
+  selector:
+    app: doma
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+  type: ClusterIP

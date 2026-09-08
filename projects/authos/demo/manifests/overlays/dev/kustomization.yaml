@@ -4,12 +4,12 @@ kind: Kustomization
 namespace: authos
 
 resources:
-  - ../../base
+- ../../base
 
 images:
-  - name: stevetosak/authos-demo
-    newTag: latest
+- name: stevetosak/authos-demo
+  newTag: alpha-48f3cadfd01fe5afdd74562904118aead1f1ebba
 
 replicas:
-  - count: 1
-    name: authos-demo
+- count: 1
+  name: authos-demo
