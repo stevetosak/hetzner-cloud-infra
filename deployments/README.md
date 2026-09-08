@@ -4,6 +4,9 @@
 `Synced` + `Healthy` in the cluster. `CATALOG.md` is the readable roll-up, regenerated
 from it. Both are written by `.github/workflows/deploy-catalog.yml`, never by hand.
 
+This file is the operations guide. For the end-to-end architecture — every component,
+the design rationale, and failure modes — see [`HOW-IT-WORKS.md`](HOW-IT-WORKS.md).
+
 ## How a row is added
 
 1. ArgoCD Notifications (`core/argocd/notifications/`) fires `on-deployed`, once per
