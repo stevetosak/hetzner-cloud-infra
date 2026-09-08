@@ -1,0 +1,53 @@
+# Tracked copy of the argocd-notifications-cm DATA. Applied out of band (infra
+# convention). Re-apply the live object from this file with:
+#   kubectl -n argocd apply -f core/argocd/notifications/argocd-notifications-cm.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-notifications-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/component: notifications-controller
+    app.kubernetes.io/name: argocd-notifications-controller
+    app.kubernetes.io/part-of: argocd
+data:
+  trigger.on-deployed: |
+    - description: Application is synced and healthy. Triggered once per revision.
+      oncePer: app.status.sync.revision
+      when: >-
+        app.status.operationState != nil and
+        app.status.operationState.phase in ['Succeeded'] and
+        app.status.health.status == 'Healthy' and
+        app.status.sync.status == 'Synced'
+      send: [app-deployed]
+
+  service.webhook.gh-infra: |
+    url: https://api.github.com/repos/stevetosak/hetzner-cloud-infra/dispatches
+    headers:
+      - name: Authorization
+        value: token $github-token
+      - name: Accept
+        value: application/vnd.github+json
+      - name: User-Agent
+        value: argocd-notifications
+
+  template.app-deployed: |
+    webhook:
+      gh-infra:
+        method: POST
+        body: |
+          {
+            "event_type": "deploy-live",
+            "client_payload": {
+              "app": "{{.app.metadata.name}}",
+              "project": "{{.app.spec.project}}",
+              "revision": "{{.app.status.sync.revision}}",
+              "image": "{{if .app.status.summary.images}}{{index .app.status.summary.images 0}}{{end}}"
+            }
+          }
+
+  subscriptions: |
+    - recipients:
+        - gh-infra
+      triggers:
+        - on-deployed
