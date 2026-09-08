@@ -1,1 +1,2 @@
 {"app":"doma","version":"v0.2.0-95-g8324916","sha":"83249161f005941825fc3f5e6878df14da7aa10c","image":"stevetosak/doma:alpha-83249161f005941825fc3f5e6878df14da7aa10c","env":"dev","argocd_revision":"16fc546f7c0645858a205751566103b019cb7dc2","deployed_at":"2026-09-08T19:57:44Z"}
+{"app":"doma","version":"v0.3.0","sha":"ac620ff6ebb9931a79d0338a2749439f59349c09","image":"stevetosak/doma:alpha-ac620ff6ebb9931a79d0338a2749439f59349c09","env":"dev","argocd_revision":"632a3d14716b48e4644de4184824098e5a9ecd81","deployed_at":"2026-09-08T20:11:32Z"}
