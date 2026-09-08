@@ -97,14 +97,17 @@ jobs:
           REPO='${{ steps.p.outputs.repo }}'
           COUNT=$(gh api "repos/$REPO/deployments?environment=dev&sha=$SHA" --jq 'length' || echo 0)
           if [ "$COUNT" != "0" ]; then echo "deployment already exists"; exit 0; fi
-          DID=$(gh api "repos/$REPO/deployments" -f ref="$SHA" -f environment=dev \
-            -F auto_merge=false -f required_contexts='[]' -f description="ArgoCD reported healthy" --jq '.id')
+          DID=$(gh api "repos/$REPO/deployments" --input - --jq '.id' <<JSON
+          {"ref": "$SHA", "environment": "dev", "auto_merge": false, "required_contexts": [], "description": "ArgoCD reported healthy"}
+          JSON
+          )
           gh api "repos/$REPO/deployments/$DID/statuses" -f state=success \
             -f environment_url="https://${APP%%-*}.tosak.net" \
             -f log_url="https://github.com/stevetosak/hetzner-cloud-infra/blob/master/deployments/CATALOG.md" \
             -f description="Live in dev"
 
       - name: Telegram
+        if: always() && steps.row.outputs.row != ''
         env:
           TG_TOKEN: ${{ secrets.INFRA_TELEGRAM_BOT_TOKEN }}
           TG_CHAT: ${{ secrets.INFRA_TELEGRAM_CHAT_ID }}
@@ -113,7 +116,6 @@ jobs:
           APP=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).app)' "$ROW")
           VER=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).version)' "$ROW")
           SHA=$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).sha.slice(0,7))' "$ROW")
-          TEXT="doma deploy — see catalog"
           TEXT=$(printf 'Deployed: %s %s (%s)\nhttps://github.com/stevetosak/hetzner-cloud-infra/blob/master/deployments/CATALOG.md' "$APP" "$VER" "$SHA")
           curl -sS --fail-with-body -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${TG_CHAT}" \
