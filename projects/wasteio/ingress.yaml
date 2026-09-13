@@ -11,6 +11,7 @@ spec:
   tls:
     - hosts:
         - wasteio.tosak.net
+        - wasteio-api.tosak.net
       secretName: wasteio-tls
   rules:
     - host: wasteio.tosak.net
@@ -21,5 +22,15 @@ spec:
             backend:
               service:
                 name: wasteio-frontend
+                port:
+                  number: 80
+    - host: wasteio-api.tosak.net
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: wasteio-api
                 port:
                   number: 80
