@@ -24,3 +24,7 @@ crash.log
 # a build artefact, not infrastructure. kluster.yaml IS committed.
 tools/kluster/kluster
 tools/kluster/.idea/
+
+# Editor swap files. A stale one was committed by accident in this repo once.
+*.swp
+*.swo
