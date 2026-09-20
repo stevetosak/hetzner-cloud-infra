@@ -525,3 +525,45 @@ conventions. It still said `Backend.MTU = 1400` with the reasoning "the network
 is 1450 and VXLAN costs 50", while the manifest correctly says `1450`. That
 reasoning is the double-subtraction bug Phase 2 found and fixed, left standing
 in the README where the next reader would have trusted it.
+
+---
+
+## 8. State at the end of the ingress stack
+
+| | |
+|---|---|
+| Gateway API | v1.6.2, **standard channel only**, safe-upgrade policy active |
+| Controller | Envoy Gateway v1.9.1, `envoy-gateway-system` |
+| Gateway | `tosak` in `gateway`, `Programmed`, 2 Envoy replicas on `k8swk2` and `k8swk3` |
+| Certificate | `*.tosak.net` + `tosak.net`, Let's Encrypt, expires 2026-12-19 |
+| Load balancer | Hetzner `7907558` `tosak-lb`, `77.42.14.48`, private `10.0.4.2` |
+| PROXY protocol | on at both halves, proven end to end |
+| Client address | `CF-Connecting-IP` → `X-Forwarded-For`, proven through Cloudflare |
+| Cloudflare zone | 11 A records, all proxied, all on `77.42.14.48` |
+| Routes applied | one — the HTTP-to-HTTPS redirect in `gateway` |
+
+**The origin is NOT locked.** Authenticated Origin Pulls is deliberately last
+and is not done. `77.42.14.48` answers direct HTTPS today, and `CF-Connecting-IP`
+is forgeable by anyone who finds it.
+
+### A mistake made and corrected here
+
+Two commits in this session used `git add -A <dir>`, which swept in two files
+that three handoffs had deliberately left untracked: the stale vim swap
+`docs/runbook/.rebuild-2026-09-20.md.swp`, and
+`projects/imaps/backend/manifests/configmap.yaml`, which the operator had not
+reviewed. Both were removed from the index in a follow-up commit and are
+untracked again; the swap file is now covered by a `*.swp` rule in
+`.gitignore`. They remain in the history of two unpushed commits, which is
+harmless — neither holds a secret.
+
+**Use explicit paths with `git add`, not `-A` over a directory.** An untracked
+file in this repository is usually untracked on purpose.
+
+### What Phase 4 still owes
+
+Non-ingress work, untouched by this session: CNPG and `tosak-pg-cluster` —
+which will be the **first real volume attach in the rebuilt cluster**, and so
+the first real test of the CSI driver; Redis; the monitoring repair; ArgoCD
+with its route, the gRPC acceptance test and its notifications; and the
+ApplicationSet.
