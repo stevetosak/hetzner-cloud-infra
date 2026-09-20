@@ -302,6 +302,79 @@ route is withdrawn.
 
 ---
 
+## 4. Prepare for `kubeadm init`
+
+Three settings must be right **before** `init`. Each one is silent if it is
+wrong: the cluster comes up, and something fails much later for a reason that
+does not point back here. That is why this is its own step.
+
+```
+# Kubernetes v1.37 packages
+mkdir -p /etc/apt/keyrings
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.37/deb/Release.key \
+  | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.37/deb/ /' \
+  > /etc/apt/sources.list.d/kubernetes.list
+apt-get update
+apt-get install -y kubelet kubeadm kubectl
+apt-mark hold kubelet kubeadm kubectl
+
+# the Control Plane Endpoint (ADR 0006)
+echo '10.0.1.5  k8s-cp.tosak.internal' >> /etc/hosts
+
+# kubelet: private address, and external cloud provider
+echo 'KUBELET_EXTRA_ARGS=--node-ip=10.0.1.5 --cloud-provider=external' > /etc/default/kubelet
+systemctl daemon-reexec
+systemctl enable kubelet
+```
+
+| Setting | What breaks without it |
+|---|---|
+| the `/etc/hosts` line | `kubeadm init` cannot resolve its own `--control-plane-endpoint` and fails outright. `.internal` is ICANN-reserved and deliberately absent from public DNS. |
+| `--node-ip=10.0.1.5` | The node advertises its public address and cluster traffic leaves the Private Network. One of the six settings in ADR 0006. |
+| `--cloud-provider=external` | The node never gets a `providerID`, so the CSI driver can never attach a volume. The worker pipeline sets this; nothing set it for the control plane. |
+
+### Verified
+
+```
+kubeadm version          v1.37.0
+kubelet --version        v1.37.0
+kubectl gitVersion       v1.37.0
+apt-mark showhold        kubeadm, kubectl, kubelet
+getent hosts k8s-cp.tosak.internal
+                         10.0.1.5   k8s-cp.tosak.internal
+/etc/default/kubelet     KUBELET_EXTRA_ARGS=--node-ip=10.0.1.5 --cloud-provider=external
+systemctl is-enabled kubelet    enabled
+systemctl is-active  kubelet    inactive
+systemctl is-active  containerd active
+```
+
+`kubelet` being enabled but not active is correct at this point. It has no
+configuration until `init` writes one.
+
+### Finding — the CNI plugin pin is not real
+
+`kubelet` pulls in `kubernetes-cni` as a dependency, here `1.9.1-1.1`, and that
+package installs into `/opt/cni/bin`. After this step `dpkg -S` reports
+**`kubernetes-cni`** as the owner of `/opt/cni/bin/bridge`, and the directory's
+mtime is this step's, not step 2's.
+
+So the CNI plugins that step 2 pinned to `1.9.0` by hand were replaced by
+`1.9.1` one stage later. The worker pipeline orders its stages the same way
+(`bootstrap_node-3-containerd.sh` then `-4-kubernetes.sh`), so it has always
+done this too. The pin has never taken effect.
+
+Nothing here is broken — 1.9.1 is fine, and Flannel ships its own plugin
+binary. Two things follow, both for Phase 3:
+
+- The manual CNI download in `bootstrap_node-3-containerd.sh` is dead weight.
+  Either drop it and let `kubernetes-cni` own the plugins, or re-extract after
+  the package install so the pin means something.
+- `kubernetes-cni` is **not** in the `apt-mark hold` set, so a later
+  `apt upgrade` can move the plugin set again with nothing recording it.
+
+---
+
 ## Appendix — operator workstation repairs
 
 Not control-plane state. A rebuild onto a clean workstation would meet only
