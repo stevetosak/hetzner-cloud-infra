@@ -246,3 +246,171 @@ ADR 0008 records that "no host uses the apex". The zone holds a **proxied A
 record for `tosak.net`**, and a wildcard does not match an apex. Without the
 second name, `https://tosak.net` would reach the entry point with no matching
 certificate. `tosak.net` is listed beside `*.tosak.net` for that reason.
+
+---
+
+## 4. The Public Entry Point
+
+### GatewayClass and EnvoyProxy first — neither makes a Service
+
+```
+kubectl apply --server-side --field-manager=cloud-infra \
+  -f core/gateway/envoyproxy.yaml -f core/gateway/gatewayclass.yaml
+```
+
+`GatewayClass tosak` reports `Accepted = True | Valid GatewayClass`.
+
+The `EnvoyProxy` carries the Hetzner annotations that used to live on the
+hand-written Service in `core/load-balancer/`. Only one was dropped: the mqtt
+port 1883, because wasteio is out of scope (ADR 0003).
+
+### 🔴 The old load balancer had to be deleted FIRST
+
+`6579148` held **private IP `10.0.4.2`**, which is the address the `EnvoyProxy`
+pins. Hetzner will not give one private address to two load balancers, so the
+delete is a prerequisite of the Gateway, not the cleanup step the Phase 4
+checklist makes it.
+
+```
+curl -X DELETE .../v1/load_balancers/6579148      -> HTTP 204
+curl .../v1/load_balancers                        -> 0 load balancers
+```
+
+The count was read back from the API, never from the delete's own output.
+
+### Gateway, ClientTrafficPolicy and the redirect, applied together
+
+```
+kubectl apply --server-side --field-manager=cloud-infra \
+  -f core/gateway/gateway.yaml \
+  -f core/gateway/client-traffic-policy.yaml \
+  -f core/gateway/http-redirect.yaml
+```
+
+One command on purpose. `uses-proxyprotocol` on the `EnvoyProxy` and
+`proxyProtocol` on the `ClientTrafficPolicy` are two halves of one setting, and
+a listener that disagrees with the load balancer in front of it breaks every
+connection.
+
+### 🔴 `enableProxyProtocol` is deprecated
+
+ADR 0008 and the Phase 4 checklist both name `enableProxyProtocol`. The field
+still exists, but `kubectl explain` says:
+
+```
+Deprecated: Use ProxyProtocol instead.
+... If both EnableProxyProtocol and ProxyProtocol are set, ProxyProtocol takes precedence.
+```
+
+The policy uses `proxyProtocol: {optional: false}`. `optional: false` means the
+PROXY header is **required**: a connection that reaches the Envoy Service
+without passing the Hetzner load balancer is refused.
+
+### Gateway API has no automatic HTTP-to-HTTPS redirect
+
+ingress-nginx redirected by default. Gateway API does not: an HTTP listener
+serves plain HTTP until a route says otherwise. `core/gateway/http-redirect.yaml`
+is that route, and it pins `sectionName: http` — without it the route attaches
+to both listeners and the HTTPS listener redirects to itself for ever.
+
+### The new load balancer, read back from the Hetzner API
+
+```
+id 7907558 | name tosak-lb | type lb11 | loc hel1
+  public v4: 77.42.14.48   v6: 2a01:4f9:c01e:39a::1
+  private  : [(11736362, '10.0.4.2')]
+  algorithm: round_robin
+  service tcp 80  -> 32515  proxyprotocol=True  hc=tcp:32515
+  service tcp 443 -> 30784  proxyprotocol=True  hc=tcp:30784
+  targets  : 166652124 healthy, 166652125 healthy, 166652126 unhealthy (all use_private_ip=True)
+```
+
+**Hetzner reissued the same public address, `77.42.14.48`.** The old load
+balancer had just released it. This was luck, not design — but it means the
+four A-record updates the checklist calls for were not needed. Do not plan on
+it next time.
+
+**One target is `unhealthy` by design.** `externalTrafficPolicy` is `Local`
+and there are two Envoy replicas, on `k8swk2` and `k8swk3`. `k8swk1`
+(`166652126`) runs no Envoy pod, so its node-port health check fails and the
+load balancer sends it nothing. That is the point of `Local`: it keeps the
+path direct. A third replica would make all three healthy.
+
+### Acceptance test
+
+A `whoami` Deployment, Service and HTTPRoute were applied to `gateway`,
+tested, and deleted. They are **not** committed — ADR 0008 deletes the old
+`core/whoami-test-ingress.yaml` for the same reason.
+
+**Straight to the origin, bypassing Cloudflare**, which proves the
+PROXY-protocol pair and the certificate:
+
+```
+curl --resolve gw-test.tosak.net:443:77.42.14.48 https://gw-test.tosak.net/
+HTTP/2 200
+Host: gw-test.tosak.net
+X-Forwarded-Proto: https
+```
+
+**Through Cloudflare**, the real path, using `doma.tosak.net`, which already
+resolved correctly:
+
+```
+HTTP/2 200      server: cloudflare      cf-ray: a3e453d5de70b0ce-SKP
+Cf-Connecting-Ip: 185.100.244.43
+X-Forwarded-For:  185.100.244.43
+```
+
+`185.100.244.43` is the workstation's public address. So
+`clientIPDetection.customHeader` works: Envoy reads `CF-Connecting-IP` and
+writes the **visitor's** address into `X-Forwarded-For`, not the Cloudflare
+edge address that the PROXY header carried.
+
+**HTTP listener:**
+
+```
+curl --resolve gw-test.tosak.net:80:77.42.14.48 http://gw-test.tosak.net/
+HTTP/1.1 301 Moved Permanently
+location: https://gw-test.tosak.net/
+```
+
+Note what the first test also proves: **the origin answers direct connections
+today.** Authenticated Origin Pulls is what closes that, and it is not
+configured yet. Until it is, `CF-Connecting-IP` is forgeable by anyone who
+finds `77.42.14.48`.
+
+---
+
+## 5. The Cloudflare zone
+
+The checklist says "update the four Cloudflare A records". The zone held
+**twelve**:
+
+| Record | Proxied | In scope? |
+|---|---|---|
+| `argocd`, `authos`, `authos-api`, `authos-demo`, `doma` | yes | yes (ADR 0003) |
+| `imaps`, `imaps-api`, `wasteio`, `wasteio-api` | yes | no — apps inactive |
+| `tosak.net` (apex), `www` | yes | not in any plan document |
+| `mqtt` | **no** | dropped with port 1883 |
+
+Because the new load balancer kept `77.42.14.48`, eleven of them were already
+correct. Only one change was made:
+
+```
+DELETE .../zones/<zone>/dns_records/<mqtt record id>    -> success
+```
+
+`mqtt.tosak.net` pointed straight at the origin, unproxied, for a service that
+ADR 0003 removes.
+
+Read back from the Cloudflare API: 11 A records, every one proxied, every one
+on `77.42.14.48`.
+
+### The hazard this avoided by luck
+
+Deleting a Hetzner load balancer releases its public IP to the pool. Had the
+new one been given a different address, all twelve records would have pointed
+at an address Hetzner could hand to another customer — and eleven of them are
+**proxied**, so Cloudflare would have kept forwarding traffic to a stranger's
+server. ADR 0008 calls the rebuild "low risk … an origin change behind the
+proxy". That is true for visitors and not true for the origin address itself.
