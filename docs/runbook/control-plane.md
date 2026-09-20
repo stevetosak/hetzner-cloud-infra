@@ -614,6 +614,111 @@ The `uninitialized` taint is the CCM's to clear, not Flannel's. CoreDNS stays
 
 ---
 
+## 8. hcloud cloud-controller-manager, then the CSI driver
+
+**Order matters.** The CSI driver cannot attach a volume to a node that has no
+`providerID`, and the `providerID` is written by the CCM.
+
+### 8a. The `hcloud` Secret
+
+```
+kubectl -n kube-system create secret generic hcloud \
+  --from-literal=token="$TF_VAR_HCLOUD_TOKEN" \
+  --from-literal=network=tosak-net
+```
+
+The token is read from the environment that `infra/.envrc` exports. It is never
+typed into a file, never echoed, and never committed. `network=tosak-net` is
+what makes the CCM network-aware: without it the node gets a public
+`InternalIP` and ADR 0006 is reversed.
+
+### 8b. The CCM
+
+```
+kubectl apply -f core/hcloud/ccm.yaml
+```
+
+Chart `v1.37.0`, rendered with `HCLOUD_NETWORK` set and the route controller
+switched off by `HCLOUD_NETWORK_ROUTES_ENABLED=false`.
+
+**One warning at startup is expected and correct:**
+
+```
+W core.go:112] --configure-cloud-routes is set, but cloud provider does not
+               support routes. Will not configure cloud provider routes.
+W controllermanager.go:326] Skipping "node-route-controller"
+I node_controller.go:477] Successfully initialized node k8s-cp with cloud provider
+```
+
+`--allocate-node-cidrs` and `--cluster-cidr` stay in the rendered YAML because
+the chart ties them to `networking.enabled` with no way to drop them. With
+routes off they are inert. Routes must stay off: Hetzner refuses a route
+destination outside `10.0.0.0/16`, and the pod CIDR is `10.244.0.0/16`.
+Enabling them would reverse ADR 0001.
+
+Immediately after:
+
+```
+taints      node-role.kubernetes.io/control-plane=NoSchedule     (uninitialized GONE)
+providerID  hcloud://166646798                                   (== the Hetzner server id)
+addresses   InternalIP=10.0.1.5   ExternalIP=46.62.209.249       (private is internal)
+```
+
+### 8c. The CSI driver
+
+```
+kubectl apply -f core/hcloud/csi.yaml
+```
+
+Chart `v2.23.0`. It creates `hcloud-volumes` **already marked default**, so
+ADR 0005 needs no override:
+
+```
+hcloud-volumes (default)  csi.hetzner.cloud  Delete  WaitForFirstConsumer  true
+```
+
+### Correction — CoreDNS does NOT stay `Pending`
+
+Earlier notes, including the Phase 2 handoff, say CoreDNS stays `Pending` for
+the whole phase. That is wrong.
+
+CoreDNS tolerates `node-role.kubernetes.io/control-plane:NoSchedule`. What
+blocked it was the **`uninitialized`** taint, which it does not tolerate. The
+moment the CCM cleared that taint, both replicas scheduled and went `1/1`.
+
+Only the **CSI controller** stays `Pending`, and for a specific reason worth
+recording rather than assuming — its pod carries only the two default
+tolerations:
+
+```
+node.kubernetes.io/not-ready     Exists  NoExecute
+node.kubernetes.io/unreachable   Exists  NoExecute
+
+FailedScheduling: 0/1 nodes are available: 1 node(s) had untolerated taint(s)
+```
+
+It has no control-plane toleration, so it schedules when the first Worker
+joins in Phase 3. The CSI **node** DaemonSet runs on the control plane now
+(3/3) — it is a DaemonSet and tolerates everything.
+
+### Phase 2 final state
+
+```
+k8s-cp   Ready   control-plane   v1.37.0   10.0.1.5   46.62.209.249   containerd://2.2.0
+
+taints      node-role.kubernetes.io/control-plane=NoSchedule
+providerID  hcloud://166646798
+/readyz     ok
+storage     hcloud-volumes (default)
+
+Running   etcd, kube-apiserver, kube-controller-manager, kube-scheduler,
+          kube-proxy, kube-flannel, hcloud-cloud-controller-manager,
+          hcloud-csi-node (3/3), coredns x2
+Pending   hcloud-csi-controller        — by design, waits for a Worker
+```
+
+---
+
 ## Appendix — operator workstation repairs
 
 Not control-plane state. A rebuild onto a clean workstation would meet only
