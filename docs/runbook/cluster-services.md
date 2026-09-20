@@ -687,3 +687,143 @@ CloudNativePG v1.30.0 source rather than assumed:**
 
 The third is the same failure class this rebuild keeps meeting: a default that
 points the wrong way, and fails without saying so.
+
+---
+
+## 10. `tosak-pg-cluster` — the first volume attach
+
+This is the step the rebuild had not yet tested. Everything before it ran on
+node-local storage; **no PersistentVolume had existed in this cluster since it
+was built.** The hcloud CSI driver was installed in Phase 2 and had never been
+asked to do anything.
+
+### The Secret first
+
+```
+LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 40 > <scratch file, mode 600>
+
+kubectl create secret generic db-credentials --namespace pg-cluster \
+  --type kubernetes.io/basic-auth \
+  --from-literal=username=tosak \
+  --from-file=password=<scratch file>
+
+kubectl label secret db-credentials --namespace pg-cluster cnpg.io/reload=true
+```
+
+**Alphanumeric on purpose.** The project configmaps build their connection
+strings by hand as `postgresql://tosak:<password>@…`, so a `/`, `+`, `=` or
+`@` in the password would break them — and break them at the application, far
+from here. 40 characters from that alphabet is about 238 bits.
+
+Read back: type `kubernetes.io/basic-auth`, keys `password` and `username`,
+label `cnpg.io/reload: "true"`, username `tosak`, password 40 characters and
+alphanumeric.
+
+### The cluster
+
+```
+kubectl apply -f core/cnpg/pg-cluster.yaml
+kubectl wait --for=condition=Ready cluster/tosak-pg-cluster -n pg-cluster --timeout=900s
+```
+
+**Ready in 3 minutes 4 seconds.** The first PVC was `Bound` within 20 seconds
+of the apply — so the answer to the one open question of this step is that the
+CSI driver works, first time, with nothing to fix.
+
+| | |
+|---|---|
+| Phase | `Cluster in healthy state`, 3 instances, 3 ready |
+| Primary | `tosak-pg-cluster-1` on `k8swk3` |
+| Replicas | `-2` on `k8swk2`, `-3` on `k8swk1` — one per worker |
+| Image | `ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie` |
+| Replication | both replicas `streaming`, `async` |
+| Services | `-rw` `10.96.22.127`, `-ro` `10.96.228.232`, `-r` `10.96.152.129` |
+
+Anti-affinity placed one instance per worker without being asked to. That is
+CloudNativePG's default and it happens to be exactly what three workers want.
+
+### Verified over the Hetzner API, not from kubectl
+
+```
+GET /v1/volumes
+```
+
+Three volumes, each **10 GB in `hel1`**, each labelled by the CSI driver with
+the PVC it backs:
+
+| Volume | PVC | Attached to server | Which worker |
+|---|---|---|---|
+| `106916161` | `tosak-pg-cluster-1` | `166652124` | `k8swk3` |
+| `106916168` | `tosak-pg-cluster-2` | `166652125` | `k8swk2` |
+| `106916171` | `tosak-pg-cluster-3` | `166652126` | `k8swk1` |
+
+Each attachment matches where the pod actually runs, checked against the
+server IDs recorded in `docs/runbook/workers.md`. 10 GB is also exactly
+Hetzner's minimum volume size, so the ADR 0005 figure is the floor, not a
+choice that can be trimmed.
+
+🔴 **`protection.delete` is `false` on all three volumes.** The control plane
+server and the primary IP both carry delete protection; these do not, and they
+hold the only copy of every database. Turning it on is not free — the
+`hcloud-volumes` StorageClass reclaims with `Delete`, so a protected volume
+would make an ordinary PVC deletion fail rather than tidy up. **This belongs
+with the Phase 6 survivability work, next to the backups**, and is recorded
+here so it is not discovered later as a surprise.
+
+### The database inventory
+
+```
+kubectl apply -f core/cnpg/databases/doma.yaml
+```
+
+```
+authos  | tosak
+doma    | tosak
+postgres| postgres
+```
+
+`authos` came from `bootstrap.initdb.database` and is not a `Database` object.
+`doma` is, and reports `APPLIED true`.
+
+**`databases/imaps.yaml` and `databases/wasteio.yaml` were NOT applied** and
+the namespace holds exactly one `Database` object. Those projects are inactive
+(ADR 0003); their manifests stay committed and unsynced.
+
+Roles present: `tosak` (owner, login, not superuser), `postgres`,
+`streaming_replica`, `cnpg_metrics_exporter`. Superuser access is disabled,
+which is CloudNativePG's default since 1.21 and is left alone.
+
+### The Secret was proven, not assumed
+
+```
+psql -h tosak-pg-cluster-rw.pg-cluster.svc.cluster.local -U tosak -d authos \
+  -c "SELECT current_user, current_database(), inet_server_addr();"
+
+tosak|authos|10.244.3.8
+```
+
+`10.244.3.8` is `tosak-pg-cluster-1`, the primary. This proves three separate
+things at once that a healthy cluster does not: the password in the Secret is
+the password PostgreSQL actually set, the `tosak` role can log in to the
+application database, and the `-rw` service routes to the primary.
+
+PostgreSQL reports `18.6 (Debian 18.6-1.pgdg13+2)`, matching the pin exactly.
+
+### 🔴 The password is in this session's transcript
+
+It was generated here and printed once for the operator's password manager,
+which puts it in the transcript just as pasting it in would have. **It joins
+the Cloudflare DNS token on the list of credentials Phase 5 should rotate when
+it moves secrets to SOPS.**
+
+Rotation will work, and that is not automatic: it works because of the
+`cnpg.io/reload=true` label set above. Without that label the rotation would
+have reported success and changed nothing in PostgreSQL.
+
+### There are still no backups
+
+`tosak-pg-cluster` has no `backup` stanza, which is the precise gap that made
+the 2026-09-13 loss unrecoverable. It is Phase 6 work by the checklist's own
+sequencing, not an oversight — but **until Phase 6 closes, every database here
+is disposable.** Note also that CloudNativePG has moved barman-cloud out of the
+operator into a plugin, so Phase 6 is a plugin install rather than a stanza.
