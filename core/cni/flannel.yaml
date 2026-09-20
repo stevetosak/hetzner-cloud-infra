@@ -3,9 +3,12 @@
 #
 # Two local edits, both required by ADR 0001. Keep them across any upgrade:
 #
-#   1. Backend.MTU = 1400. The Hetzner private network runs at MTU 1450 and
-#      VXLAN costs 50 bytes. Left implicit, the value follows whichever
-#      interface flannel picks, which is the thing edit 2 exists to control.
+#   1. Backend.MTU = 1450. This is the UNDERLAY MTU — the MTU of the Hetzner
+#      private network itself. Flannel subtracts the 50-byte VXLAN overhead
+#      from this value on its own, so pods end up at 1400, which is what ADR
+#      0001 specifies. Do not write 1400 here: it subtracts twice and yields
+#      1350. Left implicit, the value would follow whichever interface flannel
+#      picks, which is the thing edit 2 exists to control.
 #
 #   2. --iface-regex=^10\.0\.  Without it flannel binds the first interface it
 #      finds, which is the PUBLIC NIC. Pod traffic would then leave the private
@@ -102,7 +105,7 @@ data:
       "EnableNFTables": false,
       "Backend": {
         "Type": "vxlan",
-        "MTU": 1400
+        "MTU": 1450
       }
     }
 kind: ConfigMap
