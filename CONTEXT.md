@@ -33,7 +33,7 @@ _Avoid_: project, tenant, service.
 
 Historically "node" meant any server in the cluster. Every piece of automation
 in this repo that says "node" — `kluster node add`, `kluster node remove`,
-`kluster node list`, `kluster reset`, `kluster bootstrap`,
+`kluster node list`, `kluster reset`, `kluster bootstrap`, and the deleted
 `infra/scripts/bootstrap/reset-nodes.sh` — operates on **Workers only**, and
 cannot act on the Control Plane at all.
 
