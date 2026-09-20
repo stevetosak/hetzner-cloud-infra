@@ -302,3 +302,113 @@ day. **No time source is pinned anywhere in this cluster.**
 address, and step 9 of the Control Plane runbook closed port 22 there. The
 entry was correct when it was written and was made wrong by the close. The
 only path to the Control Plane is now `ssh cp-dev@10.100.0.1`, over the VPN.
+
+---
+
+## 4. Container runtime
+
+Run as `root` on each Worker.
+
+```
+wget -qO- https://github.com/containerd/containerd/releases/download/v2.2.0/containerd-2.2.0-linux-amd64.tar.gz | tar -C /usr/local -xz
+mkdir -p /usr/local/lib/systemd/system
+curl -fsSL https://raw.githubusercontent.com/containerd/containerd/v2.2.0/containerd.service -o /usr/local/lib/systemd/system/containerd.service
+systemctl daemon-reload
+systemctl enable --now containerd
+
+mkdir -p /etc/containerd
+containerd config default > /etc/containerd/config.toml
+sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+systemctl restart containerd
+
+wget -q https://github.com/opencontainers/runc/releases/download/v1.4.0/runc.amd64 -O /tmp/runc.amd64
+install -m 755 /tmp/runc.amd64 /usr/local/sbin/runc
+```
+
+The systemd unit is fetched from the **release tag**, `v2.2.0`, not from
+`main`. `bootstrap_node-3-containerd.sh` uses `main`, which can change under a
+pinned binary. The two were byte-identical on the day, so pinning cost
+nothing. Same deviation as the Control Plane.
+
+### 🔴 The CNI plugin tarball is dropped, deliberately
+
+`bootstrap_node-3-containerd.sh` extracts `cni-plugins-linux-amd64-v1.9.0.tgz`
+into `/opt/cni/bin` here. It is **not** run, because it has never had any
+effect: the `kubernetes-cni` package that `kubelet` depends on installs into
+the same directory one step later and becomes the dpkg owner of every file in
+it. The Control Plane runs `kubernetes-cni` 1.9.1 for exactly this reason. The
+download was dead weight, and removing it makes the Workers match the Control
+Plane rather than pretend to a pin that never held.
+
+### Readback, all three identical
+
+| Check | Value |
+|---|---|
+| containerd | `v2.2.0` `1c4457e00facac03ce1d75f7b6777a7a851e5c41` |
+| runc | `1.4.0` |
+| service | active, enabled |
+| `SystemdCgroup = true` | present |
+| `/opt/cni/bin` | absent — correct at this point |
+
+---
+
+## 5. Kubernetes packages and pre-join configuration
+
+Run as `root` on each Worker. The apt channel is **v1.37**, matching the
+Control Plane. `infra/scripts/utils/install_kubeadm.sh` and stage 4 of the
+pipeline were both moved from v1.34 to v1.37 in an earlier session; without
+that the Workers would land three minors behind.
+
+```
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.37/deb/Release.key | gpg --dearmor --yes -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.37/deb/ /' > /etc/apt/sources.list.d/kubernetes.list
+apt-get update && apt-get install -y kubelet kubeadm kubectl
+apt-mark hold kubelet kubeadm kubectl kubernetes-cni
+```
+
+### 🔴 `kubernetes-cni` is in the hold set
+
+It was not in the original. It is the dpkg owner of every file in
+`/opt/cni/bin`, so leaving it unheld lets an `apt upgrade` move the plugin set
+underneath a pinned kubelet, silently. Four packages are held, not three.
+
+### 🔴 The control-plane endpoint must be in `/etc/hosts` before the join
+
+```
+echo '10.0.1.5  k8s-cp.tosak.internal' >> /etc/hosts
+```
+
+`kubeadm token create --print-join-command` prints
+`kubeadm join k8s-cp.tosak.internal:6443 …`, because `kubeadm init` was given
+`--control-plane-endpoint` (ADR 0006). `.internal` is ICANN-reserved and this
+name is deliberately not in public DNS, so every node resolves it from its own
+`/etc/hosts`. **Nothing in the pipeline writes this line.** Without it the
+join cannot find the API server, and the failure looks like a DNS problem
+rather than a missing step.
+
+### kubelet arguments
+
+```
+KUBELET_EXTRA_ARGS=--node-ip=<private ip> --cloud-provider=external
+```
+
+`--node-ip` pins the InternalIP to the private network instead of letting
+kubelet pick the public NIC. `--cloud-provider=external` leaves the node
+carrying `node.cloudprovider.kubernetes.io/uninitialized` until the hcloud CCM
+writes its `providerID`; without it the CSI driver cannot attach volumes. Both
+are defaults that point the wrong way if left alone.
+
+`systemctl enable kubelet` only. It stays **inactive** until the join, because
+it has no configuration yet. That is correct, not a fault.
+
+### Readback
+
+| Check | k8swk1 | k8swk2 | k8swk3 |
+|---|---|---|---|
+| kubeadm / kubelet / kubectl | v1.37.0 | v1.37.0 | v1.37.0 |
+| holds | `kubeadm kubectl kubelet kubernetes-cni` | same | same |
+| `/opt/cni/bin` owner | `kubernetes-cni` | same | same |
+| CNI plugins | 20 | 20 | 20 |
+| `getent hosts k8s-cp.tosak.internal` | `10.0.1.5` | `10.0.1.5` | `10.0.1.5` |
+| `--node-ip` | 10.0.2.6 | 10.0.2.7 | 10.0.2.8 |
+| kubelet | enabled / inactive | same | same |
