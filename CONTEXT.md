@@ -16,8 +16,8 @@ one application's needs never decide its shape.
 ## Application
 
 A workload the cluster hosts: **authos**, **doma**, **wasteio**, **imaps**. An
-application names only what is its own — its namespace, its ingress hosts, its
-own database, its ArgoCD project.
+application names only what is its own — its namespace, its hosts and Routes,
+its own database, its ArgoCD project.
 
 Shared infrastructure once carried `authos-*` names, from when Authos was the
 only tenant. Three other applications then held a connection string naming a
@@ -76,7 +76,8 @@ Always say which you mean.
 
 The Hetzner network `tosak-net`, `10.0.0.0/16`, reached on each server's second
 interface. It carries **all cluster-internal traffic**: kubelet to API server,
-API server to kubelet, pod to pod, and load balancer to ingress.
+API server to kubelet, pod to pod, and load balancer to the Public Entry
+Point.
 
 It is an addressing rule, not a security boundary. A Hetzner firewall filters
 the public interface only, so traffic inside the Private Network passes
@@ -88,7 +89,7 @@ _Avoid_: internal network, the 10.0 network.
 ## VPN
 
 The WireGuard overlay `10.100.0.0/24`. It carries **operator traffic only** —
-reaching the API server, reaching private ingress, and SSH to any server.
+reaching the API server and SSH to any server.
 
 The Control Plane is its hub and also its router: an operator reaches a Worker
 because the Control Plane forwards between two of its own peers. A Worker holds
@@ -132,6 +133,38 @@ from each node's own hosts file, so the cluster can start with no external
 resolver.
 
 _Avoid_: the API server address, the cluster URL.
+
+## Public Entry Point
+
+The single place traffic from outside enters the cluster. It owns the listeners,
+the certificate and the load balancer, and it states which namespaces may
+attach a Route to it.
+
+There is one, because there is one public address. It belongs to the
+organisation and not to any application, so no application configures it and no
+application holds its certificate.
+
+Distinct from the **Public Interface**, which is a server's own address and
+carries no inbound traffic but WireGuard. A visitor reaches an application
+through the Public Entry Point; a server reaches a package mirror through its
+Public Interface.
+
+_Avoid_: ingress, the ingress controller, the load balancer.
+
+## Route
+
+An application's claim on a hostname and a path, and the statement of which of
+its Services serves them. It lives beside the workload it routes to, in the
+application's own namespace, and the Public Entry Point must permit it.
+
+A Route carries no certificate and no listener. Those belong to the Public Entry
+Point. The split is deliberate: an application declares what it answers to, and
+the organisation decides what is exposed.
+
+Written as `HTTPRoute`. `Ingress` is retired (ADR 0008) and anything still
+written as an Ingress is from before the 2026-09-20 rebuild.
+
+_Avoid_: ingress, ingress rule.
 
 ## Reset
 
