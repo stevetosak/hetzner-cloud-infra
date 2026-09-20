@@ -789,3 +789,23 @@ in this cluster is UDP 51820 on the Control Plane.
 | VPN | hub `10.100.0.1`, spokes `.2 .3 .4`, operator `.69` |
 | Public exposure | UDP 51820 on the Control Plane only |
 | `kube-system` | 16 pods, all Running |
+
+---
+
+## Appendix — workstation changes
+
+These are on the operator's laptop, not in the cluster. Recorded because a
+rebuild invalidates all of them and the next one will need the same edits.
+
+| File | Change | Backup |
+|---|---|---|
+| `~/.ssh/known_hosts` | `ssh-keygen -R` for `10.100.0.2`, `.3`, `.4` — stale keys from the dead Workers | `known_hosts.bak-phase3-2026-09-20` |
+| `~/.ssh/config` | `cp-authos` repointed from `46.62.209.249` to `10.100.0.1`; the dead `wk1-authos`/`wk2-authos` entries replaced by `k8swk1`/`k8swk2`/`k8swk3` on `10.100.0.2/.3/.4` as `tosak` | `config.bak-phase3-2026-09-20` |
+
+`cp-authos` had to move because step 9 of the Control Plane runbook closed
+port 22 on the public address, which turned a working entry into one that
+hangs. **Any host alias pointing at a public address is invalidated by closing
+bootstrap SSH**, not by the rebuild itself — so the breakage appears one phase
+after the change that caused it.
+
+Every alias now names a VPN address, which is the only way in.
