@@ -1,0 +1,25 @@
+# Values for hcloud-cloud-controller-manager. See README.md in this directory
+# for the exact command that renders ccm.yaml from them.
+
+networking:
+  # Makes the CCM network-aware: it sets HCLOUD_NETWORK, puts the pod on the
+  # host network, and writes each node's private address into the Node object
+  # as InternalIP. Phase 4 also needs this so the CCM can place the load
+  # balancer inside tosak-net.
+  enabled: true
+  clusterCIDR: 10.244.0.0/16
+
+env:
+  # The route controller is ON by default whenever a network is configured. It
+  # must be OFF here.
+  #
+  # It would write pod-CIDR routes into tosak-net, and Hetzner rejects any
+  # route destination outside the network's own 10.0.0.0/16. The pod CIDR is
+  # 10.244.0.0/16, so every reconcile would fail, once every 30 seconds,
+  # forever. Flannel carries pod traffic over VXLAN instead (ADR 0001).
+  #
+  # Native routing is rejected for now, not ruled out. Claiming it means
+  # re-planning 10.0.0.0/16 to carry pod CIDRs, which is a larger change than
+  # swapping a CNI.
+  HCLOUD_NETWORK_ROUTES_ENABLED:
+    value: "false"
