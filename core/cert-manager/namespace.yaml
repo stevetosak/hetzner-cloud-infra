@@ -1,0 +1,13 @@
+# The cert-manager chart expects `helm install --create-namespace` and emits no
+# Namespace of its own. This repository applies rendered YAML, so the namespace
+# is declared here.
+#
+# The Cloudflare DNS token Secret must live in THIS namespace, not beside the
+# Certificate that uses it: a ClusterIssuer resolves secret references in the
+# cert-manager namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cert-manager
+  labels:
+    app.kubernetes.io/name: cert-manager

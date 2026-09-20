@@ -1,3 +1,20 @@
+# ACME issuer for every public host (ADR 0008).
+#
+# DNS-01, not HTTP-01. Three reasons, all of them consequences of the rebuild:
+#
+#  1. HTTP-01 needs a reachable Public Entry Point. During the rebuild there is
+#     none — the load balancer is deleted and recreated — so every certificate
+#     would wait on the thing that is waiting on the certificate.
+#  2. Every host is proxied by Cloudflare, so an HTTP-01 challenge would have
+#     to traverse the proxy to reach the origin.
+#  3. DNS-01 is the only solver that can issue a WILDCARD. One
+#     `*.tosak.net` certificate then covers every host the naming convention
+#     can produce, so the Gateway needs one HTTPS listener and not five.
+#
+# The token is scoped `Zone:DNS:Edit` on `tosak.net` alone. A ClusterIssuer
+# resolves secret references in the cert-manager namespace, NOT in the
+# namespace of the Certificate that uses it — so the Secret below must exist in
+# `cert-manager`, even though the only Certificate lives in `gateway`.
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
@@ -9,6 +26,8 @@ spec:
     privateKeySecretRef:
       name: letsencrypt-prod-key
     solvers:
-      - http01:
-          ingress:
-            class: public-nginx
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: cloudflare-dns-token
+              key: api-token

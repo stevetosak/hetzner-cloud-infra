@@ -1,0 +1,20 @@
+# The GatewayClass every Gateway in this cluster uses (ADR 0008).
+#
+# The Envoy Gateway chart creates no GatewayClass, so this repository declares
+# one. That keeps the controller name visible in git instead of implied by a
+# Helm release.
+#
+# `parametersRef` attaches the EnvoyProxy here, at class level, rather than on
+# the Gateway. There is one shared Gateway, so the two are equivalent today;
+# class level says the infrastructure shape belongs to the class.
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: tosak
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+  parametersRef:
+    group: gateway.envoyproxy.io
+    kind: EnvoyProxy
+    name: tosak-lb
+    namespace: gateway

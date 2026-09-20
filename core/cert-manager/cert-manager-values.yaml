@@ -1,0 +1,26 @@
+# Values that produced core/cert-manager/cert-manager.yaml.
+#
+# Chart: oci://quay.io/jetstack/charts/cert-manager, version v1.21.2.
+# Render with core/cert-manager/render.sh. Do not edit the rendered file.
+
+# The chart does NOT install its CRDs by default. Without this the controller
+# starts and then fails on every Certificate, because the types do not exist.
+crds:
+  enabled: true
+  keep: true
+
+config:
+  apiVersion: controller.config.cert-manager.io/v1alpha1
+  kind: ControllerConfiguration
+  # ADR 0008. This is what becomes --enable-gateway-api on the controller.
+  #
+  # Two things are easy to get wrong here. First, the option is
+  # `config.gatewayAPI.enabled`; ADR 0008 and the Phase 4 checklist both name
+  # it `config.enableGatewayAPI`, which this chart does not have. Second, the
+  # ExperimentalGatewayAPISupport feature gate has defaulted to true since
+  # 1.15, so the gate is NOT what was missing — this option is.
+  #
+  # The Gateway API CRDs must already exist when the controller starts, or it
+  # refuses the feature. core/gateway-api/crds.yaml is applied first.
+  gatewayAPI:
+    enabled: true
