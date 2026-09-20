@@ -567,3 +567,123 @@ which will be the **first real volume attach in the rebuilt cluster**, and so
 the first real test of the CSI driver; Redis; the monitoring repair; ArgoCD
 with its route, the gRPC acceptance test and its notifications; and the
 ApplicationSet.
+
+---
+
+## 9. The CloudNativePG operator
+
+Written on 2026-09-21, second session of the day. Steps 1 to 8 built the
+Public Entry Point; this step starts the data layer.
+
+**Starting state, re-verified before touching anything:** 4 nodes `Ready`
+v1.37.0, 27 pods, the only non-`Running` pod a `Completed` cert-manager
+startup job. Namespaces `cert-manager`, `envoy-gateway-system`, `gateway`.
+`hcloud-volumes (default)`, **`WaitForFirstConsumer`, and not one
+PersistentVolume in the cluster.**
+
+**v1.30.0**, the newest stable, published 2026-06-29.
+
+### Why this one is not rendered from a chart
+
+`core/gateway` and `core/cert-manager` each carry a `render.sh` because each
+needs values set. **The CloudNativePG operator needs none** — it watches every
+namespace by default and its image is already pinned inside the released
+manifest. A chart, a values file and a render script would add three files that
+configure nothing.
+
+So `core/cnpg/operator.yaml` follows this repository's other pattern, the one
+`core/gateway-api/crds.yaml` and `core/cni/flannel.yaml` use: a named upstream
+release, copied unmodified. It was diffed against the release URL after copying
+and is byte for byte identical.
+
+```
+sha256  f8bede43fe4ee0d478c2355b204a36876b2ae4faac60f2a9452280b293da3b88
+```
+
+### Applied
+
+```
+kubectl apply --server-side --field-manager=cloud-infra -f core/cnpg/operator.yaml
+kubectl apply -f core/cnpg/namespace.yaml
+```
+
+`--server-side` for the same reason as the Gateway API CRDs: the
+`clusters.postgresql.cnpg.io` CRD alone is about 7,700 lines, and a
+client-side apply writes the whole object into the
+`last-applied-configuration` annotation, overflowing the 256 KiB annotation
+limit.
+
+`namespace.yaml` declares `pg-cluster`, which holds the cluster and its
+Secret. It is **not** the operator's namespace — `operator.yaml` declares
+`cnpg-system` itself.
+
+### Verified
+
+| | |
+|---|---|
+| Operator pod | `cnpg-controller-manager-66b5b6b645-7xgnj` `1/1 Running` on `k8swk2` |
+| Image running | `ghcr.io/cloudnative-pg/cloudnative-pg:1.30.0` |
+| CRDs | 11, every one `Established=True` |
+| Webhook certificate | `cnpg-webhook-cert` present, `caBundle` 956 bytes on all 9 webhooks |
+| Operator log | no `"level":"error"` and no panic |
+
+The webhook `caBundle` is worth checking rather than assuming. CloudNativePG
+issues its own webhook certificate at startup and patches it into both webhook
+configurations. Creating a `Cluster` before that lands fails at admission, and
+the message points at TLS rather than at timing.
+
+### 🔴 The PostgreSQL image was not pinned, and now is
+
+`core/cnpg/pg-cluster.yaml` carried no `imageName`. That leaves the
+**PostgreSQL major version** to whatever the operator defaults to on the day.
+The default was read out of the source rather than guessed:
+
+```
+pkg/versions/versions.go
+  DefaultImageName = "ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie"
+```
+
+That tag was confirmed to exist in `ghcr.io` (HTTP 200 on its manifest) and is
+now written into `pg-cluster.yaml` explicitly, with the reasoning in a comment.
+
+The failure this prevents is not a corrupted upgrade — CloudNativePG refuses a
+major-version change on a running cluster. It is a **rebuild**: this repository
+exists so the cluster can be rebuilt from it, and an unpinned image means a
+rebuild in a year comes up on a different PostgreSQL major than the one that
+was tested. Every other version in this repository is pinned; this was the
+exception.
+
+### 🔴 Nothing in the repository created `db-credentials`
+
+`pg-cluster.yaml` names `db-credentials` at
+`spec.bootstrap.initdb.secret.name`, and **no file, script or runbook in this
+repository created it.** It was made by hand on the dead cluster and never
+recorded. The same is true of the `redis` Secret, which
+`core/redis/deployment.yaml` reads through a `secretKeyRef`.
+
+Phase 5's inventory lists both, so neither is forgotten — but a Phase 4 step
+that applies `pg-cluster.yaml` would have stalled at bootstrap with no
+explanation in this repository. `core/cnpg/credentials.yaml` now documents the
+shape, as `core/cert-manager/credentials.yaml` does for the Cloudflare token.
+
+**Three properties of that Secret are load-bearing, each read out of the
+CloudNativePG v1.30.0 source rather than assumed:**
+
+1. **`username` must equal `initdb.owner`**, so `tosak`. The instance manager
+   compares them and fails with `wrong username '<x>' in secret, expected
+   '<y>'` (`internal/management/controller/instance_controller.go`,
+   `reconcileUser`).
+2. **Both `username` and `password` must exist.** The initdb Job mounts
+   `username` with `Optional: false` (`pkg/specs/jobs.go`), so a Secret missing
+   it stops the bootstrap before PostgreSQL starts.
+3. 🔴 **The `cnpg.io/reload=true` label is what makes a password ROTATION
+   work**, and its absence is silent. The operator reconciles on a Secret
+   change only when that Secret is owned by a `Cluster` or carries this label
+   (`internal/controller/cluster_predicates.go`, `hasReloadLabelSet`).
+   CloudNativePG sets it on every Secret it creates itself. A hand-made Secret
+   without it **bootstraps perfectly**, because the instance manager reads
+   Secrets uncached and directly at that moment — the omission only surfaces on
+   the day someone edits the password and PostgreSQL quietly keeps the old one.
+
+The third is the same failure class this rebuild keeps meeting: a default that
+points the wrong way, and fails without saying so.

@@ -5,6 +5,18 @@ metadata:
   namespace: pg-cluster
 spec:
   instances: 3
+
+  # PostgreSQL 18.6. Pinned, like every other version in this repository.
+  #
+  # The operator supplies a default when this is unset — 1.30.0's is this exact
+  # tag (pkg/versions/versions.go, `DefaultImageName`). Leaving it unset would
+  # mean the PostgreSQL major version of a cluster built from this repository is
+  # decided by whichever operator version is current on the day it is built,
+  # which is not reproducible. CloudNativePG refuses a major-version change on a
+  # running cluster, so the unpinned failure arrives as a rebuild that quietly
+  # comes up on a different major, not as a corrupted upgrade.
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie
+
   bootstrap:
     initdb:
       # The database is Authos's own. The owner role is NOT — it owns doma,
