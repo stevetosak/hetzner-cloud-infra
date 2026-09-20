@@ -1,0 +1,37 @@
+# argocd.tosak.net (ADR 0008). Replaces core/argocd/ingress.yaml.
+#
+# 🔴 ArgoCD gives up TLS passthrough here. TLS terminates at the Gateway, and
+# `argocd-server` must run with `--insecure` so it serves plain HTTP. If the
+# two disagree the result is a redirect loop, which is what the deleted
+# Ingress's `backend-protocol: HTTPS` annotation existed to avoid.
+#
+# ArgoCD documents passthrough as preferred because ingress-nginx broke its
+# gRPC CLI when terminating. That is an nginx limitation, not a general one:
+# the `argocd-server` Service port carries `appProtocol: kubernetes.io/h2c`, so
+# Envoy speaks HTTP/2 cleartext to the backend and the CLI's gRPC survives.
+#
+# **This is the one unproven claim in ADR 0008.** The acceptance test is
+# `argocd login argocd.tosak.net` followed by `argocd app list`. If they fail,
+# the fallback is passthrough with a TLSRoute — and note that TLSRoute is in
+# the Gateway API STANDARD channel as of v1.6, so that fallback no longer costs
+# the experimental channel as ADR 0008 states.
+#
+# The certificate is gone from here too. `argocd-server-tls` used to be written
+# by cert-manager and read by argocd-server; the Gateway holds the one wildcard
+# certificate now, so that coupling no longer exists.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: argocd
+  namespace: argocd
+spec:
+  parentRefs:
+    - name: tosak
+      namespace: gateway
+      sectionName: https
+  hostnames:
+    - argocd.tosak.net
+  rules:
+    - backendRefs:
+        - name: argocd-server
+          port: 80

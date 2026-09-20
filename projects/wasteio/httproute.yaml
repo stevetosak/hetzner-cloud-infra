@@ -1,0 +1,45 @@
+# wasteio.tosak.net and wasteio-api.tosak.net (ADR 0008).
+#
+# 🔴 CONVERTED AND COMMITTED, BUT NOT APPLIED. wasteio is in Projects/Inactive
+# and out of scope under ADR 0003, exactly like the rest of its manifests.
+#
+# Two things keep this honest if it is ever applied by accident. The
+# `wasteio` namespace does not exist, and the shared Gateway's
+# `allowedRoutes` does not name it — so the route would be refused with
+# `NotAllowedByListeners` rather than quietly claiming a host.
+#
+# No URLRewrite filter: the old `rewrite-target: /` annotation was inert,
+# because every path in the deleted Ingress was `/`.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: wasteio
+  namespace: wasteio
+spec:
+  parentRefs:
+    - name: tosak
+      namespace: gateway
+      sectionName: https
+  hostnames:
+    - wasteio.tosak.net
+  rules:
+    - backendRefs:
+        - name: wasteio-frontend
+          port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: wasteio-api
+  namespace: wasteio
+spec:
+  parentRefs:
+    - name: tosak
+      namespace: gateway
+      sectionName: https
+  hostnames:
+    - wasteio-api.tosak.net
+  rules:
+    - backendRefs:
+        - name: wasteio-api
+          port: 80

@@ -4,8 +4,12 @@
 header comment in the file names them; read it before any upgrade, because a
 straight re-download drops both.
 
-- **`Backend.MTU = 1400`** — the Hetzner private network is MTU 1450 and VXLAN
-  costs 50 bytes.
+- **`Backend.MTU = 1450`** — this is the **UNDERLAY** MTU, the MTU of the
+  Hetzner private network. Flannel subtracts VXLAN's 50 bytes itself, so pods
+  get 1400. The file said `1400` once, reasoning that "the network is 1450 and
+  VXLAN costs 50" — which subtracts twice and gives pods 1350. Flannel also
+  does not resize an existing VXLAN device, so correcting it needed
+  `ip link delete flannel.1` and a restart, not just a re-apply.
 - **`--iface-regex=^10\.0\.`** — binds flanneld to the private NIC. Without it
   flannel takes the first interface it finds, which is the public one: pod
   traffic would leave the private network and the derived MTU would be wrong.

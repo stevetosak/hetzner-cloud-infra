@@ -414,3 +414,114 @@ at an address Hetzner could hand to another customer — and eleven of them are
 **proxied**, so Cloudflare would have kept forwarding traffic to a stranger's
 server. ADR 0008 calls the rebuild "low risk … an origin change behind the
 proxy". That is true for visitors and not true for the origin address itself.
+
+---
+
+## 6. The old shape comes out, and routes go in
+
+Deleted whole, per ADR 0008:
+
+```
+core/ingress-controller/      both classes
+core/load-balancer/           the hand-written Service
+core/longhorn/                ADR 0005
+core/whoami-test-ingress.yaml a test
+core/argocd/ingress.yaml      and the five projects/*/ingress.yaml
+```
+
+Nine `HTTPRoute` objects replace eight `Ingress` objects. Every public host is
+covered.
+
+| File | Namespace | Hosts |
+|---|---|---|
+| `core/argocd/httproute.yaml` | `argocd` | `argocd` |
+| `projects/authos/httproute.yaml` | `authos` | `authos`, `authos-api` |
+| `projects/authos/demo/manifests/httproute.yaml` | `authos` | `authos-demo` |
+| `projects/doma/httproute.yaml` | `doma` | `doma` |
+| `projects/imaps/httproute.yaml` | `imaps` | `imaps`, `imaps-api` — **not applied** |
+| `projects/wasteio/httproute.yaml` | `wasteio` | `wasteio`, `wasteio-api` — **not applied** |
+
+**None of them is applied yet.** The `argocd`, `authos` and `doma` namespaces
+do not exist — ArgoCD is Phase 4's later half and the applications are Phase 5.
+The Phase 4 checklist says to "apply routes for argocd, authos, authos-api,
+authos-demo and doma"; only the ArgoCD route can be applied in this phase, and
+only after ArgoCD is installed.
+
+`imaps` and `wasteio` are committed and unapplied, matching how the rest of
+their manifests sit in the repository (ADR 0003). Two things keep that honest:
+their namespaces do not exist, and the Gateway's `allowedRoutes` does not name
+them, so an accidental apply is refused with `NotAllowedByListeners` rather
+than quietly claiming a host.
+
+### No `URLRewrite` filters, as ADR 0008 requires
+
+The three `rewrite-target: /` annotations were inert and are not carried.
+`/duster` on `authos-demo.tosak.net` keeps its path, which under Gateway API is
+the default rather than something to configure. Rule order is irrelevant there:
+Gateway API ranks matches by specificity, so `/duster` beats `/` however they
+are written.
+
+### 🔴 ADR 0008 missed doma's SSE annotations
+
+The ADR audited `rewrite-target` across every Ingress and concluded the
+annotations were inert. It did not look at the other annotations.
+`projects/doma/ingress.yaml` carried two:
+
+```
+nginx.ingress.kubernetes.io/proxy-buffering: 'off'
+nginx.ingress.kubernetes.io/proxy-read-timeout: '3600'
+```
+
+The file's own comment says they exist for M7, server-sent events. They are
+**not** inert, and each needs a different answer:
+
+- `proxy-buffering: off` needs no equivalent. Envoy streams responses; it does
+  not buffer them the way nginx does by default.
+- `proxy-read-timeout` **does**. **Envoy's default route timeout is 15
+  seconds**, so without an equivalent an SSE stream is cut after 15 seconds —
+  a regression that would have shipped silently and looked like an application
+  bug.
+
+A literal translation would also have been wrong. nginx's `proxy_read_timeout`
+is an **inactivity** timeout between reads; Gateway API's `timeouts.request` is
+the **total** duration of the request. Copying `3600` across would cap a
+healthy stream at one hour, which the nginx setting never did.
+`timeouts.request: 0s` disables the timeout and preserves the intent.
+
+**The lesson repeats one the ADR itself recorded:** check the claim against the
+code. The ADR checked one annotation carefully and generalised from it.
+
+---
+
+## 7. Documentation that taught the old shape
+
+ADR 0008 flags `README.md` and `~/Projects/Active/CLAUDE.md` for describing two
+ingress-nginx classes. Reading them found more than that.
+
+**`README.md`** — the ingress section was rewritten around the single Public
+Entry Point, and three other statements were corrected:
+
+- The storage bullet still named Longhorn.
+- The automation-scripts paragraph still described `reset-nodes.sh`, deleted in
+  Phase 3, as a working tool.
+- 🔴 **The "Issues with ephemeral nodes" section still recommended the
+  timestamped node names** — presenting as a fix the exact mechanism that
+  destroyed the cluster on 2026-09-13. It now says so, and says that removing
+  Longhorn removed the constraint that forced unique names.
+
+**`CLAUDE.md` in this repository** — the components table, the directory
+layout, the new-project checklist and the "Ingress rules" section. The CNPG
+examples were also still on the pre-ADR-0007 names, `authos-pg-cluster` and
+owner `authos`. Note that this file is **gitignored** (`.gitignore:5`), so the
+correction is local to this workstation and is not in the commit. Any other
+machine still holds the old text.
+
+**`~/Projects/Active/CLAUDE.md`** — the same, plus its `Ingress` template,
+which is what a new project would have been built from. Backed up first to
+`CLAUDE.md.bak-phase4-2026-09-21`; it is not in git.
+
+**`core/cni/README.md`** — unrelated to ingress, found while reading
+conventions. It still said `Backend.MTU = 1400` with the reasoning "the network
+is 1450 and VXLAN costs 50", while the manifest correctly says `1450`. That
+reasoning is the double-subtraction bug Phase 2 found and fixed, left standing
+in the README where the next reader would have trusted it.

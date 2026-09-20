@@ -1,0 +1,45 @@
+# authos.tosak.net and authos-api.tosak.net (ADR 0008).
+# Replaces projects/authos/ingress.yaml.
+#
+# 🔴 No URLRewrite filter, on purpose. The Ingress carried
+# `nginx.ingress.kubernetes.io/rewrite-target: /`, and `ingress2gateway` turns
+# that into a `ReplacePrefixMatch: /` filter. The annotation was **inert**:
+# ingress-nginx skips the rewrite when the path equals the target, and every
+# path in the old object was `/`. Gateway API passes the path through
+# unchanged, which is the behaviour that was actually live.
+#
+# The TLS block is gone. The Gateway holds one wildcard certificate, so
+# `authos-tls` in this namespace no longer exists.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: authos
+  namespace: authos
+spec:
+  parentRefs:
+    - name: tosak
+      namespace: gateway
+      sectionName: https
+  hostnames:
+    - authos.tosak.net
+  rules:
+    - backendRefs:
+        - name: authos-ui
+          port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: authos-api
+  namespace: authos
+spec:
+  parentRefs:
+    - name: tosak
+      namespace: gateway
+      sectionName: https
+  hostnames:
+    - authos-api.tosak.net
+  rules:
+    - backendRefs:
+        - name: authos-api
+          port: 80
