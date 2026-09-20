@@ -28,3 +28,10 @@ tools/kluster/.idea/
 # Editor swap files. A stale one was committed by accident in this repo once.
 *.swp
 *.swo
+
+# 🔴 Holds GITHUB_CLIENT_ID/SECRET and GOOGLE_CLIENT_ID/SECRET in plaintext in a
+# ConfigMap (its own comment says "todo store these as k8s secrets"). GitHub push
+# protection blocked a push that included it on 2026-09-21. Ignored until the
+# values move into a SOPS-encrypted Secret in Phase 5 — then delete this rule,
+# because the file itself should be committed once it holds no secrets.
+projects/imaps/backend/manifests/configmap.yaml
