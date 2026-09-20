@@ -527,6 +527,93 @@ kubectl config use-context tosak-admin@tosak
 
 ---
 
+## 7. Flannel
+
+```
+kubectl apply -f core/cni/flannel.yaml --dry-run=server    # see the note below
+kubectl apply -f core/cni/flannel.yaml
+```
+
+**The server dry run reports three false errors.** `namespaces "kube-flannel"
+not found`, once per namespaced object. A server dry run never really creates
+the namespace, so the objects that live in it have nothing to validate
+against. It is an artefact of dry-run ordering, not a fault in the manifest.
+
+The node reaches `Ready` about twenty seconds later, because a CNI finally
+exists. The `node.kubernetes.io/not-ready` taint clears with it.
+
+### Verified — the interface pin
+
+This is the setting that matters most, and the one that is silent when wrong:
+
+```
+I0920 19:26:41 match.go:269] Using interface with name enp7s0 and address 10.0.1.5
+```
+
+`enp7s0` is the Private Network interface. Had `--iface-regex=^10\.0\.` been
+missing, flannel would have bound the public NIC and every pod packet would
+have left the private network (ADR 0006).
+
+```
+ip -d link show flannel.1
+   vxlan id 1 local 10.0.1.5 dev enp7s0 dstport 8472
+```
+
+### Correction — the MTU was set twice
+
+The manifest originally carried `Backend.MTU = 1400`, matching the number in
+ADR 0001. The cluster came up with `FLANNEL_MTU=1350`.
+
+**Flannel treats `Backend.MTU` as the underlay MTU and subtracts the 50-byte
+VXLAN overhead itself.** Writing 1400 subtracts twice: 1400 − 50 = 1350. The
+manifest now carries `1450`, the real MTU of the Hetzner private network, and
+pods get the 1400 that ADR 0001 specifies. The header comment says so, because
+1400 is the number a reader will expect to find there.
+
+Re-applying the ConfigMap and restarting the DaemonSet was **not enough**:
+
+```
+FLANNEL_MTU=1400          # correct, and what each pod interface gets
+flannel.1  mtu 1350       # WRONG, the device was not rebuilt
+```
+
+Flannel does not resize an existing VXLAN device. The restart reused the one
+created with the old value, leaving pods on 1400-byte interfaces behind a
+1350-byte tunnel. The device must be removed so flannel rebuilds it:
+
+```
+ip link delete flannel.1
+kubectl -n kube-flannel rollout restart ds/kube-flannel-ds
+```
+
+Safe here because no workload uses the pod network yet — the control-plane
+static pods are all on host networking. **After Workers join, this is no longer
+a free operation.** Settle the MTU before Phase 3.
+
+Final state:
+
+```
+FLANNEL_MTU=1400
+6: flannel.1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1400
+   vxlan id 1 local 10.0.1.5 dev enp7s0
+```
+
+### Still expected, still not a fault
+
+```
+k8s-cp   Ready   control-plane
+
+taints   node-role.kubernetes.io/control-plane=NoSchedule
+         node.cloudprovider.kubernetes.io/uninitialized=NoSchedule
+
+coredns x2   Pending
+```
+
+The `uninitialized` taint is the CCM's to clear, not Flannel's. CoreDNS stays
+`Pending` for the rest of this phase.
+
+---
+
 ## Appendix — operator workstation repairs
 
 Not control-plane state. A rebuild onto a clean workstation would meet only
