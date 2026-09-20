@@ -17,8 +17,15 @@ crash.log
 # .terraform.lock.hcl is deliberately NOT ignored — provider versions are
 # pinned per module and belong in review.
 
-# Claude Code local settings (personal, not team config).
-.claude/settings.local.json
+# Claude Code working directory — personal, not team config. Broadened from
+# `.claude/settings.local.json` to the whole directory on 2026-09-21, when it
+# started holding the rebuild's session handoffs and archived session history.
+# Those are working notes, not infrastructure: they carry no credentials, but
+# they do carry session identifiers and internal working agreements that have
+# no place in a public repository. The directory is also exactly the kind of
+# thing a `git add -A` sweeps up, which is how a secret-bearing file reached
+# the index once already.
+.claude/
 
 # kluster is built from source (branch feat/kluster-cli); the 11 MB binary is
 # a build artefact, not infrastructure. kluster.yaml IS committed.
