@@ -375,6 +375,158 @@ binary. Two things follow, both for Phase 3:
 
 ---
 
+## 5. `kubeadm init`
+
+Run a dry run first. It costs nothing and it renders every certificate and
+manifest into a temporary directory without touching the host.
+
+`kubeadm init phase preflight` does **not** accept these flags — it takes only
+a small subset, and rejects `--control-plane-endpoint` outright. Use
+`--dry-run` on the full command instead.
+
+```
+kubeadm init --dry-run \
+  --control-plane-endpoint=k8s-cp.tosak.internal:6443 \
+  --apiserver-advertise-address=10.0.1.5 \
+  --pod-network-cidr=10.244.0.0/16 \
+  --service-cidr=10.96.0.0/16 \
+  --apiserver-cert-extra-sans=10.100.0.1,46.62.209.249
+```
+
+The dry run reported the serving certificate it would sign, which is the thing
+worth reading before committing:
+
+```
+[certs] apiserver serving cert is signed for DNS names
+        [k8s-cp k8s-cp.tosak.internal kubernetes kubernetes.default
+         kubernetes.default.svc kubernetes.default.svc.cluster.local]
+        and IPs [10.96.0.1 10.0.1.5 10.100.0.1 46.62.209.249]
+```
+
+`10.96.0.1` proves the narrowed service CIDR took. `10.100.0.1` proves the
+operator's VPN route is in the certificate. Then remove the dry-run directory
+and run it for real:
+
+```
+rm -rf /etc/kubernetes/tmp
+kubeadm init \
+  --control-plane-endpoint=k8s-cp.tosak.internal:6443 \
+  --apiserver-advertise-address=10.0.1.5 \
+  --pod-network-cidr=10.244.0.0/16 \
+  --service-cidr=10.96.0.0/16 \
+  --apiserver-cert-extra-sans=10.100.0.1,46.62.209.249
+```
+
+| Flag | Why |
+|---|---|
+| `--control-plane-endpoint` | Without it a second control plane is impossible without a rebuild. It was absent from the original plan (ADR 0006). |
+| `--apiserver-advertise-address=10.0.1.5` | The API server binds the Private Network, not the Public Interface. |
+| `--pod-network-cidr=10.244.0.0/16` | Must match Flannel (ADR 0001). |
+| `--service-cidr=10.96.0.0/16` | Narrowed from the `/12` default, which **contains** the VPN range `10.100.0.0/24` — a latent API-server hijack (ADR 0001). |
+| `--apiserver-cert-extra-sans` | `10.100.0.1` is the operator route. `46.62.209.249` is break-glass only; port 6443 stays closed to the world. kubeadm adds the endpoint name itself. |
+
+### The join command is deliberately not recorded here
+
+`init` printed a bootstrap token and a CA hash. **The token value is not
+written into this repository.** It expires 24 hours after `init`, so it would
+be a stale secret in git within a day and useless in every later rebuild.
+
+Phase 3 mints a fresh one on the day:
+
+```
+kubeadm token create --print-join-command
+```
+
+### Verified
+
+```
+kubectl get nodes
+k8s-cp   NotReady   control-plane   v1.37.0   10.0.1.5   containerd://2.2.0
+
+taints      node-role.kubernetes.io/control-plane=NoSchedule
+            node.cloudprovider.kubernetes.io/uninitialized=NoSchedule
+            node.kubernetes.io/not-ready=NoSchedule
+providerID  (empty)
+
+kube-system  etcd, kube-apiserver, kube-controller-manager,
+             kube-scheduler, kube-proxy      all 1/1 Running
+             coredns x2                      0/1 Pending
+
+kubeadm-config  controlPlaneEndpoint: k8s-cp.tosak.internal:6443
+                podSubnet:            10.244.0.0/16
+                serviceSubnet:        10.96.0.0/16
+node podCIDR    10.244.0.0/24
+
+kubectl get --raw=/readyz     ok
+```
+
+**Three things look wrong here and are correct.** Do not act on any of them.
+
+- `NotReady` — there is no pod network until step 7.
+- `node.cloudprovider.kubernetes.io/uninitialized` and the empty `providerID` —
+  the CCM has not run yet. It is cleared in step 8.
+- CoreDNS `Pending` — the control plane keeps its `NoSchedule` taint and there
+  are no Workers. CoreDNS and, later, the CSI controller stay `Pending` for the
+  whole of Phase 2. Untainting the control plane to "fix" this is wrong.
+
+`kube-controller-manager` read `0/1 Running` at 23 seconds old and was `1/1` at
+four minutes. That was startup timing, not a fault.
+
+---
+
+## 6. Kubeconfig on the operator workstation
+
+**The old context collides exactly.** The dead cluster's entry was also named
+`kubernetes`, with user `kubernetes-admin`, context `kubernetes-admin@kubernetes`,
+**and the same server address `https://10.100.0.1:6443`** — the VPN address is
+reused, so the address alone does not distinguish them. Its CA and client
+certificate are the dead cluster's and cannot work against the new one. A
+plain merge would have silently overwritten a context while leaving its name
+looking correct.
+
+So every entity is renamed before the merge:
+
+```
+ssh cp-dev@10.100.0.1 'sudo cat /etc/kubernetes/admin.conf' > admin.conf
+chmod 600 admin.conf
+
+# cluster -> tosak, user -> tosak-admin, server -> https://10.100.0.1:6443
+kubectl --kubeconfig=admin.conf config rename-context \
+        kubernetes-admin@kubernetes tosak-admin@tosak
+
+cp ~/.kube/config ~/.kube/config.bak-2026-09-20
+KUBECONFIG=~/.kube/config:admin.conf kubectl config view --flatten > merged
+install -m 600 merged ~/.kube/config
+rm -f admin.conf merged
+```
+
+kubeadm writes the Endpoint name into `admin.conf`. The workstation
+deliberately does not resolve `.internal`, so the server line is rewritten to
+the VPN address, which is in the certificate (ADR 0006).
+
+`admin.conf` is a `cluster-admin` credential. It was held only in a temporary
+directory and deleted after the merge.
+
+### Verified
+
+Both contexts are present, and the old one is untouched, including its
+`argocd` default namespace:
+
+```
+CURRENT   NAME                          CLUSTER      AUTHINFO
+*         kubernetes-admin@kubernetes   kubernetes   kubernetes-admin   argocd
+          tosak-admin@tosak             tosak        tosak-admin
+```
+
+The new context was proven to answer **before** `current-context` moved:
+
+```
+kubectl --context=tosak-admin@tosak get nodes     →  k8s-cp
+kubectl config use-context tosak-admin@tosak
+```
+
+---
+
 ## Appendix — operator workstation repairs
 
 Not control-plane state. A rebuild onto a clean workstation would meet only
