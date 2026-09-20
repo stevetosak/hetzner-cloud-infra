@@ -110,3 +110,79 @@ curl -s -H "Authorization: Bearer $TF_VAR_HCLOUD_TOKEN" \
 port 22 for the whole of Phase 3; it is reached over the VPN.
 
 No server is attached to the worker firewall yet, so nothing became reachable.
+
+---
+
+## 2. Create the three servers
+
+```
+terraform -chdir=workers init
+terraform -chdir=workers plan -out=workers.tfplan
+terraform -chdir=workers apply workers.tfplan
+```
+
+```
+Plan: 3 to add, 0 to change, 0 to destroy.
+```
+
+Zero destroy and zero replace is the gate. Read the plan for what it does
+**not** contain: the names are literally `k8swk1`, `k8swk2`, `k8swk3`, with no
+suffix of any kind. `var.node_suffix` is gone and nothing replaced it, so the
+mechanism that renamed and therefore destroyed every worker on 2026-09-13
+cannot be expressed by this module (ADR 0005).
+
+```
+Apply complete! Resources: 3 added, 0 changed, 0 destroyed.
+
+worker_public_ips = {
+  "k8swk1" = "135.181.154.56"
+  "k8swk2" = "62.238.56.128"
+  "k8swk3" = "2.29.31.80"
+}
+```
+
+### Verified over the Hetzner API
+
+```
+curl -s -H "Authorization: Bearer $TF_VAR_HCLOUD_TOKEN" \
+  https://api.hetzner.cloud/v1/servers | jq .
+```
+
+| Name | id | type | location | public IPv4 | IPv6 | private | firewall | protection | labels |
+|---|---|---|---|---|---|---|---|---|---|
+| k8swk1 | `166652126` | cx23 | hel1 | 135.181.154.56 | none | 10.0.2.6 | `11651947` applied | none | `role=worker` |
+| k8swk2 | `166652125` | cx23 | hel1 | 62.238.56.128 | none | 10.0.2.7 | `11651947` applied | none | `role=worker` |
+| k8swk3 | `166652124` | cx23 | hel1 | 2.29.31.80 | none | 10.0.2.8 | `11651947` applied | none | `role=worker` |
+
+The project now holds exactly four servers. All four are in `hel1`, which
+ADR 0005 requires: Hetzner Volumes are location-bound, so a Worker must sit
+where the PostgreSQL volumes are.
+
+Workers carry **no** delete or rebuild protection, unlike the Control Plane.
+That is deliberate (ADR 0002): a Worker is meant to be replaceable.
+
+**API shape note.** `/v1/servers` now returns `location` at the top level of
+each server and no `datacenter` object at all. A `.datacenter.location.name`
+query returns `null` rather than failing. This is the second such change found
+during the rebuild — `/v1/actions` was removed earlier, in favour of
+`/v1/servers/actions`. Read the keys before trusting a path.
+
+### Stale host keys, before the first login
+
+```
+for ip in 135.181.154.56 62.238.56.128 2.29.31.80 \
+          10.100.0.2 10.100.0.3 10.100.0.4; do
+  ssh-keygen -F "$ip" >/dev/null && echo "$ip STALE" || echo "$ip clean"
+done
+```
+
+The three public addresses are newly allocated and clean. The three **VPN**
+addresses are not: `10.100.0.2`, `10.100.0.3` and `10.100.0.4` still hold the
+dead Workers' host keys, because VPN addresses are assigned by this repo and
+are therefore always reused.
+
+This is the same lesson the Control Plane taught at `46.62.209.249` and again
+at `10.100.0.1`: **a reused address means a stale `known_hosts` entry at every
+address the host answers on.** The public entry being clean proves nothing
+about the VPN entry. Each is cleared at the point the address is first used,
+so the removal is recorded in the step that needs it.
