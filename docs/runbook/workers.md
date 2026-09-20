@@ -412,3 +412,126 @@ it has no configuration yet. That is correct, not a fault.
 | `getent hosts k8s-cp.tosak.internal` | `10.0.1.5` | `10.0.1.5` | `10.0.1.5` |
 | `--node-ip` | 10.0.2.6 | 10.0.2.7 | 10.0.2.8 |
 | kubelet | enabled / inactive | same | same |
+
+---
+
+## 6. WireGuard
+
+A Worker does **not** need the VPN to join the cluster — it reaches the API
+server over the private network, which step 3 already proved. The tunnel
+exists so the operator can reach the Worker, and so the Worker's port 22 need
+never be open publicly (ADR 0006).
+
+### Worker side, each host as `root`
+
+```
+apt-get install -y wireguard
+wg genkey > /etc/wireguard/private.key
+wg pubkey < /etc/wireguard/private.key > /etc/wireguard/public.key
+```
+
+```
+/etc/wireguard/wg0.conf   (mode 600)
+
+[Interface]
+Address    = <vpn ip>/24
+PrivateKey = <generated>
+
+[Peer]
+# k8s-cp, the VPN hub and router
+PublicKey           = Cy2AjXYE8BHjoPJkDocHywi9ZYMADOljW5qvKUIUngk=
+AllowedIPs          = 10.100.0.0/24
+Endpoint            = 46.62.209.249:51820
+PersistentKeepalive = 25
+```
+
+```
+systemctl enable wg-quick@wg0
+systemctl restart wg-quick@wg0
+```
+
+Two details carry the hub-and-spoke design:
+
+- **No `ListenPort`.** The spoke dials out from an ephemeral port, so it never
+  needs an inbound WireGuard rule. This is exactly why `tosak-worker-firewall`
+  holds nothing in its steady state, and why one shared firewall would have
+  been wrong.
+- **`AllowedIPs = 10.100.0.0/24`, not just the hub's address.** The Control
+  Plane is the hub *and* the router between peers, so the operator's laptop at
+  `10.100.0.69` is reached through it. `net.ipv4.ip_forward` is already `1` on
+  the Control Plane.
+
+Generated public keys:
+
+| Worker | VPN | public key |
+|---|---|---|
+| k8swk1 | 10.100.0.2 | `ZPJXxqmB+FJiSATDOEF6KXIf1aAoe+2p0B/0CqLkSU4=` |
+| k8swk2 | 10.100.0.3 | `UC0IQXJAVDXOA9lsKoqwtcN0qRtYC94H0Tmf079C0Wk=` |
+| k8swk3 | 10.100.0.4 | `is9OmqLOARa4HFU8Thx1FuUEIo4Vt63YTVEc2TlhD10=` |
+
+### 🔴 Hub side: append, never regenerate
+
+```
+cp /etc/wireguard/wg0.conf /etc/wireguard/wg0.conf.bak-phase3-2026-09-20
+# for each worker: append a [Peer] block to the file, then
+wg set wg0 peer <public key> allowed-ips <vpn ip>/32
+```
+
+Two rules, both learned the hard way:
+
+- **The hub's `wg0.conf` is appended to, never rewritten.**
+  `bootstrap_workers.sh` rebuilds it from a template — it would have discarded
+  the hub config written by hand in step 3 of the Control Plane runbook,
+  including the operator's own peer.
+- **`wg-quick@wg0` is not restarted on the hub.** The operator's SSH session
+  to the Control Plane runs over that tunnel, so a restart cuts the session
+  that is performing the change. `wg set` is live and additive; the file edit
+  only has to survive a reboot.
+
+The placeholder comment left in step 3 of the Control Plane runbook was
+removed once the real peers replaced it.
+
+### Verification
+
+Handshakes did not all land at once. `k8swk3` connected immediately;
+`k8swk1` and `k8swk2` had already started their interfaces before the hub knew
+their keys, so their first handshakes were rejected and `PersistentKeepalive`
+retried them in. All three were up within one keepalive interval. **A Worker
+starting its tunnel before it is peered is normal and self-correcting**; it is
+not a reason to restart anything.
+
+From the Control Plane, all three VPN addresses answer. From the laptop, all
+three answer too — which proves the hub is routing between peers, not just
+terminating them.
+
+### Stale host keys at the VPN addresses
+
+```
+cp ~/.ssh/known_hosts ~/.ssh/known_hosts.bak-phase3-2026-09-20
+ssh-keygen -R 10.100.0.2
+ssh-keygen -R 10.100.0.3
+ssh-keygen -R 10.100.0.4
+```
+
+All three held the **dead** Workers' host keys, exactly as predicted in step 2.
+The public addresses were clean because they were newly allocated; the VPN
+addresses are assigned by this repo and are therefore always reused. Without
+this, the first VPN login would have failed with REMOTE HOST IDENTIFICATION
+HAS CHANGED.
+
+### The operator route, proven before port 22 is withdrawn
+
+```
+ssh -i ~/.ssh/hetzner-cluster tosak@10.100.0.2
+```
+
+| Worker | hostname | `$SSH_CONNECTION` client | `sudo -n` |
+|---|---|---|---|
+| k8swk1 | k8swk1 | 10.100.0.69 | ok |
+| k8swk2 | k8swk2 | 10.100.0.69 | ok |
+| k8swk3 | k8swk3 | 10.100.0.69 | ok |
+
+The client address is the laptop's **VPN** address, so this traffic went
+through the tunnel and not over the public interface. The way in is proven
+working before the way in over port 22 is taken away — the same ordering the
+Control Plane used.
