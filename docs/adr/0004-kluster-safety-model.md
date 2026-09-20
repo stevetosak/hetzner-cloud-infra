@@ -68,8 +68,10 @@ and a printed expected-versus-planned diff. `--allow-unexpected` overrides, for
 when the mismatch is legitimate. Plan mode warns rather than aborting because
 its whole job is to show you what is about to happen.
 
-**`allow_public_ssh` is closed again.** Any command that opens it applies the
-default back once bootstrapping finishes.
+**Bootstrap SSH is closed again.** Any command that opens
+`allow_public_ssh_worker` — or `allow_public_ssh_cp`, though kluster never
+touches the Control Plane (ADR 0002) — applies the default back once
+bootstrapping finishes.
 
 ## Consequences
 

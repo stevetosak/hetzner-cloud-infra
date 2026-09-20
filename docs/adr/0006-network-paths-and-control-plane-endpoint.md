@@ -7,6 +7,14 @@ Date: 2026-09-20
 Accepted. Extends ADR 0001, which chose the CIDRs and the CNI. This one says
 which interface carries which traffic, and what holds that true.
 
+Amended 2026-09-20, at the close of Phase 2: the single `allow_public_ssh`
+variable named below is now two, `allow_public_ssh_cp` and
+`allow_public_ssh_worker`. The two-firewall decision stands unchanged; only its
+switch was split. One switch meant closing the Control Plane's bootstrap port
+would also have closed every Worker's, so Phase 3 would have had to reopen the
+Control Plane it no longer needs. Two firewalls that each say one thing were
+the point, and they now have one control each.
+
 ## Context
 
 Every server has three interfaces: a public NIC, `enp7s0` on the Private
@@ -100,7 +108,8 @@ needs an inbound port.
 
 `shared/` holds **two** firewalls rather than one. `tosak-cp-firewall` opens
 UDP 51820 to the world; `tosak-worker-firewall` opens nothing, apart from
-bootstrap SSH while `allow_public_ssh` is set. One firewall covering every
+bootstrap SSH while `allow_public_ssh_worker` is set. One firewall covering
+every
 server would have exposed a world-reachable UDP port on four machines to serve
 one. Hetzner firewalls are stateful, so a Worker with no inbound rule still
 reaches apt and the image registries and the replies come back — which is what
@@ -134,8 +143,8 @@ nothing in it is secret.
   a Worker missing that line cannot reach the API server.
 - The Control Plane is a single point of failure for **operator access**, not
   just for the API. It is the VPN hub and router, so while it is down there is
-  no SSH to any Worker either. Recovery starts with `allow_public_ssh = true`
-  and a `terraform apply` in `shared/`.
+  no SSH to any Worker either. Recovery starts with
+  `allow_public_ssh_worker = true` and a `terraform apply` in `shared/`.
 - A second control plane stays possible: point the name at a load balancer on
   6443 inside `10.0.4.0/24`, then `kubeadm join --control-plane`. The
   certificates already trust the name.

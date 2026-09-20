@@ -34,7 +34,7 @@ resource "hcloud_firewall" "cp" {
   }
 
   dynamic "rule" {
-    for_each = var.allow_public_ssh ? [1] : []
+    for_each = var.allow_public_ssh_cp ? [1] : []
     content {
       direction  = "in"
       protocol   = "tcp"
@@ -47,12 +47,12 @@ resource "hcloud_firewall" "cp" {
 resource "hcloud_firewall" "worker" {
   name = "tosak-worker-firewall"
 
-  # Bootstrap SSH and nothing else. With allow_public_ssh false this firewall
-  # holds no inbound rule at all, which is the intended steady state: a Worker
-  # accepts nothing on its public interface. Operators reach it over the VPN,
-  # through the Control Plane.
+  # Bootstrap SSH and nothing else. With allow_public_ssh_worker false this
+  # firewall holds no inbound rule at all, which is the intended steady state:
+  # a Worker accepts nothing on its public interface. Operators reach it over
+  # the VPN, through the Control Plane.
   dynamic "rule" {
-    for_each = var.allow_public_ssh ? [1] : []
+    for_each = var.allow_public_ssh_worker ? [1] : []
     content {
       direction  = "in"
       protocol   = "tcp"

@@ -29,5 +29,5 @@ output "cp_primary_ip_address" {
 
 output "admin_ssh_ip" {
   value       = local.admin_ssh_ip
-  description = "The address port 22 is pinned to while var.allow_public_ssh is true."
+  description = "The address port 22 is pinned to while either allow_public_ssh_cp or allow_public_ssh_worker is true."
 }
