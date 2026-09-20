@@ -675,3 +675,117 @@ coredns x2, etcd, kube-apiserver, kube-controller-manager, kube-scheduler,
 hcloud-cloud-controller-manager, hcloud-csi-controller (5/5),
 hcloud-csi-node x4 (3/3 each), kube-proxy x4
 ```
+
+---
+
+## 9. Close bootstrap SSH
+
+`allow_public_ssh_worker` defaults false, so a plain plan closes it.
+
+```
+terraform -chdir=shared plan -out=worker-ssh-close.tfplan
+terraform -chdir=shared apply worker-ssh-close.tfplan
+```
+
+```
+Plan: 0 to add, 1 to change, 0 to destroy.
+```
+
+The plan printed `# (3 unchanged blocks hidden)` on a firewall whose
+configuration declares one rule and no `apply_to`. Reading the plan JSON
+showed what they are:
+
+```
+terraform -chdir=shared show -json worker-ssh-close.tfplan \
+  | jq '.resource_changes[] | select(.address=="hcloud_firewall.worker")'
+```
+
+Three `apply_to` entries — servers `166652124`, `166652125`, `166652126` —
+identical before and after. `apply_to` is Optional+Computed in the provider,
+so a refresh fills it in from the API even though this module never names a
+server; the Workers attached themselves through `firewall_ids` in the
+`workers` module, as ADR 0002 requires. **The attachment is not being torn
+off.** The only real change is `rule: [one] → []`.
+
+Which is exactly the update the provider cannot perform.
+
+### 🔴 The apply lied, again, on schedule
+
+Terraform completed without error. The API said otherwise:
+
+```
+curl -s -H "Authorization: Bearer $TF_VAR_HCLOUD_TOKEN" \
+  https://api.hetzner.cloud/v1/firewalls | jq .
+```
+
+```
+11651947 tosak-worker-firewall rules=1 [in tcp 22 185.100.244.43/32]
+         applied_to=[166652124,166652125,166652126]
+```
+
+**Port 22 was open on all three Workers while Terraform's state said it was
+closed.** This is the precise failure ADR 0004 exists to prevent, and it was
+caught only because the standing rule is to read the API rather than trust
+apply output. Predicted in advance from the Control Plane's experience, and it
+still happened exactly as written.
+
+### Clearing it by hand
+
+```
+curl -s -X POST -H "Authorization: Bearer $TF_VAR_HCLOUD_TOKEN" \
+  -H "Content-Type: application/json" -d '{"rules":[]}' \
+  https://api.hetzner.cloud/v1/firewalls/11651947/actions/set_rules
+```
+
+```
+set_firewall_rules success 100%
+apply_firewall   running  10%     (x3, one per attached server)
+```
+
+The API accepts an empty rule set without complaint, so the provider is the
+limit and not Hetzner. Note the second action: with servers attached, clearing
+the rules also queues an `apply_firewall` per server. On the Control Plane this
+step had no attached-server propagation to wait for; here there are three.
+
+### Final verification
+
+```
+curl … /v1/firewalls | jq .
+curl … /v1/servers   | jq .
+nc -vz <address> 22
+kubectl get --raw=/readyz
+terraform -chdir=shared  plan -detailed-exitcode
+terraform -chdir=workers plan -detailed-exitcode
+```
+
+| Check | Result |
+|---|---|
+| `tosak-cp-firewall` 10289761 | `in udp 51820 0.0.0.0/0`, nothing else |
+| `tosak-worker-firewall` 11651947 | **no rules at all** |
+| firewall status per server | `applied` on all four |
+| `nc -vz … 22` on all four public addresses | closed / filtered |
+| `ssh cp-dev@10.100.0.1` | works |
+| `ssh tosak@10.100.0.2/.3/.4` | works |
+| `kubectl get --raw=/readyz` | `ok` |
+| `terraform -chdir=shared plan` | `No changes.`, exit code 0 |
+| `terraform -chdir=workers plan` | `No changes.`, exit code 0 |
+
+**Port 22 is closed cluster-wide.** The only port open to the world anywhere
+in this cluster is UDP 51820 on the Control Plane.
+
+---
+
+## Phase 3 final state
+
+| | |
+|---|---|
+| Nodes | `k8s-cp`, `k8swk1`, `k8swk2`, `k8swk3` — all `Ready`, all v1.37.0 |
+| Node names | stable, no suffix; a rebuild reuses them |
+| InternalIP | private network on every node |
+| providerID | set by the CCM on every node |
+| CNI | Flannel `10.244.0.0/16`, bound to `enp7s0`, pod MTU 1400 |
+| Service CIDR | `10.96.0.0/16` |
+| Storage | `hcloud-volumes` default; CSI controller on `k8swk1`, node plugin on all four |
+| VPN | hub `10.100.0.1`, spokes `.2 .3 .4`, operator `.69` |
+| Public exposure | UDP 51820 on the Control Plane only |
+| `kube-system` | 16 pods, all Running |
