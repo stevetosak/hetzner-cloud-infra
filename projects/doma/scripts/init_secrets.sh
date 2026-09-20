@@ -10,12 +10,12 @@
 # clear a field back to empty, use `kubectl edit secret credentials -n doma`
 # instead of this script.
 #
-# DATABASE_URL: doma's database lives on the shared authos-pg-cluster,
-# owned by the existing `authos` role (same one wasteio/imaps use, not a
+# DATABASE_URL: doma's database lives on the shared tosak-pg-cluster,
+# owned by the shared `tosak` role (same one wasteio/imaps use, not a
 # new one). Look up its password with:
 #   kubectl get secret db-credentials -n pg-cluster -o jsonpath='{.data.password}' | base64 -d
 # then assemble:
-#   postgresql://authos:<password>@authos-pg-cluster-rw.pg-cluster.svc.cluster.local:5432/doma
+#   postgresql://tosak:<password>@tosak-pg-cluster-rw.pg-cluster.svc.cluster.local:5432/doma
 set -euo pipefail
 
 current_value() {

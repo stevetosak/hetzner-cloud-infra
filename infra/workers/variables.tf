@@ -19,6 +19,7 @@ variable "location" {
 variable "workers" {
   type = map(object({
     private_ip  = string
+    vpn_ip      = string
     server_type = string
     labels      = map(string)
   }))
@@ -28,6 +29,17 @@ variable "workers" {
     timestamp, a random id or any other per-run value.
 
     Each private_ip must be unique and inside the worker subnet 10.0.2.0/24.
+
+    vpn_ip is the worker's address on the WireGuard VPN. Terraform creates no
+    WireGuard interface, so this is a declaration Terraform carries rather than
+    a resource it manages — the bootstrap reads it, BY NAME, through the
+    worker_vpn_ips output.
+
+    It is declared here because the previous bootstrap assigned VPN addresses by
+    counting lines in a generated file, so a worker's address depended on its
+    position in that file rather than on its identity. That is the same defect
+    as the deleted node_suffix: identity must be written down, never derived
+    per run.
   EOT
 
   validation {
@@ -43,5 +55,20 @@ variable "workers" {
   validation {
     condition     = alltrue([for w in var.workers : can(regex("^10\\.0\\.2\\.[0-9]{1,3}$", w.private_ip))])
     error_message = "Worker private_ip must be inside the worker subnet 10.0.2.0/24."
+  }
+
+  validation {
+    condition     = length(distinct([for w in var.workers : w.vpn_ip])) == length(var.workers)
+    error_message = "Each worker needs its own vpn_ip."
+  }
+
+  validation {
+    condition     = alltrue([for w in var.workers : can(regex("^10\\.100\\.0\\.[0-9]{1,3}$", w.vpn_ip))])
+    error_message = "Worker vpn_ip must be inside the VPN subnet 10.100.0.0/24."
+  }
+
+  validation {
+    condition     = alltrue([for w in var.workers : w.vpn_ip != "10.100.0.1"])
+    error_message = "10.100.0.1 is the control plane, the VPN hub. A worker cannot take it."
   }
 }

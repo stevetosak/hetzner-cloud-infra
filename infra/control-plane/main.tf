@@ -21,14 +21,14 @@ resource "hcloud_server" "control_plane" {
   image       = var.image
   location    = var.location
 
-  ssh_keys     = [data.hcloud_ssh_key.authos_cluster.id]
-  firewall_ids = [data.hcloud_firewall.cluster.id]
+  ssh_keys     = [data.hcloud_ssh_key.cluster.id]
+  firewall_ids = [data.hcloud_firewall.cp.id]
 
   delete_protection  = true
   rebuild_protection = true
 
   network {
-    network_id = data.hcloud_network.authos.id
+    network_id = data.hcloud_network.cluster.id
     ip         = var.private_ip
   }
 

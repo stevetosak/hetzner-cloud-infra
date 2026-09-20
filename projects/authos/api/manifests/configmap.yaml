@@ -6,7 +6,7 @@ metadata:
 data:
   REDIS_HOST: "redis-master.redis.svc.cluster.local"
   REDIS_PORT: "6379"
-  DB_HOST: "authos-pg-cluster-rw.pg-cluster.svc.cluster.local"
+  DB_HOST: "tosak-pg-cluster-rw.pg-cluster.svc.cluster.local"
   DB_PORT: "5432"
   DB_NAME: "authos"
   KEYSTORE_PATH: "/etc/keystore/keystore.p12"

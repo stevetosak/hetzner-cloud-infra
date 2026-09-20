@@ -1,7 +1,7 @@
 # doma (household hub)
 
 Deployed at **https://doma.tosak.net**. TanStack Start (Node/Nitro) server, own database on
-the shared `authos-pg-cluster` (owned by the existing `authos` role — same as wasteio/imaps,
+the shared `tosak-pg-cluster` (owned by the shared `tosak` role — same as wasteio/imaps,
 not a new role).
 
 CI (`doma` repo `.github/workflows/deploy.yaml`) gates on typecheck/lint/format/unit tests,

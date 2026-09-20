@@ -5,15 +5,15 @@
 # Apply order is shared/ first. If these lookups fail, shared/ has not been
 # applied, or a name was changed.
 
-data "hcloud_network" "authos" {
-  name = "authos-net"
+data "hcloud_network" "cluster" {
+  name = "tosak-net"
 }
 
-data "hcloud_firewall" "cluster" {
-  name = "authos-cluster-firewall"
+data "hcloud_firewall" "worker" {
+  name = "tosak-worker-firewall"
 }
 
-data "hcloud_ssh_key" "authos_cluster" {
-  name = "authos-cluster"
+data "hcloud_ssh_key" "cluster" {
+  name = "tosak-cluster"
 }
 

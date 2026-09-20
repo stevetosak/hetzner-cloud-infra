@@ -3,8 +3,8 @@
 # project. They are managed here instead (ADR 0002: shared/ owns the ssh key
 # and the primary IP). Both are imported, not created.
 
-resource "hcloud_ssh_key" "authos_cluster" {
-  name       = "authos-cluster"
+resource "hcloud_ssh_key" "cluster" {
+  name       = "tosak-cluster"
   public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB+HWWsHT00arJTAEDkaWOFTFcF2zLD+5PJLg7cVYy8u"
 
   lifecycle {
@@ -12,8 +12,8 @@ resource "hcloud_ssh_key" "authos_cluster" {
   }
 }
 
-resource "hcloud_primary_ip" "cp_authos_ip" {
-  name     = "cp-authos-ip"
+resource "hcloud_primary_ip" "cp" {
+  name     = "tosak-cp-ip"
   type     = "ipv4"
   location = "hel1"
 
@@ -29,4 +29,14 @@ resource "hcloud_primary_ip" "cp_authos_ip" {
   lifecycle {
     prevent_destroy = true
   }
+}
+
+moved {
+  from = hcloud_ssh_key.authos_cluster
+  to   = hcloud_ssh_key.cluster
+}
+
+moved {
+  from = hcloud_primary_ip.cp_authos_ip
+  to   = hcloud_primary_ip.cp
 }

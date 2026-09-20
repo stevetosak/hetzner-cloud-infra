@@ -16,3 +16,11 @@ crash.log
 
 # .terraform.lock.hcl is deliberately NOT ignored — provider versions are
 # pinned per module and belong in review.
+
+# Claude Code local settings (personal, not team config).
+.claude/settings.local.json
+
+# kluster is built from source (branch feat/kluster-cli); the 11 MB binary is
+# a build artefact, not infrastructure. kluster.yaml IS committed.
+tools/kluster/kluster
+tools/kluster/.idea/

@@ -1,20 +1,28 @@
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
-  name: authos-pg-cluster
+  name: tosak-pg-cluster
   namespace: pg-cluster
 spec:
   instances: 3
   bootstrap:
     initdb:
+      # The database is Authos's own. The owner role is NOT — it owns doma,
+      # wasteio and imaps too, so it carries the organisation name (ADR 0007).
       database: authos
-      owner: authos
+      owner: tosak
       secret:
         name: db-credentials
 
   storage:
-    size: 5Gi
-    storageClass: longhorn
+    # Longhorn is gone (ADR 0005). PostgreSQL is the reason the rebuild moved
+    # to Hetzner Volumes: a Volume outlives the server that mounts it, so
+    # destroying every Worker no longer destroys the data.
+    #
+    # 10Gi per instance, three instances — the figure ADR 0005 costed at about
+    # EUR 1.32/month. It was 5Gi here, which did not match the decision.
+    size: 10Gi
+    storageClass: hcloud-volumes
 
   resources:
     requests:

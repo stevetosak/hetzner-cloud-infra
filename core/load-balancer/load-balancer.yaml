@@ -4,7 +4,7 @@ metadata:
   name: lb-service
   namespace: ingress-public
   annotations:
-    load-balancer.hetzner.cloud/name: "authos-lb"
+    load-balancer.hetzner.cloud/name: "tosak-lb"
     load-balancer.hetzner.cloud/type: lb11
     load-balancer.hetzner.cloud/location: hel1
     load-balancer.hetzner.cloud/use-private-ip: "true"

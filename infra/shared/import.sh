@@ -34,18 +34,21 @@ import() {
   terraform import "$address" "$id"
 }
 
-import hcloud_network.authos_network "$NETWORK_ID"
+import hcloud_network.cluster "$NETWORK_ID"
 
 # A subnet's import id is "<network id>-<ip range>".
-import hcloud_network_subnet.cp_authos_subnet     "${NETWORK_ID}-10.0.1.0/24"
-import hcloud_network_subnet.worker_authos_subnet "${NETWORK_ID}-10.0.2.0/24"
-import hcloud_network_subnet.db_authos_subnet     "${NETWORK_ID}-10.0.3.0/24"
-import hcloud_network_subnet.lb_authos_subnet     "${NETWORK_ID}-10.0.4.0/24"
+import hcloud_network_subnet.cp       "${NETWORK_ID}-10.0.1.0/24"
+import hcloud_network_subnet.worker   "${NETWORK_ID}-10.0.2.0/24"
+import hcloud_network_subnet.reserved "${NETWORK_ID}-10.0.3.0/24"
+import hcloud_network_subnet.lb       "${NETWORK_ID}-10.0.4.0/24"
 
-import hcloud_firewall.authos_cluster_firewall "$FIREWALL_ID"
-import hcloud_ssh_key.authos_cluster           "$SSH_KEY_ID"
-import hcloud_primary_ip.cp_authos_ip          "$PRIMARY_IP_ID"
+import hcloud_firewall.cp      "$FIREWALL_ID"   # becomes tosak-cp-firewall
+import hcloud_ssh_key.cluster  "$SSH_KEY_ID"
+import hcloud_primary_ip.cp    "$PRIMARY_IP_ID"
 
+echo
+echo "hcloud_firewall.worker is NOT imported — it does not exist yet and is"
+echo "created by the first apply. See ADR 0006."
 echo
 echo "Done. Now verify with:  terraform plan"
 echo "Expect zero create, zero destroy, zero replace. See infra/README.md."

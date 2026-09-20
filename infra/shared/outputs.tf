@@ -1,26 +1,30 @@
 output "network_id" {
-  value       = hcloud_network.authos_network.id
+  value       = hcloud_network.cluster.id
   description = "Provided for humans and scripts. Other modules resolve the network by name, not from this output (ADR 0002)."
 }
 
 output "network_name" {
-  value = hcloud_network.authos_network.name
+  value = hcloud_network.cluster.name
 }
 
-output "firewall_name" {
-  value = hcloud_firewall.authos_cluster_firewall.name
+output "cp_firewall_name" {
+  value = hcloud_firewall.cp.name
+}
+
+output "worker_firewall_name" {
+  value = hcloud_firewall.worker.name
 }
 
 output "ssh_key_name" {
-  value = hcloud_ssh_key.authos_cluster.name
+  value = hcloud_ssh_key.cluster.name
 }
 
 output "cp_primary_ip_name" {
-  value = hcloud_primary_ip.cp_authos_ip.name
+  value = hcloud_primary_ip.cp.name
 }
 
 output "cp_primary_ip_address" {
-  value = hcloud_primary_ip.cp_authos_ip.ip_address
+  value = hcloud_primary_ip.cp.ip_address
 }
 
 output "admin_ssh_ip" {

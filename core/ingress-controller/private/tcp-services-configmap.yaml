@@ -4,4 +4,4 @@ metadata:
   name: tcp-services
   namespace: ingress-private
 data:
-  5432: "pg-cluster/authos-pg-cluster-rw:5432"
+  5432: "pg-cluster/tosak-pg-cluster-rw:5432"

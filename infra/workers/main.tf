@@ -21,11 +21,11 @@ resource "hcloud_server" "workers" {
   image       = var.image
   location    = var.location
 
-  ssh_keys     = [data.hcloud_ssh_key.authos_cluster.id]
-  firewall_ids = [data.hcloud_firewall.cluster.id]
+  ssh_keys     = [data.hcloud_ssh_key.cluster.id]
+  firewall_ids = [data.hcloud_firewall.worker.id]
 
   network {
-    network_id = data.hcloud_network.authos.id
+    network_id = data.hcloud_network.cluster.id
     ip         = each.value.private_ip
   }
 

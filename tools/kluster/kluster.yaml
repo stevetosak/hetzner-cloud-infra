@@ -1,0 +1,50 @@
+# kluster configuration. COMMITTED on purpose.
+#
+# This file is the only written record of the VPN topology — the hub address,
+# the port, and which public keys may join. The previous cluster's CNI choice
+# survived nowhere and had to be re-decided from scratch after the loss
+# (ADR 0001). A topology that exists only on one laptop is the same exposure.
+#
+# It holds no secret. Public keys are public, and the Hetzner token lives in
+# infra/.envrc, which stays gitignored.
+#
+# kluster is a convenience over Terraform and the runbook, never the authority
+# (ADR 0004). Per-worker addresses are NOT here: a worker's identity — its
+# name, its private address, its VPN address — is declared once, in
+# infra/workers/terraform.tfvars.
+
+controlPlane:
+  privateIP: "10.0.1.5"
+  vpnIP: "10.100.0.1"
+  # The cluster's own name for its API server. Every node resolves it to
+  # privateIP from its own /etc/hosts; the laptop deliberately does not resolve
+  # it and uses vpnIP instead. See ADR 0006.
+  #
+  # kluster's config struct does not carry this field yet — Phase 3.
+  endpoint: "k8s-cp.tosak.internal"
+  sshUser: cp-dev
+
+node:
+  sshUser: root
+  user: tosak
+  networkInterface: enp7s0
+
+wireguard:
+  subnet: "10.100.0.0/24"
+  port: 51820
+  peers:
+    - name: admin-laptop
+      publicKey: "7v0/KwZNn08j5rtN8IQ2C8f9kOeuEqKEIlWwr4Qhq00="
+      allowedIPs: "10.100.0.69/32"
+
+versions:
+  containerd: "2.2.0"
+  runc: "1.4.0"
+  cniPlugins: "1.9.0"
+  kubernetes: "v1.37"
+
+terraform:
+  # STALE. infra/ is now three root modules — shared/, control-plane/, workers/
+  # — and a single workDir cannot address them. kluster must take one path per
+  # module before it is used again. Phase 3 of the rebuild runbook.
+  workDir: ../../infra

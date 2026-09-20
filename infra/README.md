@@ -4,7 +4,7 @@ Three root modules, three state files, one Hetzner project.
 
 | Module | Owns | State key |
 |---|---|---|
-| `shared/` | network `authos-net`, 4 subnets, firewall, ssh key, primary IP | `tfstate/shared.tfstate` |
+| `shared/` | network `tosak-net`, 4 subnets, firewall, ssh key, primary IP | `tfstate/shared.tfstate` |
 | `control-plane/` | the server `k8s-cp`, and nothing else | `tfstate/control-plane.tfstate` |
 | `workers/` | the worker map `k8swk1..3`, and nothing else | `tfstate/workers.tfstate` |
 
