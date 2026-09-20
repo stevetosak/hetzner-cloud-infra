@@ -535,3 +535,143 @@ The client address is the laptop's **VPN** address, so this traffic went
 through the tunnel and not over the public interface. The way in is proven
 working before the way in over port 22 is taken away — the same ordering the
 Control Plane used.
+
+---
+
+## 7. Join the cluster
+
+The token minted by `kubeadm init` expires 24 hours after init, so it was
+gone. A fresh one is minted on the Control Plane and used immediately:
+
+```
+ssh cp-dev@10.100.0.1 sudo kubeadm token create --print-join-command
+```
+
+It prints:
+
+```
+kubeadm join k8s-cp.tosak.internal:6443 --token <redacted> \
+  --discovery-token-ca-cert-hash sha256:a4aab644…
+```
+
+**The token is not recorded here**, deliberately — it is a bootstrap
+credential. The CA hash is a public fingerprint and is safe to keep.
+
+Note what the command names: `k8s-cp.tosak.internal:6443`. Step 5's
+`/etc/hosts` line is what makes it resolvable. This is the step that would
+have failed without it.
+
+The joins were run **over the VPN**, as `tosak` with `sudo`:
+
+```
+ssh tosak@10.100.0.2 sudo kubeadm join k8s-cp.tosak.internal:6443 …
+ssh tosak@10.100.0.3 sudo kubeadm join …
+ssh tosak@10.100.0.4 sudo kubeadm join …
+```
+
+Public port 22 was still open at this point, but was not used. Running the
+join over the tunnel proves the rest of the build has no dependency on the
+bootstrap port before that port is withdrawn.
+
+All three reported:
+
+```
+This node has joined the cluster:
+* Certificate signing request was sent to apiserver and a response was received.
+* The Kubelet was informed of the new secure connection details.
+```
+
+---
+
+## 8. Verify the cluster
+
+### Nodes
+
+```
+kubectl get nodes -o wide
+kubectl get nodes -o custom-columns='NAME:.metadata.name,PROVIDERID:.spec.providerID,TAINTS:.spec.taints[*].key'
+```
+
+| Node | Status | Version | InternalIP | ExternalIP | providerID | Taints |
+|---|---|---|---|---|---|---|
+| k8s-cp | Ready | v1.37.0 | 10.0.1.5 | 46.62.209.249 | `hcloud://166646798` | `node-role.kubernetes.io/control-plane` |
+| k8swk1 | Ready | v1.37.0 | 10.0.2.6 | 135.181.154.56 | `hcloud://166652126` | none |
+| k8swk2 | Ready | v1.37.0 | 10.0.2.7 | 62.238.56.128 | `hcloud://166652125` | none |
+| k8swk3 | Ready | v1.37.0 | 10.0.2.8 | 2.29.31.80 | `hcloud://166652124` | none |
+
+Every InternalIP is the **private** address, which is what `--node-ip` is for.
+Every Worker already carries a `providerID` and **no**
+`node.cloudprovider.kubernetes.io/uninitialized` taint: the CCM saw each node
+and initialised it within seconds of the join. Nothing had to be prompted.
+
+### Flannel bound the right interface on every node
+
+```
+kubectl logs -n kube-flannel <pod> -c kube-flannel | grep 'Using interface'
+```
+
+```
+k8swk1  Using interface with name enp7s0 and address 10.0.2.6
+k8swk2  Using interface with name enp7s0 and address 10.0.2.7
+k8swk3  Using interface with name enp7s0 and address 10.0.2.8
+k8s-cp  Using interface with name enp7s0 and address 10.0.1.5
+```
+
+The `--iface-regex=^10\.0\.` pin holds on Workers as well as on the Control
+Plane. Without it flannel binds the public NIC and pod traffic leaves the
+private network — silently.
+
+Pod subnets: `10.244.0.0/24` on the Control Plane, then `10.244.1/2/3.0/24`.
+
+### The MTU chain, end to end
+
+| Layer | Value |
+|---|---|
+| Hetzner private interface `enp7s0` | 1450 |
+| `core/cni/flannel.yaml` `Backend.MTU` | 1450 — the **underlay** |
+| `/run/flannel/subnet.env` `FLANNEL_MTU` | 1400 |
+| `flannel.1` and `cni0` | 1400 |
+| Pod `eth0` | 1400 |
+
+Identical on all four nodes. The Phase 2 correction — `Backend.MTU` is the
+underlay and flannel subtracts the 50-byte VXLAN overhead itself — reproduces
+from a clean start. A Worker built from this runbook needs no
+`ip link delete flannel.1`.
+
+### Pod-to-pod traffic across nodes
+
+A throwaway `busybox:1.37` DaemonSet in a `netcheck` namespace, one pod per
+Worker, deleted afterwards.
+
+| Test | Result |
+|---|---|
+| ping k8swk1 → k8swk2, k8swk1 → k8swk3 | 0% loss |
+| ping with a 1372-byte payload (1400 total, fills the MTU) | 0% loss |
+| 4 MiB TCP pull k8swk1 → k8swk2 | ok, 0.25 s |
+| 4 MiB TCP pull k8swk3 → k8swk2 | ok |
+| `nslookup kubernetes.default.svc.cluster.local` | `10.96.0.1` |
+
+The bulk TCP transfers matter more than the pings: an MTU mismatch usually
+shows as a TCP black hole, where small packets pass and large ones vanish.
+Both directions moved 4 MiB cleanly.
+
+DNS resolving to `10.96.0.1` also confirms the narrowed service CIDR
+`10.96.0.0/16` (ADR 0001). The `/12` default would have contained the
+WireGuard range `10.100.0.0/24`.
+
+BusyBox `ping` has no `-M do` flag, so a don't-fragment test was not possible
+from inside the pod. The 1372-byte payload and the bulk transfers cover the
+same ground.
+
+### The Pending pod resolved itself
+
+`hcloud-csi-controller` sat Pending through all of Phase 2 — it tolerates
+neither `control-plane:NoSchedule` nor `uninitialized`, so it had nowhere to
+go. It scheduled onto `k8swk1` seconds after the first join, with nothing
+applied. `kube-system` now runs 16 pods, all Running:
+
+```
+coredns x2, etcd, kube-apiserver, kube-controller-manager, kube-scheduler,
+hcloud-cloud-controller-manager, hcloud-csi-controller (5/5),
+hcloud-csi-node x4 (3/3 each), kube-proxy x4
+```
