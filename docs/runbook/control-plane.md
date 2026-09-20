@@ -710,12 +710,116 @@ taints      node-role.kubernetes.io/control-plane=NoSchedule
 providerID  hcloud://166646798
 /readyz     ok
 storage     hcloud-volumes (default)
+firewall    tosak-cp-firewall — in udp 51820 only; port 22 closed (step 9)
 
 Running   etcd, kube-apiserver, kube-controller-manager, kube-scheduler,
           kube-proxy, kube-flannel, hcloud-cloud-controller-manager,
           hcloud-csi-node (3/3), coredns x2
 Pending   hcloud-csi-controller        — by design, waits for a Worker
 ```
+
+---
+
+## 9. Close bootstrap SSH
+
+ADR 0004 makes this the last step of Phase 2. Port 22 was open to
+`185.100.244.43/32` from step 1 onward; the VPN route replaced it at step 3 and
+has carried every command since.
+
+### First, split the switch
+
+One variable, `allow_public_ssh`, gated port 22 on **both** firewalls. Closing
+it would therefore also have closed the Worker firewall, and Phase 3 cannot
+start closed: a new Worker has no tunnel until stage 2 of its own bootstrap,
+and that stage runs over SSH, so its first SSH must use the public address.
+
+The variable is now two, `allow_public_ssh_cp` and `allow_public_ssh_worker`,
+both defaulting to false. The two-firewall decision of ADR 0006 is unchanged —
+two firewalls that each say one thing now have one control each. Documented
+under "Bootstrap SSH" in `infra/README.md`.
+
+### Confirm the VPN route before removing the public one
+
+```
+ssh cp-dev@10.100.0.1 'echo VPN_SSH_OK; echo "peer: $SSH_CONNECTION"'
+  VPN_SSH_OK
+  peer: 10.100.0.69 37134 10.100.0.1 22
+```
+
+### Apply
+
+```
+cd infra && source .envrc
+terraform -chdir=shared plan -out=<scratch>/close22.tfplan
+terraform -chdir=shared apply <scratch>/close22.tfplan
+```
+
+No `-var` is needed; both variables default to false.
+
+```
+Plan: 0 to add, 2 to change, 0 to destroy.
+Apply complete! Resources: 0 added, 2 changed, 0 destroyed.
+```
+
+On `hcloud_firewall.cp` the WireGuard rule renders as a remove-and-add pair.
+That is Terraform redrawing a set of blocks when one member leaves; its
+contents are unchanged. The same artefact appeared in Phase 1.
+
+### Finding — the provider cannot take a firewall to zero rules
+
+**The apply reported success and did not do what it said.** `Apply complete`
+named two changed resources, but the Hetzner API still held the TCP 22 rule on
+`tosak-worker-firewall`. The control-plane firewall went from two rules to one
+and applied correctly; the worker firewall went from one rule to none and did
+not. Terraform's state recorded the rule as gone, so every later plan reported
+the same pending change forever.
+
+hcloud provider **1.69.0**, which is the newest stable — there is no version to
+upgrade to.
+
+The Hetzner API is not the limit. `set_rules` with an empty array is accepted:
+
+```
+POST /v1/firewalls/11651947/actions/set_rules   {"rules": []}
+  201, action set_firewall_rules status success
+```
+
+That call cleared the rule and `terraform plan` then returned **`No changes.`**
+with `-detailed-exitcode` 0. It was safe here only because
+`tosak-worker-firewall` was attached to no server and Terraform already held
+the empty rule set in state, so the call removed drift rather than creating it.
+
+**This is a live hazard for Phase 3, not a cosmetic defect.** Phase 3 opens
+`allow_public_ssh_worker`, builds three Workers, then closes it again — and
+that close is the same one-rule-to-none update that silently failed here, on
+firewalls that will by then be attached to three running servers. Terraform
+would print `Apply complete` while port 22 stayed open on all three. That is
+the ADR 0004 failure exactly: believing a port is closed when it is open.
+
+**Phase 3 must verify the close over the API and clear by `set_rules` if the
+rule survives.** Never trust the apply output for this one. The repo's standing
+rule — verify over the API, never from apply output — is what caught it.
+
+### Verified over the Hetzner API
+
+| | |
+|---|---|
+| `tosak-cp-firewall` 10289761 | applied to server 166646798; one rule, `in udp 51820 0.0.0.0/0` |
+| `tosak-worker-firewall` 11651947 | applied to no server; **no rules at all** |
+| `terraform plan` | `No changes.`, `-detailed-exitcode` 0 |
+
+And from the workstation:
+
+```
+nc -vz -w 8 46.62.209.249 22   -> timed out          (public path closed)
+ssh cp-dev@10.100.0.1          -> VPN_SSH_STILL_OK   (operator path intact)
+kubectl get --raw=/readyz      -> ok
+```
+
+The Control Plane now accepts exactly one thing on its public interface: the
+WireGuard hub port. Everything else arrives through the tunnel.
+
+**Phase 2 is complete.**
 
 ---
 
