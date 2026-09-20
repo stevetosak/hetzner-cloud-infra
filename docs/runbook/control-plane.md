@@ -205,6 +205,103 @@ to silence it.
 
 ---
 
+## 3. WireGuard hub
+
+The Control Plane is the VPN hub **and its router**: an operator reaches a
+Worker because the hub forwards between two of its own peers (ADR 0006). The
+`net.ipv4.ip_forward = 1` set in step 2 is what makes that true, and the
+`FORWARD` policy was confirmed `ACCEPT` before relying on it.
+
+Only the hub accepts an inbound WireGuard port. The hub has a `ListenPort` and
+its peers have no `Endpoint` — it learns each peer's address from that peer's
+first packet. This is why no Worker ever needs inbound UDP 51820, and why
+`tosak-worker-firewall` carries TCP 22 and nothing else.
+
+The laptop's public key is read from `tools/kluster/kluster.yaml`, which is the
+committed record of this topology. The operator's existing keypair is reused.
+
+```
+apt-get install -y wireguard
+mkdir -p /etc/wireguard
+umask 077
+wg genkey | tee /etc/wireguard/private.key | wg pubkey > /etc/wireguard/public.key
+chmod 600 /etc/wireguard/private.key
+
+cat > /etc/wireguard/wg0.conf <<EOF
+[Interface]
+Address    = 10.100.0.1/24
+ListenPort = 51820
+PrivateKey = $(cat /etc/wireguard/private.key)
+
+# Worker peers are added in Phase 3, once each worker has generated its key.
+# Their VPN addresses are declared in infra/workers/terraform.tfvars:
+#   k8swk1 10.100.0.2 / k8swk2 10.100.0.3 / k8swk3 10.100.0.4
+
+[Peer]
+# admin-laptop
+PublicKey  = 7v0/KwZNn08j5rtN8IQ2C8f9kOeuEqKEIlWwr4Qhq00=
+AllowedIPs = 10.100.0.69/32
+EOF
+chmod 600 /etc/wireguard/wg0.conf
+
+systemctl enable --now wg-quick@wg0
+```
+
+**The hub generates a new private key, so its public key is new.** A rebuild
+always invalidates every spoke config. The key produced on this run was:
+
+```
+Cy2AjXYE8BHjoPJkDocHywi9ZYMADOljW5qvKUIUngk=
+```
+
+That value is not a secret and is not reusable — the next rebuild prints a
+different one. It is recorded here only so the sequence reads honestly.
+
+### The operator's own config
+
+Done by the operator, on the laptop, with their own sudo:
+
+```
+sudo cp /etc/wireguard/wg0.conf /etc/wireguard/wg0.conf.bak-2026-09-20
+sudo sed -i 's|^PublicKey.*=.*|PublicKey = <new hub public key>|' /etc/wireguard/wg0.conf
+sudo systemctl restart wg-quick@wg0
+```
+
+The `Endpoint` line does **not** change. The surviving primary IP was reused,
+so the hub is still reachable at `46.62.209.249:51820`. That is one of the
+reasons the primary IP is delete-protected and managed in `shared/`.
+
+### Verified from both ends
+
+On the hub:
+
+```
+peer: 7v0/KwZNn08j5rtN8IQ2C8f9kOeuEqKEIlWwr4Qhq00=
+  endpoint: 185.100.244.43:59643
+  allowed ips: 10.100.0.69/32
+  latest handshake: 45 seconds ago
+  transfer: 212 B received, 92 B sent
+```
+
+`ping` succeeded in both directions with 0% loss: hub to `10.100.0.69`, and
+laptop to `10.100.0.1`.
+
+Then the route that matters, because port 22 closes at the end of this phase:
+
+```
+$ ssh cp-dev@10.100.0.1 'whoami; hostname; echo $SSH_CONNECTION; sudo -n id -un'
+cp-dev
+k8s-cp
+server saw client 10.100.0.69
+root
+```
+
+The server saw the client as `10.100.0.69`, so that session rode the tunnel
+rather than the public path. The operator route is proven before the public
+route is withdrawn.
+
+---
+
 ## Appendix — operator workstation repairs
 
 Not control-plane state. A rebuild onto a clean workstation would meet only
@@ -231,4 +328,14 @@ public half byte-matches `infra/shared/identity.tf`.
 
 ```
 sed -i 's|hetzner_cluster|hetzner-cluster|g' ~/.ssh/config
+```
+
+**The VPN address had a stale key too.** The same repair was needed for
+`10.100.0.1` once the tunnel came up. The fingerprint the host offered was
+`SHA256:58iiV54MDXGf5wKb8m1uP8tqwltJoyhE3gBQ8SEuwjM` — identical to the key
+already accepted on `46.62.209.249`. The same host answering on two
+independent addresses is the confirmation the first acceptance lacked.
+
+```
+ssh-keygen -R 10.100.0.1
 ```
