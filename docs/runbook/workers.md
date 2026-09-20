@@ -186,3 +186,119 @@ at `10.100.0.1`: **a reused address means a stale `known_hosts` entry at every
 address the host answers on.** The public entry being clean proves nothing
 about the VPN entry. Each is cleared at the point the address is first used,
 so the removal is recorded in the step that needs it.
+
+---
+
+## 3. Base host setup
+
+Run as `root` over the **public** address on each Worker. The Hetzner image
+injects the cluster SSH key into `root` only, so the first login of any
+rebuilt host is `root`; `tosak` does not exist until this step creates it.
+
+```
+ssh -i ~/.ssh/hetzner-cluster root@135.181.154.56   # k8swk1
+ssh -i ~/.ssh/hetzner-cluster root@62.238.56.128    # k8swk2
+ssh -i ~/.ssh/hetzner-cluster root@2.29.31.80       # k8swk3
+```
+
+All three public host keys were new and accepted on first contact. Hetzner
+publishes no host key over the API, so this is trust on first use, the same
+as the Control Plane.
+
+### 🔴 The private network attach races cloud-init
+
+The starting readback found the private interface configured on **one** of the
+three:
+
+```
+k8swk1  lo eth0                 enp7s0 DOWN, no address
+k8swk2  lo eth0 enp7s0=10.0.2.7 enp7s0 UP
+k8swk3  lo eth0                 enp7s0 DOWN, no address
+```
+
+`/etc/netplan/50-cloud-init.yaml` on `k8swk1` declared only `eth0`. On
+`k8swk2` it declared both. The Hetzner API reported the network attached on
+all three, so this is entirely guest-side: `hcloud_server` creates the server
+and *then* attaches the network, and whether that lands before cloud-init's
+network stage is a race. Which hosts win it is luck.
+
+**This would have broken the old pipeline intermittently.** Stage 4 of
+`infra/scripts/bootstrap/pipeline/` reads `ip -4 addr show enp7s0` and exits
+when it is empty. A build would have failed on some hosts and not others, with
+no indication that the cause was timing.
+
+The fix is a netplan drop-in, written unconditionally — a no-op where
+cloud-init already did the job:
+
+```
+/etc/netplan/60-private-net.yaml   (mode 600)
+
+network:
+  version: 2
+  ethernets:
+    enp7s0:
+      dhcp4: true
+      optional: true
+```
+
+then `netplan apply` and wait for the address. `optional: true` keeps a boot
+from blocking on the interface if it is ever genuinely absent.
+
+### The rest of the step
+
+Run through `ssh root@<public> 'bash -s' < worker-base.sh`, idempotent:
+
+1. The netplan drop-in above.
+2. User `tosak` — `adduser --disabled-password`, `usermod -aG sudo`,
+   `root`'s `authorized_keys` copied to `/home/tosak/.ssh/`, and
+   **`/etc/sudoers.d/tosak` carrying `tosak ALL=(ALL) NOPASSWD:ALL`**,
+   validated with `visudo -cf`. Without that drop-in the account has no
+   password, so a sudo prompt can never be answered and membership of the
+   `sudo` group alone is unusable. This is the same defect and the same fix as
+   `cp-dev` on the Control Plane.
+3. `/etc/modules-load.d/k8s.conf` = `overlay`, `br_netfilter`, both
+   `modprobe`d; `/etc/sysctl.d/k8s.conf` = the three bridge and forward
+   values, then `sysctl --system`.
+4. `swapoff -a` and swap commented in `/etc/fstab`. No swap was present; this
+   is a guard.
+5. `chrony` installed and enabled.
+
+### Readback, all three identical
+
+| Check | k8swk1 | k8swk2 | k8swk3 |
+|---|---|---|---|
+| `enp7s0` | 10.0.2.6 | 10.0.2.7 | 10.0.2.8 |
+| `enp7s0` MTU | 1450 | 1450 | 1450 |
+| `tosak` | uid 1000, groups `tosak sudo users` | same | same |
+| `sudo -n true` as `tosak` | ok | ok | ok |
+| `overlay` + `br_netfilter` | 2 of 2 | 2 of 2 | 2 of 2 |
+| three sysctls | `1 1 1` | `1 1 1` | `1 1 1` |
+| swap | none | none | none |
+| chrony | active, `Leap status: Normal` | same | same |
+| `ping 10.0.1.5` | reachable | reachable | reachable |
+| `10.0.1.5:6443` | open | open | open |
+
+**MTU 1450 is independent confirmation of the Flannel fix.** `core/cni/flannel.yaml`
+carries `"MTU": 1450` as the *underlay* value and flannel subtracts the 50-byte
+VXLAN overhead itself, giving pods 1400. 1450 is what the private interface
+actually reports.
+
+The API server is already reachable over the private network from every
+Worker. The VPN is **not** needed to join a Worker — it exists so the operator
+can reach the Worker (ADR 0006).
+
+### A correction to the Phase 2 notes
+
+The Control Plane runbook records chrony "synced to time.cloudflare.com". The
+Workers synced to Canonical hosts instead, which looked like a deviation. It
+is not: `/etc/chrony/chrony.conf` on the Control Plane carries the stock Ubuntu
+pool lines and no explicit server. All four hosts run the same configuration,
+and `time.cloudflare.com` was simply what `ntp.ubuntu.com` resolved to that
+day. **No time source is pinned anywhere in this cluster.**
+
+### A defect in the local SSH config, found here
+
+`ssh cp-authos` now hangs. Its `HostName` is `46.62.209.249`, the public
+address, and step 9 of the Control Plane runbook closed port 22 there. The
+entry was correct when it was written and was made wrong by the close. The
+only path to the Control Plane is now `ssh cp-dev@10.100.0.1`, over the VPN.
