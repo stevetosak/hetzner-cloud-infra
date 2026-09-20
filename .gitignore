@@ -3,3 +3,16 @@
 out/
 .envrc
 CLAUDE.md
+
+# Terraform (ADR 0002 — state leaves git, it lives in Cloudflare R2).
+# A committed state file let a mid-incident `git restore .` roll state back to
+# a version describing servers that no longer existed.
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.tfstate.lock.info
+*.tfplan
+crash.log
+
+# .terraform.lock.hcl is deliberately NOT ignored — provider versions are
+# pinned per module and belong in review.
