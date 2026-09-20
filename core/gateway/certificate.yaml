@@ -1,0 +1,35 @@
+# The one certificate the Public Entry Point serves (ADR 0008).
+#
+# It lives in `gateway` and not beside any application, because a listener's
+# certificate must be a Secret in the Gateway's own namespace. This replaces
+# the per-application secrets the Ingress shape used: `authos-tls`,
+# `doma-tls`, `authos-demo-tls` and `argocd-server-tls`.
+#
+# `*.tosak.net` covers every host the naming convention can produce, because
+# the convention is one subdomain level only — Cloudflare's free plan covers
+# `*.tosak.net` and nothing deeper, which is why the convention exists.
+#
+# `tosak.net` is listed separately because a wildcard does NOT match the apex.
+# ADR 0008 recorded that no host uses the apex; that was wrong. The zone holds
+# a proxied A record for `tosak.net`, so without this name the apex reaches the
+# entry point with no certificate that matches it.
+#
+# Issued by DNS-01, so it does not wait for the load balancer to exist. That
+# is deliberate: TLS is valid from the entry point's first request.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: tosak-net-wildcard
+  namespace: gateway
+spec:
+  secretName: tosak-net-wildcard-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - '*.tosak.net'
+    - tosak.net
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always

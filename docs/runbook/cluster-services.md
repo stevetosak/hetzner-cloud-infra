@@ -47,7 +47,7 @@ before anything was applied. Each one changed the work.
    not a cleanup step after it. The checklist lists the delete after the
    Gateway. That order cannot work.
 4. **The zone holds twelve A records, not four**, and one of them is the apex.
-   See step 2.
+   See the Cloudflare step.
 
 ---
 
@@ -87,4 +87,4 @@ only" rule enforced by the cluster and not only by this document.
 `object.spec.group != 'gateway.networking.k8s.io'`, so it sees nothing in
 group **`gateway.networking.x-k8s.io`** — which is where the experimental
 channel puts `xbackends`, `xbackendtrafficpolicies` and `xmeshes`. Those three
-would install silently. See step 3, where that mattered.
+would install silently. See the Envoy Gateway step, where that mattered.
