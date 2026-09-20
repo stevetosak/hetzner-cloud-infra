@@ -30,12 +30,29 @@ modules at plan time.
 State lives in Cloudflare R2, not in git. Every command needs:
 
 ```sh
-cd infra && source .envrc        # TF_VAR_HCLOUD_TOKEN
+cd infra && source .envrc
+```
+
+`.envrc` is gitignored and must export three things:
+
+```sh
+export TF_VAR_HCLOUD_TOKEN=...   # Hetzner API token
 export AWS_ACCESS_KEY_ID=...     # R2 access key id
 export AWS_SECRET_ACCESS_KEY=... # R2 secret access key
 ```
 
-`.envrc` is gitignored. Put the R2 keys there too.
+**No AWS account is involved.** Terraform has no R2 backend, so R2 is reached
+through the `s3` backend, which is built on the AWS SDK and reads credentials
+from the standard AWS environment variables. The values are the ones Cloudflare
+issued for the R2 API token; the dashboard labels them "Access Key ID" and
+"Secret Access Key". Every AWS-specific step — IAM validation, the account-id
+lookup, the EC2 metadata probe — is switched off in `backend.tf`.
+
+**The two R2 names carry no `TF_VAR_` prefix.** That prefix supplies a
+Terraform input `variable`, and a backend block cannot read variables at all,
+so `TF_VAR_AWS_ACCESS_KEY_ID` is silently ignored and `init` fails to
+authenticate. Only `TF_VAR_HCLOUD_TOKEN` takes the prefix, because it feeds a
+real `variable` declaration.
 
 ## First-time setup of `shared/`
 
