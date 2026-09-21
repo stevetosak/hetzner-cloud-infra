@@ -3,7 +3,7 @@
 This is the architecture reference for the deploy-notify + version-catalog flow.
 For day-to-day operations (adding an app, replaying an event, the required secrets)
 see [`README.md`](README.md). For the ArgoCD side see
-[`../core/argocd/notifications/README.md`](../core/argocd/notifications/README.md).
+[`../core/argocd/README.md`](../core/argocd/README.md).
 
 ## What it does
 
@@ -73,7 +73,7 @@ as they always did.
 
 ## Components
 
-### 1. ArgoCD Notifications — `core/argocd/notifications/`
+### 1. ArgoCD Notifications — `core/argocd/argocd-values.yaml`
 
 Two cluster objects in the `argocd` namespace:
 
@@ -218,6 +218,8 @@ The Telegram message is the ephemeral ping; the three above are the record.
 | Failure | Behaviour |
 | --- | --- |
 | ArgoCD `github-token` invalid | `401`; controller marks `notified` anyway, no retry. Fix the token; clear the annotation to replay. |
+| ArgoCD `github-token` lacks `Contents: Read and write` | `403`; same silent `notified` record, same replay. |
+| the record step cannot push to `master` | Branch protection refuses `github-actions[bot]` with `GH006`. The run is red but the notification is already spent, so the row is lost until it is replayed. The checkout uses `INFRA_REPO_TOKEN` for exactly this reason — **do not revert it to the default token**. |
 | Two deploys race on the catalog commit | fetch/reset/re-record loop converges; `merge=union` on `history.jsonl` is the backstop. |
 | `APP_DEPLOY_PAT` unset | Deployment step warns + skips; catalog + Telegram run. |
 | `APP_DEPLOY_PAT` expired | Deployment step fails (red run); catalog commit + Telegram still land. |
