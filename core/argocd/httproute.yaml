@@ -1,0 +1,117 @@
+# argocd.tosak.net (ADR 0008). Replaces core/argocd/ingress.yaml.
+#
+# ArgoCD gives up TLS passthrough here. TLS terminates at the Gateway and
+# `argocd-server` runs with `--insecure`, so it serves cleartext. If the two
+# disagree the result is a redirect loop, which is what the deleted Ingress's
+# `backend-protocol: HTTPS` annotation existed to avoid.
+#
+# The certificate is gone from here too. `argocd-server-tls` used to be written
+# by cert-manager and read by argocd-server; the Gateway holds the one wildcard
+# certificate now, so that coupling no longer exists.
+#
+# 🔴 TWO RULES AND TWO PORTS, WHERE ADR 0008 DESCRIBES ONE OF EACH.
+#
+# ADR 0008 says "the `argocd-server` Service port carries
+# `appProtocol: kubernetes.io/h2c`", and an earlier version of this file sent
+# all traffic to port 80. Both are wrong, and the failure is not subtle:
+#
+#   * `argocd-server` serves the web UI and gRPC on ONE container port and
+#     splits them with cmux. The two matchers are exclusive (server/server.go,
+#     v3.5.3):
+#
+#       httpL = tcpm.Match(cmux.HTTP1Fast("PATCH"))
+#       grpcL = tcpm.MatchWithWriters(
+#           cmux.HTTP2MatchHeaderFieldSendSettings(
+#               "content-type", "application/grpc"))
+#
+#     The UI listener matches HTTP/1.x only. So h2c on the only Service port
+#     drops every browser request, and no h2c anywhere drops the `argocd` CLI.
+#     `appProtocol` is single-valued per Service port, so one port cannot do
+#     both jobs.
+#
+#   * Routing everything to port 80 leaves Envoy speaking HTTP/1.1 upstream,
+#     and gRPC needs HTTP/2.
+#
+# So: gRPC goes to the `http2` port, which advertises h2c; everything else goes
+# to port 80. Both Service ports target the same container port. ArgoCD's own
+# ingress documentation describes the same split.
+#
+# Rule order does not decide this — Gateway API precedence does. Both rules
+# carry the same `/` prefix, so the tie breaks on the number of header matches,
+# and the gRPC rule has one.
+#
+# 🔴 The header match is `^application/grpc(\+.*)?$`, and both obvious
+# alternatives are wrong. ArgoCD's documentation uses `^application/grpc.*$`,
+# which also matches `application/grpc-web+proto` — and cmux's gRPC matcher
+# accepts the value `application/grpc` only, so gRPC-web would be sent to a
+# listener that cannot match it and the connection would be dropped. An exact
+# match on `application/grpc` is too narrow the other way: a gRPC client that
+# sets a content subtype sends `application/grpc+proto`, which would fall
+# through to the HTTP/1.1 rule and break. This expression takes both gRPC
+# forms and leaves gRPC-web to fall through, which is correct.
+#
+# 🔴 CLOUDFLARE BLOCKS PLAIN gRPC ON THIS ZONE, and the origin is not at
+# fault. Measured 2026-09-21 with a hand-built gRPC request:
+#
+#   content-type                 through Cloudflare   direct to the LB
+#   application/grpc                   403                200, grpc-status 0
+#   application/grpc+proto             403                —
+#   application/grpc-web+proto         200                —
+#   application/octet-stream           404 (from Envoy)   —
+#
+# The block is content-type specific, so it is the zone's gRPC setting being
+# off, not a WAF rule. A `Zone:DNS:Edit` token cannot change it.
+#
+# This costs nothing today: the `argocd` CLI probes plain gRPC, fails, and
+# retries over gRPC-web by itself, which the second rule serves. Rule 0 is
+# still proven and still required — it is the path the moment the zone setting
+# is enabled, or whenever Cloudflare is bypassed.
+#
+# ADR 0008's unproven claim is now PROVEN, at the origin: a plain gRPC call to
+# `/version.VersionService/Version` straight at the load balancer returned
+# `grpc-status: 0` and the server version, and the Envoy access log shows it
+# served by `rule/0` against `upstream_host …:8080`. TLS passthrough and a
+# `TLSRoute` are not needed.
+#
+# 🔴 Beware the shape of that test. `argocd version --server argocd.tosak.net`
+# appears to prove plain gRPC and proves nothing: the CLI skips its gRPC probe
+# entirely when the local `~/.config/argocd/config` already carries
+# `grpc-web: true`, which it does here, left over from the ingress-nginx
+# cluster. It then sends gRPC-web and prints no warning. Force a real test with
+# `--config <an empty path>`.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: argocd
+  namespace: argocd
+spec:
+  parentRefs:
+    - name: tosak
+      namespace: gateway
+      sectionName: https
+  hostnames:
+    - argocd.tosak.net
+  rules:
+    # gRPC — the `argocd` CLI. Envoy speaks HTTP/2 cleartext upstream, because
+    # the `http2` Service port carries `appProtocol: kubernetes.io/h2c`.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+          headers:
+            - type: RegularExpression
+              name: Content-Type
+              value: ^application/grpc(\+.*)?$
+      backendRefs:
+        - name: argocd-server
+          port: 8080
+    # Everything else — the web UI, the REST API, gRPC-web. Port 80 carries no
+    # `appProtocol`, so Envoy speaks HTTP/1.1 upstream and cmux's `HTTP1Fast`
+    # matcher accepts it.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: argocd-server
+          port: 80

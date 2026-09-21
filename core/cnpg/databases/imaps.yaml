@@ -5,6 +5,6 @@ metadata:
   namespace: pg-cluster
 spec:
   name: imaps
-  owner: authos
+  owner: tosak
   cluster:
-    name: authos-pg-cluster
+    name: tosak-pg-cluster

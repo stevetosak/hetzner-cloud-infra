@@ -9,7 +9,7 @@ Deployed like `authos-api` / `authos-ui` / `duster`: CI (`authos` repo
 `manifests/overlays/dev`, and pushes. ArgoCD Application `authos-demo` (project `authos`, path
 `projects/authos/demo/manifests/overlays/dev`) syncs the Deployment.
 
-Runs in the **`authos`** namespace, alongside Duster — the Ingress path-routes `/duster` to the
+Runs in the **`authos`** namespace, alongside Duster — the HTTPRoute path-routes `/duster` to the
 in-cluster `duster` Service, so the SPA and Duster share an origin (tier 0: no CORS,
 `SameSite=Lax` cookie).
 
@@ -31,10 +31,10 @@ npm run bootstrap        # prints DEMO_DUSTER_CLIENT_ID
 $EDITOR manifests/configmap.yaml      # DEMO_DUSTER_CLIENT_ID: REPLACE_ME -> the printed value
 kubectl apply -f manifests/configmap.yaml   # authos-demo-config
 kubectl apply -f manifests/service.yaml     # authos-demo (ClusterIP :80)
-kubectl apply -f manifests/ingress.yaml     # authos-demo.tosak.net (+ cert-manager TLS)
+kubectl apply -f manifests/httproute.yaml   # authos-demo.tosak.net (the Gateway holds the certificate)
 
-# 3. After this overlay path is on infra master and demo.yaml has bumped the image tag:
-kubectl apply -f argocd-application.yaml
+# 3. Nothing to apply. The ApplicationSet in core/argocd/applicationset.yaml generates the
+#    `authos-demo` Application from this overlay path as soon as it is on infra master.
 ```
 
 Set the printed `client_id` as the `authos` repo variable **`DEMO_DUSTER_CLIENT_ID`** as well —

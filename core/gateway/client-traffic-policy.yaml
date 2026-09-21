@@ -1,0 +1,51 @@
+# How the Gateway reads the connection in front of it (ADR 0008).
+#
+# 🔴 `proxyProtocol` is one half of a pair. The other half is
+# `load-balancer.hetzner.cloud/uses-proxyprotocol: "true"` on the EnvoyProxy.
+# PROXY headers arriving at a listener that does not expect them break every
+# connection; a listener that expects headers which never arrive breaks every
+# connection too. Change both together or neither.
+#
+# `optional: false` means the header is REQUIRED. That is deliberate: a
+# connection that reaches the Envoy Service without going through the Hetzner
+# load balancer is not a connection this entry point wants to serve.
+#
+# Note the field name. ADR 0008 and the Phase 4 checklist both say
+# `enableProxyProtocol`. That field still exists but is DEPRECATED, and when
+# both are set `proxyProtocol` wins.
+#
+# `clientIPDetection.customHeader` is the second half of a different pair.
+# Every host is proxied by Cloudflare, so the address the PROXY header carries
+# is a Cloudflare edge address and not the visitor's. `CF-Connecting-IP` holds
+# the visitor's.
+#
+# 🔴 That header is FORGEABLE until the origin is locked. The lock is
+# Cloudflare Authenticated Origin Pulls with a PER-ZONE certificate, added
+# under `tls.clientValidation.caCertificateRefs`. It is not configured yet —
+# see the Phase 4 checklist. Until it is, anyone who finds the origin address
+# can set `CF-Connecting-IP` to anything.
+#
+# 🔴 Do NOT add a SecurityPolicy IP allowlist instead. `clientCIDRs` matches
+# the DETECTED client address, which this policy defines, so allowlisting
+# Cloudflare ranges would check the forgeable header against itself. ADR 0008
+# explains why that is worse than no lock at all.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: tosak-gateway
+  namespace: gateway
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: tosak
+  proxyProtocol:
+    optional: false
+  clientIPDetection:
+    customHeader:
+      name: CF-Connecting-IP
+      # failClosed false: if the header is absent, fall back to the
+      # PROXY-protocol address rather than rejecting the request. A request
+      # that reaches the origin without the header is a request Cloudflare did
+      # not send, and once origin pulls are on, it cannot reach here at all.
+      failClosed: false

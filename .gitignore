@@ -3,3 +3,39 @@
 out/
 .envrc
 CLAUDE.md
+
+# Terraform (ADR 0002 — state leaves git, it lives in Cloudflare R2).
+# A committed state file let a mid-incident `git restore .` roll state back to
+# a version describing servers that no longer existed.
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.tfstate.lock.info
+*.tfplan
+crash.log
+
+# .terraform.lock.hcl is deliberately NOT ignored — provider versions are
+# pinned per module and belong in review.
+
+# Claude Code working directory — personal, not team config. Broadened from
+# `.claude/settings.local.json` to the whole directory on 2026-09-21, when it
+# started holding the rebuild's session handoffs and archived session history.
+# Those are working notes, not infrastructure: they carry no credentials, but
+# they do carry session identifiers and internal working agreements that have
+# no place in a public repository. The directory is also exactly the kind of
+# thing a `git add -A` sweeps up, which is how a secret-bearing file reached
+# the index once already.
+.claude/
+
+# kluster is built from source (branch feat/kluster-cli); the 11 MB binary is
+# a build artefact, not infrastructure. kluster.yaml IS committed.
+tools/kluster/kluster
+tools/kluster/.idea/
+
+# Editor swap files. A stale one was committed by accident in this repo once.
+*.swp
+*.swo
+
+# Untracked on purpose, pending the Phase 5 configuration work. Delete this
+# rule once that lands and the file is ready to be committed.
+projects/imaps/backend/manifests/configmap.yaml

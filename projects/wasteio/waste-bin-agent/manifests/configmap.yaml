@@ -4,7 +4,7 @@ metadata:
   name: wasteio-bin-agent-config
   namespace: wasteio
 data:
-  MQTT_BROKER_URL: "tcp://wasteio-mosquitto.wasteio.svc.cluster.local:1883"
+  MQTT_BROKER_URL: "tcp://mosquitto.wasteio.svc.cluster.local:1883"
   API_BASE_URL: "http://wasteio-api.wasteio.svc.cluster.local"
   DATA_DIR: "/app/data"
   SIM_MODE: "true"

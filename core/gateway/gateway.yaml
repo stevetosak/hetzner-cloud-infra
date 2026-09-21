@@ -1,0 +1,53 @@
+# The Public Entry Point — one shared Gateway for every public host (ADR 0008).
+#
+# One Gateway, not one per namespace: a Gateway of this class produces one
+# Envoy fleet, one Hetzner load balancer and one public IP, and there is one
+# public IP.
+#
+# Neither listener sets `hostname`, so both match every host. The hostnames
+# live on the HTTPRoutes, beside the workload they belong to. The certificate
+# covers `*.tosak.net` and the apex, which is every name the DNS convention
+# can produce.
+#
+# `allowedRoutes` names the namespaces that may attach. This is a control the
+# Ingress shape never had — under Ingress any namespace could claim any host.
+# Adding an application means editing this list on purpose.
+#
+# `gateway` is in the list for routes that belong to no application: the
+# HTTP-to-HTTPS redirect below, and whatever eventually answers the apex and
+# `www`.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: tosak
+  namespace: gateway
+spec:
+  gatewayClassName: tosak
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: [gateway, argocd, authos, doma]
+    - name: https
+      protocol: HTTPS
+      port: 443
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: tosak-net-wildcard-tls
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: [gateway, argocd, authos, doma]

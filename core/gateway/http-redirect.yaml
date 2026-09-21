@@ -1,0 +1,24 @@
+# Everything that arrives on port 80 is sent to port 443.
+#
+# Under Ingress this was a controller default. Gateway API has no such default:
+# an HTTP listener serves plain HTTP until a route says otherwise, so the
+# redirect is an explicit object.
+#
+# It attaches to the `http` listener alone, by `sectionName`. Without that it
+# would attach to both listeners and the HTTPS listener would redirect to
+# itself, for ever.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: http-to-https
+  namespace: gateway
+spec:
+  parentRefs:
+    - name: tosak
+      sectionName: http
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301

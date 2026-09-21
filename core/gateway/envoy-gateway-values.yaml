@@ -1,0 +1,26 @@
+# Values that produced core/gateway/envoy-gateway.yaml.
+#
+# Chart: oci://docker.io/envoyproxy/gateway-helm, version v1.9.1.
+# Render with core/gateway/render.sh. Do not edit the rendered file in place.
+#
+# The chart defaults are kept almost everywhere. Two things are turned OFF on
+# purpose, and both are about the Gateway API CRDs, which this repository
+# installs itself from core/gateway-api/crds.yaml:
+#
+#   1. The chart ships the Gateway API **experimental** channel and installs it
+#      by default. ADR 0008 says standard channel only.
+#   2. The chart also ships the safe-upgrade ValidatingAdmissionPolicy. The
+#      upstream standard bundle already carries it, so letting the chart own a
+#      second copy makes two components fight over one cluster-scoped object.
+#
+# The chart puts CRDs in Helm's crds/ directory, where no value can select
+# them, so render.sh strips them out of the rendered output instead.
+
+crds:
+  # The crds subchart still renders Envoy Gateway's own CRDs
+  # (gateway.envoyproxy.io), which this cluster does need.
+  enabled: true
+  gatewayAPI:
+    safeUpgradePolicy:
+      # Owned by core/gateway-api/crds.yaml.
+      enabled: false

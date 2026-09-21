@@ -1,11 +1,18 @@
+# Named `redis-master`, not `redis`. The name is a Bitnami-chart legacy, but it
+# is what every consumer's configmap already holds
+# (`redis-master.redis.svc.cluster.local:6379`), so it stays.
 apiVersion: v1
 kind: Service
 metadata:
   name: redis-master
   namespace: redis
+  labels:
+    app: redis
 spec:
+  type: ClusterIP
   selector:
     app: redis
   ports:
-    - port: 6379
-      targetPort: 6379
+    - name: redis
+      port: 6379
+      targetPort: redis

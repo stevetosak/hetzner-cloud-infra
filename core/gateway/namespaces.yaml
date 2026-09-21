@@ -1,0 +1,26 @@
+# The two namespaces the public entry point needs (ADR 0008).
+#
+# Neither chart creates its own namespace: the Envoy Gateway chart expects
+# `helm install --create-namespace`, and this repository applies rendered YAML
+# instead. Apply this file before core/gateway/envoy-gateway.yaml.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: envoy-gateway-system
+  labels:
+    app.kubernetes.io/name: envoy-gateway
+---
+# The Public Entry Point lives here: the Gateway, its listeners, the wildcard
+# certificate, and the Service that the Hetzner load balancer follows.
+#
+# Certificates live HERE and not beside the application, because a listener's
+# certificate must be a Secret in the Gateway's own namespace. Each
+# application keeps its HTTPRoute beside its workload and attaches through the
+# Gateway's allowedRoutes.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gateway
+  labels:
+    app.kubernetes.io/name: tosak-gateway

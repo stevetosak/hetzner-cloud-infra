@@ -1,0 +1,9 @@
+# The namespace that holds the PostgreSQL cluster, NOT the operator.
+#
+# The operator installs itself into `cnpg-system`, which `operator.yaml`
+# declares. This namespace holds `tosak-pg-cluster`, its `Database` objects and
+# the `db-credentials` Secret, and nothing declares it, so it is declared here.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pg-cluster

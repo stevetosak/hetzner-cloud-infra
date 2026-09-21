@@ -67,7 +67,6 @@ NODE_SCRIPTS=(
     "$SCRIPT_DIR/bootstrap_node-2-wireguard.sh"
     "$SCRIPT_DIR/bootstrap_node-3-containerd.sh"
     "$SCRIPT_DIR/bootstrap_node-4-kubernetes.sh"
-    "$SCRIPT_DIR/bootstrap_node-5-longhorn.sh"
 )
 
   KUBE_JOIN_COMMAND=$(ssh root@$CONTROL_PLANE_WG_IP "kubeadm token create --print-join-command")
@@ -180,6 +179,3 @@ for NODE_IP in "${NODES[@]}"; do
 done
 
 echo "Bootstrap complete"
-
-echo "Installing longhorn prerequisites.."
-ssh root@$CONTROL_PLANE_WG_IP "export KUBECONFIG=/etc/kubernetes/admin.conf && /root/longhornctl install preflight && /root/longhornctl check preflight"

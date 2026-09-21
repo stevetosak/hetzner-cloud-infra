@@ -10,12 +10,12 @@
 # clear a field back to empty, use `kubectl edit secret credentials -n doma`
 # instead of this script.
 #
-# DATABASE_URL: doma's database lives on the shared authos-pg-cluster,
-# owned by the existing `authos` role (same one wasteio/imaps use, not a
+# DATABASE_URL: doma's database lives on the shared tosak-pg-cluster,
+# owned by the shared `tosak` role (same one wasteio/imaps use, not a
 # new one). Look up its password with:
 #   kubectl get secret db-credentials -n pg-cluster -o jsonpath='{.data.password}' | base64 -d
 # then assemble:
-#   postgresql://authos:<password>@authos-pg-cluster-rw.pg-cluster.svc.cluster.local:5432/doma
+#   postgresql://tosak:<password>@tosak-pg-cluster-rw.pg-cluster.svc.cluster.local:5432/doma
 set -euo pipefail
 
 current_value() {
@@ -39,12 +39,24 @@ prompt_field() {
 prompt_field DATABASE_URL "DATABASE_URL"
 prompt_field SESSION_SECRET "SESSION_SECRET (openssl rand -hex 32)"
 prompt_field GOOGLE_CLIENT_SECRET "GOOGLE_CLIENT_SECRET"
-# Both optional — leave blank (just press enter) until the Telegram bot
-# exists (@BotFather gives the token; the webhook secret is any random
-# string you choose, e.g. `openssl rand -hex 32`). Chore reminders and
-# account linking simply stay unavailable with these blank.
-prompt_field TELEGRAM_BOT_TOKEN "TELEGRAM_BOT_TOKEN (optional)"
-prompt_field TELEGRAM_WEBHOOK_SECRET "TELEGRAM_WEBHOOK_SECRET (optional)"
+# THE TWO GO TOGETHER. Fill in both, or leave both blank. The TOKEN alone is
+# what `isTelegramConfigured()` tests, so with it blank the bot never starts
+# and `/api/telegram/webhook` answers 404 — safe, and chore reminders and
+# account linking are simply unavailable.
+#
+# 🔴 THE WEBHOOK SECRET IS NOT OPTIONAL ONCE THE TOKEN IS SET. It is the only
+# authentication on a PUBLIC POST endpoint: doma's HTTPRoute exposes everything
+# under `/`, and grammy skips the `X-Telegram-Bot-Api-Secret-Token` check
+# entirely when the value is empty (`secretToken: optionalEnv(...) || undefined`
+# in src/core/notify/telegram-bot.ts). Anyone who finds the URL could then post
+# forged Telegram updates, which is what drives account linking. Worse, boot
+# calls `setWebhook(..., { secret_token: undefined })`, so a blank value also
+# CLEARS any secret registered with Telegram earlier.
+#
+# The bot exists — `configmap.yaml` already names @domche_bot. Blank these only
+# when the token is not to hand, and re-run this script later.
+prompt_field TELEGRAM_BOT_TOKEN "TELEGRAM_BOT_TOKEN (blank only if not to hand)"
+prompt_field TELEGRAM_WEBHOOK_SECRET "TELEGRAM_WEBHOOK_SECRET (openssl rand -hex 32; required if the token is set)"
 
 kubectl create secret generic credentials -n doma \
   --from-literal=DATABASE_URL="$DATABASE_URL" \

@@ -9,7 +9,8 @@ the design rationale, and failure modes — see [`HOW-IT-WORKS.md`](HOW-IT-WORKS
 
 ## How a row is added
 
-1. ArgoCD Notifications (`core/argocd/notifications/`) fires `on-deployed`, once per
+1. ArgoCD Notifications (configured in `core/argocd/argocd-values.yaml`) fires
+   `on-deployed`, once per
    running image set (`oncePer: app.status.summary.images`), as a GitHub
    `repository_dispatch` (`event_type: deploy-live`).
 2. `deploy-catalog.yml` clones the app repo, resolves the running `alpha-<sha>` image
@@ -48,4 +49,4 @@ Set under Settings -> Secrets and variables -> Actions on `stevetosak/hetzner-cl
 
 (`APP_DEPLOY_PAT` is a different token from the ArgoCD notifications controller's
 `github-token`, which needs **Contents: Read and write** on the infra repo to POST the
-`repository_dispatch` — see `core/argocd/notifications/README.md`.)
+`repository_dispatch` — see `core/argocd/credentials.yaml`.)

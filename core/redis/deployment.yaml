@@ -1,10 +1,23 @@
+# The shared cluster Redis. One replica, no persistence — it is a cache and a
+# session store, not a database. Restarting it empties it.
+#
+# Read `README.md` beside this file before changing any value here. Four of
+# them are load-bearing and three were wrong until 2026-09-21.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: redis
   namespace: redis
+  labels:
+    app: redis
 spec:
   replicas: 1
+  revisionHistoryLimit: 3
+  # Recreate, not RollingUpdate. One Service fronts one replica holding state
+  # no other replica shares, so a rolling update would briefly route sessions
+  # to a second, empty Redis.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: redis
@@ -13,31 +26,92 @@ spec:
       labels:
         app: redis
     spec:
+      securityContext:
+        # 🔴 `command:` below REPLACES the image entrypoint, so
+        # docker-entrypoint.sh never runs — and neither does its `setpriv`
+        # privilege drop. Without these two lines Redis runs as root.
+        # uid 999 / gid 1000 are the `redis` user of the official image,
+        # read out of its /etc/passwd.
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: redis
-          image: redis:8.4-alpine
-          command: ["redis-server"]
+          # Pinned exact. `8.4-alpine` was a floating minor tag: the patch
+          # version was whatever the day gave. Digest of this tag on
+          # 2026-09-21: sha256:72cedd9603038893af961e90ac5e1a1a0d8377d5e338dbdad8fe284ea25de18f
+          image: redis:8.10.2-alpine
+          imagePullPolicy: IfNotPresent
+          command: ['redis-server']
           args:
-            - "--requirepass"
-            - "$(REDIS_PASSWORD)"
-            - "--maxmemory"
-            - "512mb"
-            - "--maxmemory-policy"
-            - "volatile-lru"
-            - "--save"
-            - ""
-            - "--appendonly"
-            - "no"
+            - '--requirepass'
+            - '$(REDIS_PASSWORD)'
+            # 🔴 384mb, NOT the 512Mi container limit. `maxmemory` bounds the
+            # dataset only; client output buffers, replication buffers and
+            # allocator fragmentation sit on top of it. Setting the two equal
+            # means Redis fills to its own limit and the kernel then OOM-kills
+            # the container. Raise this and `limits.memory` together.
+            - '--maxmemory'
+            - '384mb'
+            # Evicts only keys that carry a TTL. A key written without one is
+            # never evicted, and once the limit is reached writes fail with
+            # OOM rather than making room. See README.
+            - '--maxmemory-policy'
+            - 'volatile-lru'
+            # No persistence of either kind. Deliberate — see README.
+            - '--save'
+            - ''
+            - '--appendonly'
+            - 'no'
           env:
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: redis
                   key: password
+          ports:
+            - name: redis
+              containerPort: 6379
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ['ALL']
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          # Liveness is process-only: it asks whether the port is open, never
+          # whether Redis can answer. A PING here would restart the pod for a
+          # long-running command, which is the workspace rule about liveness
+          # probes applied to Redis itself.
+          livenessProbe:
+            tcpSocket:
+              port: redis
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          # Readiness does authenticate and PING, so a Redis that is listening
+          # but cannot serve is pulled from the Service without being killed.
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - 'redis-cli --no-auth-warning -a "$REDIS_PASSWORD" ping | grep -q PONG'
+            initialDelaySeconds: 3
+            periodSeconds: 10
           resources:
             requests:
-              cpu: "100m"
-              memory: "256Mi"
+              cpu: '100m'
+              memory: '256Mi'
             limits:
-              cpu: "500m"
-              memory: "512Mi"
+              cpu: '500m'
+              memory: '512Mi'
+      volumes:
+        # The image's WORKDIR. Nothing is written here while persistence is
+        # off, but `readOnlyRootFilesystem` would make any attempt fail in a
+        # way that reads as a Redis bug rather than a manifest choice.
+        - name: data
+          emptyDir: {}

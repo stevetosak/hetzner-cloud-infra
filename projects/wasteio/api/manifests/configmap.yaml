@@ -4,10 +4,10 @@ metadata:
   name: wasteio-api-config
   namespace: wasteio
 data:
-  DB_URL: "jdbc:postgresql://authos-pg-cluster-rw.pg-cluster.svc.cluster.local:5432"
+  DB_URL: "jdbc:postgresql://tosak-pg-cluster-rw.pg-cluster.svc.cluster.local:5432"
   DB_NAME: "wasteio"
-  MQTT_BROKER_URL: "tcp://wasteio-mosquitto.wasteio.svc.cluster.local:1883"
-  MQTT_HOST: "wasteio-mosquitto.wasteio.svc.cluster.local"
+  MQTT_BROKER_URL: "tcp://mosquitto.wasteio.svc.cluster.local:1883"
+  MQTT_HOST: "mosquitto.wasteio.svc.cluster.local"
   MQTT_PORT: "1883"
   MQTT_USERNAME: "wasteio-backend"
   SIMULATOR_DEVICES_PATH: "/app/devices.json"

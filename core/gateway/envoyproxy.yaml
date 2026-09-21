@@ -1,0 +1,46 @@
+# How the Envoy data plane is deployed, and how Hetzner builds the load
+# balancer in front of it (ADR 0008).
+#
+# This replaces the hand-written Service in core/load-balancer/, which is
+# deleted. Envoy Gateway creates the Service for each Gateway itself, so the
+# Hetzner annotations have to ride on the EnvoyProxy instead of on a Service
+# this repository owns. The annotation values are carried over unchanged, with
+# one removal: the mqtt port 1883, because wasteio is out of scope (ADR 0003).
+#
+# 🔴 `uses-proxyprotocol` here and `proxyProtocol` in
+# client-traffic-policy.yaml are TWO HALVES OF ONE SETTING. PROXY headers
+# arriving at a listener that does not expect them break every connection, and
+# a listener expecting headers that do not arrive breaks every connection too.
+# Change both together or neither.
+#
+# 🔴 `private-ipv4: 10.0.4.2` is held by load balancer 6579148 until that load
+# balancer is deleted. Hetzner will not give the address to a second load
+# balancer, so the delete is a PREREQUISITE of the Gateway, not a cleanup
+# afterwards.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: tosak-lb
+  namespace: gateway
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyDeployment:
+        # Two replicas on a three-worker cluster. externalTrafficPolicy stays
+        # at Envoy Gateway's default of Local, so the load balancer only sends
+        # traffic to a node that actually runs an Envoy pod; one replica would
+        # make a single node a single point of failure.
+        replicas: 2
+      envoyService:
+        annotations:
+          load-balancer.hetzner.cloud/name: "tosak-lb"
+          load-balancer.hetzner.cloud/type: "lb11"
+          load-balancer.hetzner.cloud/location: "hel1"
+          # Reach the nodes over the Private Network, never the public one
+          # (ADR 0006).
+          load-balancer.hetzner.cloud/use-private-ip: "true"
+          load-balancer.hetzner.cloud/private-subnet-ip-range: "10.0.4.0/24"
+          load-balancer.hetzner.cloud/private-ipv4: "10.0.4.2"
+          load-balancer.hetzner.cloud/uses-proxyprotocol: "true"
+          load-balancer.hetzner.cloud/algorithm-type: "round_robin"

@@ -1,0 +1,8 @@
+# The namespace that holds the shared Redis. Nothing else declares it.
+#
+# Same reason `core/cnpg/namespace.yaml` exists: the Deployment, the Service
+# and the `redis` Secret all name this namespace and none of them creates it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: redis
