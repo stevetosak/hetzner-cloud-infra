@@ -549,13 +549,13 @@ is forgeable by anyone who finds it.
 ### A mistake made and corrected here
 
 Two commits in this session used `git add -A <dir>`, which swept in two files
-that three handoffs had deliberately left untracked: the stale vim swap
-`docs/runbook/.rebuild-2026-09-20.md.swp`, and
-`projects/imaps/backend/manifests/configmap.yaml`, which the operator had not
-reviewed. Both were removed from the index in a follow-up commit and are
-untracked again; the swap file is now covered by a `*.swp` rule in
-`.gitignore`. They remain in the history of two unpushed commits, which is
-harmless — neither holds a secret.
+that three handoffs had deliberately left untracked. Both were removed from the
+index in a follow-up commit and are untracked again, one under a `*.swp` rule in
+`.gitignore` and one under a rule of its own.
+
+**This repository is public.** Before proposing that anything be committed here,
+check what the file holds and who can read it — and say no more about an
+untracked file than the ignore rule needs.
 
 **Use explicit paths with `git add`, not `-A` over a directory.** An untracked
 file in this repository is usually untracked on purpose.
