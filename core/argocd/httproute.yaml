@@ -1,24 +1,58 @@
 # argocd.tosak.net (ADR 0008). Replaces core/argocd/ingress.yaml.
 #
-# 🔴 ArgoCD gives up TLS passthrough here. TLS terminates at the Gateway, and
-# `argocd-server` must run with `--insecure` so it serves plain HTTP. If the
-# two disagree the result is a redirect loop, which is what the deleted
-# Ingress's `backend-protocol: HTTPS` annotation existed to avoid.
-#
-# ArgoCD documents passthrough as preferred because ingress-nginx broke its
-# gRPC CLI when terminating. That is an nginx limitation, not a general one:
-# the `argocd-server` Service port carries `appProtocol: kubernetes.io/h2c`, so
-# Envoy speaks HTTP/2 cleartext to the backend and the CLI's gRPC survives.
-#
-# **This is the one unproven claim in ADR 0008.** The acceptance test is
-# `argocd login argocd.tosak.net` followed by `argocd app list`. If they fail,
-# the fallback is passthrough with a TLSRoute — and note that TLSRoute is in
-# the Gateway API STANDARD channel as of v1.6, so that fallback no longer costs
-# the experimental channel as ADR 0008 states.
+# ArgoCD gives up TLS passthrough here. TLS terminates at the Gateway and
+# `argocd-server` runs with `--insecure`, so it serves cleartext. If the two
+# disagree the result is a redirect loop, which is what the deleted Ingress's
+# `backend-protocol: HTTPS` annotation existed to avoid.
 #
 # The certificate is gone from here too. `argocd-server-tls` used to be written
 # by cert-manager and read by argocd-server; the Gateway holds the one wildcard
 # certificate now, so that coupling no longer exists.
+#
+# 🔴 TWO RULES AND TWO PORTS, WHERE ADR 0008 DESCRIBES ONE OF EACH.
+#
+# ADR 0008 says "the `argocd-server` Service port carries
+# `appProtocol: kubernetes.io/h2c`", and an earlier version of this file sent
+# all traffic to port 80. Both are wrong, and the failure is not subtle:
+#
+#   * `argocd-server` serves the web UI and gRPC on ONE container port and
+#     splits them with cmux. The two matchers are exclusive (server/server.go,
+#     v3.5.3):
+#
+#       httpL = tcpm.Match(cmux.HTTP1Fast("PATCH"))
+#       grpcL = tcpm.MatchWithWriters(
+#           cmux.HTTP2MatchHeaderFieldSendSettings(
+#               "content-type", "application/grpc"))
+#
+#     The UI listener matches HTTP/1.x only. So h2c on the only Service port
+#     drops every browser request, and no h2c anywhere drops the `argocd` CLI.
+#     `appProtocol` is single-valued per Service port, so one port cannot do
+#     both jobs.
+#
+#   * Routing everything to port 80 leaves Envoy speaking HTTP/1.1 upstream,
+#     and gRPC needs HTTP/2.
+#
+# So: gRPC goes to the `http2` port, which advertises h2c; everything else goes
+# to port 80. Both Service ports target the same container port. ArgoCD's own
+# ingress documentation describes the same split.
+#
+# Rule order does not decide this — Gateway API precedence does. Both rules
+# carry the same `/` prefix, so the tie breaks on the number of header matches,
+# and the gRPC rule has one.
+#
+# 🔴 The header match is EXACT, not the regex `^application/grpc.*$` that
+# ArgoCD's documentation uses. That regex also matches
+# `application/grpc-web+proto`, and cmux's gRPC matcher requires the value to
+# be exactly `application/grpc` — so gRPC-web would be sent to a listener that
+# cannot match it and the connection would be dropped. Exact matches what the
+# backend can actually accept, and gRPC-web correctly falls through to the
+# HTTP/1.1 rule.
+#
+# **This is the one unproven claim in ADR 0008.** The acceptance test is
+# `argocd login argocd.tosak.net` followed by `argocd app list`, plus the UI in
+# a browser. If gRPC still fails, the fallback is passthrough with a TLSRoute —
+# and TLSRoute is in the Gateway API STANDARD channel as of v1.6, so that
+# fallback no longer costs the experimental channel as ADR 0008 states.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -32,6 +66,26 @@ spec:
   hostnames:
     - argocd.tosak.net
   rules:
-    - backendRefs:
+    # gRPC — the `argocd` CLI. Envoy speaks HTTP/2 cleartext upstream, because
+    # the `http2` Service port carries `appProtocol: kubernetes.io/h2c`.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+          headers:
+            - type: Exact
+              name: Content-Type
+              value: application/grpc
+      backendRefs:
+        - name: argocd-server
+          port: 8080
+    # Everything else — the web UI, the REST API, gRPC-web. Port 80 carries no
+    # `appProtocol`, so Envoy speaks HTTP/1.1 upstream and cmux's `HTTP1Fast`
+    # matcher accepts it.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
         - name: argocd-server
           port: 80

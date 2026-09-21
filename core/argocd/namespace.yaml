@@ -1,0 +1,14 @@
+# The namespace that holds ArgoCD. Nothing else declares it.
+#
+# Same gap as `core/redis/namespace.yaml` and `core/cnpg/namespace.yaml`:
+# `helm template --namespace argocd` writes the namespace into every object it
+# renders and creates no Namespace object, so the render alone cannot be
+# applied to an empty cluster.
+#
+# The name is also load-bearing outside this file. `core/gateway/gateway.yaml`
+# lists `argocd` in `allowedRoutes` on both listeners, by
+# `kubernetes.io/metadata.name`, which the API server sets from this name.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argocd
