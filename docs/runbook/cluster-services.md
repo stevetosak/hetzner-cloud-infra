@@ -827,3 +827,182 @@ the 2026-09-13 loss unrecoverable. It is Phase 6 work by the checklist's own
 sequencing, not an oversight — but **until Phase 6 closes, every database here
 is disposable.** Note also that CloudNativePG has moved barman-cloud out of the
 operator into a plugin, so Phase 6 is a plugin install rather than a stanza.
+
+## 11. Redis — the shared cache
+
+`core/redis/` held two files, `deployment.yaml` and `service.yaml`, written in
+December 2025 and never reviewed since. Reading them before applying anything
+found six problems. Three of them would have failed silently, which is the
+pattern this whole rebuild keeps meeting.
+
+### What the two existing files got wrong
+
+| Problem | What it would have done |
+|---|---|
+| No `namespace.yaml` | The Deployment, the Service and the Secret all name `redis` and nothing created it |
+| No `credentials.yaml` | The Deployment reads a `redis` Secret through `secretKeyRef` that **nothing in this repository created** — the same gap `db-credentials` had in step 10 |
+| `image: redis:8.4-alpine` | A floating minor tag. The patch version was whatever the day gave. Trap from step 9, repeated |
+| `--maxmemory 512mb` with `limits.memory: 512Mi` | No headroom at all. Redis fills to its own limit, the kernel then OOM-kills the container |
+| No `securityContext` | **Redis ran as root** — see below, this one is not obvious |
+| Default `RollingUpdate` | One Service, one replica holding state no other replica has: a rollout would briefly route sessions to a second, empty Redis |
+
+### 🔴 `command:` replaces the entrypoint, and with it the privilege drop
+
+`deployment.yaml` carries `command: ['redis-server']`. In Kubernetes that
+replaces the image **ENTRYPOINT**, not its CMD — so `docker-entrypoint.sh`
+never runs.
+
+That script is where the official image drops privileges. Read out of the image
+rather than assumed:
+
+```
+exec $SETPRIV --nnp --inh-caps=-all ... "$0" "$@"
+#   SETPRIV="/bin/setpriv --reuid redis --regid redis --clear-groups"
+```
+
+It runs that branch only when `id -u` is `0`. Override the entrypoint and the
+drop is skipped, so the container keeps the uid it was given — root, unless the
+pod says otherwise. The manifest did not say otherwise.
+
+The fix needs the real ids, so they were read from the image's own
+`/etc/passwd`, pulled from the registry layer:
+
+```
+redis:x:999:1000::/home/redis:/sbin/nologin
+```
+
+Hence `runAsNonRoot: true`, `runAsUser: 999`, `runAsGroup: 1000`,
+`fsGroup: 1000`, plus `readOnlyRootFilesystem`, dropped capabilities and an
+`emptyDir` on `/data`, which is the image's WORKDIR.
+
+The same override has a second consequence: the entrypoint is also what appends
+a `--loadmodule` for every `.so` in `/usr/local/lib/redis/modules/`. Skipping it
+leaves `redisearch.so` (20 MB), `rejson.so` (45 MB), `redistimeseries.so` and
+`redisbloom.so` in the image and unloaded. `MODULE LIST` shows one entry,
+`vectorset`, which is built into the Redis 8 binary and is there either way.
+That is wanted here, but it means restoring the entrypoint would quietly change
+the memory budget.
+
+### The image, pinned and verified
+
+```
+redis:8.10.2-alpine
+sha256:72cedd9603038893af961e90ac5e1a1a0d8377d5e338dbdad8fe284ea25de18f
+```
+
+`8.10` is the current line — `latest`, `alpine` and `8-alpine` all resolve to
+the same digest. `8.4` is three minor lines behind and still rebuilt, so the
+old tag would have gone on looking maintained. The digest above was taken from
+the registry before the apply and matched against
+`.status.containerStatuses[0].imageID` after it.
+
+### Apply
+
+The Secret must exist before the Deployment, or the pod stops at
+`CreateContainerConfigError` with the cause named nowhere.
+
+```
+kubectl apply -f core/redis/namespace.yaml
+# operator creates the `redis` Secret — see core/redis/credentials.yaml
+kubectl apply -f core/redis/service.yaml -f core/redis/deployment.yaml
+kubectl rollout status deployment/redis -n redis
+```
+
+### 🔴 The Secret was stored with a trailing newline, and the pod went Ready anyway
+
+The first `redis` Secret held **41 bytes**: 40 alphanumerics and `0a`.
+`kubectl create secret --from-file` stores a file byte for byte.
+
+It was invisible from outside the pod. The obvious check is the base64 length:
+
+```
+kubectl get secret redis -n redis -o go-template='{{len .data.password}}'   # 56
+```
+
+**40 and 41 bytes both encode to 56 characters**, so that number proved
+nothing, and it was quoted here as if it had. The real check prints no value
+and runs inside the pod:
+
+```
+kubectl exec -n redis deploy/redis -- \
+  sh -c 'printf "%s" "$REDIS_PASSWORD" | wc -c'                        # 40
+kubectl exec -n redis deploy/redis -- \
+  sh -c 'printf "%s" "$REDIS_PASSWORD" | tr -d "A-Za-z0-9" | wc -c'    # 0
+```
+
+Redis was perfectly happy: `--requirepass "$(REDIS_PASSWORD)"` and the
+readiness probe both quote the variable, so the 41-byte password was set and
+accepted and the pod reported `1/1 Ready`. The fault surfaced only because an
+ad-hoc check used the variable **unquoted**, which strips the trailing newline
+and returned `WRONGPASS`.
+
+**The damage would have landed a phase later, in another namespace.** Authos
+and Duster read this password from `credentials`/`REDIS_PASS` in the `authos`
+namespace. A human copying "the password" copies the 40 characters they can
+see, writes those into the second Secret, and both applications fail with
+`NOAUTH` against a Redis that is running and healthy.
+
+Corrected by stripping the newline and keeping the same 40 characters, so the
+copy already in the password manager became the correct one:
+
+```
+kubectl get secret redis -n redis -o jsonpath='{.data.password}' \
+  | base64 -d | tr -d '\n' > <scratch file, mode 600>
+kubectl create secret generic redis -n redis --from-file=password=<scratch file> \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl rollout restart deployment/redis -n redis
+```
+
+🔴 **The classifier refuses that first command to Claude**, as
+`Credential Materialization` — it will not read a Secret's value out of the
+cluster into a file, even down a pipe that prints nothing. The operator ran it.
+This is a new refusal category; it is not in any earlier handoff.
+
+### Verified after the restart
+
+```
+kubectl exec -n redis deploy/redis -- sh -c 'redis-cli --no-auth-warning -a $REDIS_PASSWORD ping'
+```
+
+`PONG` — the unquoted form, the exact test that had failed.
+
+| | |
+|---|---|
+| Pod | `redis-848765885d-pxpq7` on `k8swk3`, `10.244.3.10`, `1/1 Running` |
+| Image | `redis@sha256:72cedd96…`, matching the pin |
+| Identity | `uid=999(redis) gid=1000(redis)` — not root |
+| Filesystem | `/` read-only (`touch /nope` → `Read-only file system`), `/data` writable |
+| Version | `redis_version:8.10.2`, `redis_mode:standalone` |
+| Memory | `maxmemory_human:384.00M`, policy `volatile-lru`, used 833 K, RSS 9.88 M |
+| Persistence | `save` empty, `aof_enabled:0` — nothing is written |
+| Modules | one, `vectorset`, built into the binary |
+| Service | `redis-master` ClusterIP `10.96.30.54:6379`, one endpoint, `ready: true` |
+| Round trip | `SET`/`GET`/`DEL` through an authenticated client |
+
+### The password is the only thing keeping other pods out
+
+From a PostgreSQL pod in `pg-cluster`, a namespace with no business talking to
+Redis:
+
+```
+getent hosts redis-master.redis.svc.cluster.local     # 10.96.30.54
+timeout 3 bash -c "</dev/tcp/redis-master.redis.svc.cluster.local/6379"   # opens
+```
+
+Flannel enforces no NetworkPolicy (ADR 0001), so every pod in this cluster can
+open that port. `--requirepass` is the entire boundary. This is the standing
+argument for Cilium; until then the Redis password is a cluster-wide
+credential, and it belongs in the Phase 5 SOPS inventory as one.
+
+One mitigation that does hold: Redis rewrites its own `argv`, so
+`/proc/1/cmdline` in the pod contains a single entry, `redis-server *:6379`.
+The `--requirepass` argument is scrubbed and cannot be read back out of the
+process list.
+
+### Nothing here survives a restart, on purpose
+
+`--save ''` and `--appendonly no`, no volume, no backup. **Any restart signs
+every user out.** That is acceptable for a cache and a session store and is
+why the memory headroom can be as small as it is — `redis-server` never forks
+to write a snapshot. It would not be acceptable for anything else, so nothing
+else goes here.
