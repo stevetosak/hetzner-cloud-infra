@@ -1315,3 +1315,259 @@ records it and the probe is skipped.
   first login; deleting it does not change the password.
 - **The Cloudflare gRPC zone setting is off.** Optional, and not needed for the
   CLI to work.
+
+---
+
+## 13. One ApplicationSet — and a naming rule with no exceptions
+
+Written on 2026-09-21, eleventh session of the day. Step 12 left ArgoCD running
+and deploying nothing. This step gives it the declaration of everything it
+deploys, and proves the whole path from a git commit to a live host with doma.
+
+ADR 0003 decided this shape during the rebuild and said why: every hazard that
+had deferred the migration before — adopting Applications without ownerRefs,
+the `waste-bin-agent` directory versus the live `wasteio-bin-agents` name, a
+glob swallowing `projects/imaps/**` — exists only against a *running* cluster.
+Against an empty one the migration is free.
+
+### What was there to replace
+
+Three `argocd-application.yaml` files, and five Applications that existed only
+in the web UI of the cluster that was lost. The three files did not even agree
+with each other: `projects/doma/web` named `project: default`, the two authos
+files named `project: authos` — **an AppProject that nothing in this repository
+creates.** It existed because somebody made it in the UI. The same gap
+`db-credentials` and the `redis` Secret both had, found for the third time.
+
+### The rule
+
+One overlay directory is one Application. Everything else is derived from the
+path, so there is no map to drift:
+
+    projects/<project>/<component>/manifests/overlays/dev
+             └ segment 1 ┘└ segment 2 ┘
+
+| | |
+|---|---|
+| Application name | `<project>-<component>` |
+| AppProject | `<project>` |
+| Namespace | `<project>` |
+
+Two Applications are therefore renamed: `duster` becomes `authos-duster`, and
+`doma` becomes `doma-web`.
+
+🔴 **`deployments/apps.json` is keyed on `.app.metadata.name`, so a rename
+there is a rename of the deploy catalog's key.** Anything that keys on an
+ArgoCD Application name has to be checked whenever this rule changes.
+
+🔴 **AND THE COST OF THAT RENAME WAS MEASURED ON THE WRONG BRANCH.**
+`deployments/history.jsonl` is empty on `feature/cluster-rebuild`, and that was
+read as "the rename is free". On `master` the same file holds **two rows with
+`"app":"doma"`**, written by the catalog workflow on 2026-09-08.
+`render-catalog.mjs` keys its "Current" table on the app name, so after the
+rename the catalog lists a stale `doma` row beside `doma-web` — with a bare sha
+and no commit link, because `apps.json` no longer has that key.
+
+It cannot be repaired on this branch. `.gitattributes` gives `history.jsonl`
+`merge=union`, so editing those two lines here would merge to **four** rows,
+not two: the dedup key is `app@sha`, and `doma@8324916` and
+`doma-web@8324916` are different keys. **The fix is one commit on `master`
+after the merge** — see "What this step leaves open".
+
+The general rule: **compare against the branch the consumer actually reads.**
+ArgoCD reads `master`. So does the catalog workflow. The feature branch is not
+the state of the world.
+
+### The generator lists its projects, it does not sweep them
+
+    directories:
+      - path: projects/authos/*/manifests/overlays/dev
+      - path: projects/doma/*/manifests/overlays/dev
+
+ADR 0003 scopes the restore to authos and doma. A single
+`projects/*/*/manifests/overlays/dev` would also adopt `projects/imaps/` and
+`projects/wasteio/`, which stay in the repository unsynced, and it would reach
+`projects/debug/` the day that grew an overlay. Reviving a project is four
+deliberate edits: a `directories` entry, an AppProject, a namespace file, and
+the namespace added to `allowedRoutes` on **both** listeners in
+`core/gateway/gateway.yaml`.
+
+### What an AppProject stops, and why namespaces are files
+
+Each project permits this repository only, its own namespace only, and
+`clusterResourceWhitelist: []` — **no cluster-scoped resource at all.**
+
+That last line is why `CreateNamespace=true` is not used anywhere here. A
+Namespace is cluster-scoped, so letting ArgoCD create one would reopen exactly
+the boundary the empty list closes. `projects/authos/namespace.yaml` and
+`projects/doma/namespace.yaml` are committed instead and applied out of band.
+Before this step the procedure was a bare `kubectl create ns doma`, recorded in
+a README and in no file.
+
+### Deleting the ApplicationSet does not delete the workloads
+
+`syncPolicy.preserveResourcesOnDeletion: true`. The generated Applications then
+carry no resources finalizer, so deleting the ApplicationSet leaves every
+Deployment running. This cluster has already been lost once to a single
+deletion and no database here has a backup yet.
+
+The cost is real and is written in the file: removing a directory from the
+generator orphans that component's Deployment — the Application goes, the
+workload stays, and it must be deleted by hand.
+
+### Applied
+
+Namespaces first, because the AppProjects cannot make them.
+
+```bash
+kubectl apply --dry-run=server \
+  -f projects/authos/namespace.yaml -f projects/doma/namespace.yaml \
+  -f core/argocd/appprojects.yaml -f core/argocd/applicationset.yaml
+
+kubectl apply -f projects/authos/namespace.yaml -f projects/doma/namespace.yaml
+kubectl apply -f core/argocd/appprojects.yaml
+kubectl apply -f core/argocd/applicationset.yaml
+```
+
+Ten seconds later, five Applications, every field derived from its path:
+
+| Application | Project | Namespace | Path |
+|---|---|---|---|
+| `authos-api` | `authos` | `authos` | `projects/authos/api/manifests/overlays/dev` |
+| `authos-demo` | `authos` | `authos` | `projects/authos/demo/manifests/overlays/dev` |
+| `authos-duster` | `authos` | `authos` | `projects/authos/duster/manifests/overlays/dev` |
+| `authos-ui` | `authos` | `authos` | `projects/authos/ui/manifests/overlays/dev` |
+| `doma-web` | `doma` | `doma` | `projects/doma/web/manifests/overlays/dev` |
+
+All five `Synced` at revision `3a42972`, the tip of `master`. Proof that the
+generator reads `master` and not the working tree: the doma pod came up on
+`stevetosak/doma:alpha-605190726c…`, the tag `master` carries, while this
+branch's overlay still says `alpha-ad778b63…`. The branch never touched that
+file, so the merge keeps `master`'s value and rolls nothing back.
+
+All five pods then failed with `CreateContainerConfigError`, which is the
+correct answer: ArgoCD syncs the overlay and nothing else, and every ConfigMap
+and Secret in this repository is applied out of band.
+
+### doma, end to end
+
+The Secret is the operator's, as always. `projects/doma/scripts/init_secrets.sh`
+prompts for five fields; the database password comes from `db-credentials` in
+`pg-cluster`, and the connection string is assembled by hand because the project
+ConfigMaps build `postgresql://tosak:<pw>@…` themselves.
+
+Checked by **byte length inside the pod**, never from base64 — step 11 lost a
+session to a 41-byte password that looked right in base64, because 40 and 41
+bytes both encode to 56 characters:
+
+    kubectl exec -n doma deploy/doma -- sh -c 'for v in …; do eval "val=\$$v";
+      printf "%s = %s bytes\n" "$v" "$(printf "%s" "$val" | wc -c)"; done'
+
+| Field | Bytes | Expected |
+|---|---|---|
+| `DATABASE_URL` | 118 | 19 + 40 + 59. The fixed halves are `postgresql://tosak:` and `@tosak-pg-cluster-rw.pg-cluster.svc.cluster.local:5432/doma`, so the password is exactly 40 — no trailing byte |
+| `SESSION_SECRET` | 64 | `openssl rand -hex 32` |
+| `TELEGRAM_WEBHOOK_SECRET` | 64 | `openssl rand -hex 32` |
+| `TELEGRAM_BOT_TOKEN` | 46 | bot id, `:`, 35 characters |
+| `GOOGLE_CLIENT_SECRET` | 35 | `GOCSPX-` + 28 |
+
+Every one matches its expected length exactly, so no field carries a stray
+space or newline.
+
+🔴 **Do not add `od -c` or `tail -c` to that loop.** It prints real bytes of a
+secret and meets the `Credential Materialization` refusal (trap 13). The
+lengths above are proof enough, because each value has a known exact shape.
+
+Then `doma-web` went `Synced` and `Healthy`, and the host answered:
+
+| Check | Result |
+|---|---|
+| `https://doma.tosak.net/` through Cloudflare | `200`, HTTP/2 |
+| `/api/health` (the readiness path) | `200` |
+| direct to `77.42.14.48`, edge bypassed | `200` |
+| `POST /api/telegram/webhook` with no secret header | **`401`** |
+
+### 🔴 `TELEGRAM_WEBHOOK_SECRET` is not optional, whatever three files said
+
+Three comments in this repository said to leave the Telegram fields blank
+"until the bot exists". The bot **does** exist — `configmap.yaml` has named
+`@domche_bot` all along. Worse, they called the webhook secret optional.
+
+In the doma app (`src/core/notify/telegram-bot.ts`) the token alone decides
+whether anything runs: `isTelegramConfigured()` tests `TELEGRAM_BOT_TOKEN`, and
+while it is blank `/api/telegram/webhook` answers 404, which is safe. But once
+the token is set, that route is a **public POST endpoint** — doma's HTTPRoute
+exposes everything under `/` — and the webhook secret is its only
+authentication. An empty value does two harmful things:
+
+  * grammy skips the `X-Telegram-Bot-Api-Secret-Token` check entirely
+    (`secretToken: optionalEnv(…) || undefined`);
+  * every boot calls `setWebhook(…, { secret_token: undefined })`, which
+    **clears** any secret registered with Telegram earlier.
+
+So with the token set and the secret blank, anyone who found the URL could post
+forged Telegram updates — which is what drives account linking. Both fields go
+in together or neither does. The `401` measured above is the proof that this
+one is live. `init_secrets.sh`, `credentials.yaml` and the component README are
+all corrected.
+
+**Generalise: "optional" in a prompt means "the program starts without it", not
+"you may safely omit it".** Check what the value defends before believing the
+label.
+
+### The notification fires once — and then fails
+
+The `oncePer` design is **proven**. Over twenty minutes the trigger condition
+evaluated true **five** times for `doma-web`, and the controller made exactly
+**one** send. The four authos Applications logged `FAILED` throughout, which is
+correct: they are not Healthy. One fire per image set, not one per Application
+and not one per evaluation.
+
+🔴 **But the send itself failed, and it will not be retried.**
+
+```
+POST https://api.github.com/repos/stevetosak/hetzner-cloud-infra/dispatches
+403 {"message":"Resource not accessible by personal access token"}
+```
+
+`gh run list --workflow=deploy-catalog.yml` confirms the newest run is still
+2026-09-08. A fine-grained PAT needs **Contents: Read and write** on the
+repository for the dispatch endpoint, and the repository must be in its access
+list; either gap gives this same 403. The token value does not have to change.
+
+🔴 **A FAILED DELIVERY STILL RECORDS THE `oncePer` KEY.** Every later evaluation
+logged `already sent`, and the annotation holds the key:
+
+    notified.notifications.argoproj.io:
+      {"[stevetosak/doma:alpha-605190726c…]:on-deployed:…:gh-infra:":1790021348}
+
+So a deploy notification that fails to deliver is **lost silently**, not
+queued. Recovery is either `deploy-catalog.yml`'s `workflow_dispatch` replay, or
+removing that one annotation so the controller fires again:
+
+    kubectl patch application doma-web -n argocd --type=json \
+      -p '[{"op":"remove","path":"/metadata/annotations/notified.notifications.argoproj.io"}]'
+
+🔴 **Order matters when that is done.** `master`'s `apps.json` has no `doma-web`
+key until this branch merges, and `resolve.mjs` writes `version: "unknown"` for
+a key it cannot find. Fix the PAT, merge, then replay — in that order, or the
+first catalog row of the rebuilt cluster is junk.
+
+### What this step leaves open
+
+- **The notifications PAT is not authorised to dispatch.** Above. Until it is
+  fixed the deploy catalog records nothing, and the pipeline is otherwise
+  whole.
+- **Two history rows on `master` still say `doma`.** One commit on `master`
+  after the merge; it cannot be done on this branch (`merge=union`).
+- **authos is declared but cannot run.** Four Applications sit Degraded on
+  `CreateContainerConfigError`. They need four Secrets and the repository
+  documents one: `credentials` has a template, while **`keystore` (a PKCS#12
+  file — the signing keystore), `keystore-pass` and `duster-admin` have none.**
+  `projects/authos/scripts/init_secrets.sh` is three stale lines that create
+  `db-credentials` under the wrong name, read the keystore from
+  `/etc/keystore/keystore.p12` on one laptop, and set `KEYSTORE_PASS="<>"`.
+  🔴 **If that `.p12` is gone, authos's signing keys are gone with it.** Its own
+  chunk, and three more entries for the Phase 5 SOPS inventory.
+- **Three authos routes stay unapplied** — authos, authos-api, authos-demo —
+  until those Secrets exist.
