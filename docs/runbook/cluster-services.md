@@ -1283,14 +1283,30 @@ leaves gRPC-web to fall through. Verified at the origin after re-applying:
 `application/grpc` and `application/grpc+proto` both served by `rule/0` with
 `grpc-status: 0`, `application/grpc-web+proto` by `rule/1`.
 
+### The acceptance test, completed
+
+The operator ran `argocd login`. `argocd account get-user-info` returns
+`Logged In: true, Username: admin`, and `argocd app list` returns its header
+row with no applications — which is the correct answer, because none exists
+yet. `argocd-server` logged the call:
+
+```
+grpc.code=OK grpc.service=application.ApplicationService grpc.method=List
+  grpc.method_type=unary protocol=grpc
+```
+
+and Envoy served it on `rule/1`, because Cloudflare blocks plain gRPC and the
+CLI fell back to gRPC-web by itself. **ADR 0008's acceptance test passes.**
+
+One detail worth knowing: a fresh `argocd login` writes the server into the
+local config **without** `grpc-web`, so from then on every CLI call probes
+plain gRPC, loses that round trip at the Cloudflare edge, and prints
+`Failed to invoke grpc call. Use flag --grpc-web`. It is cosmetic. Either
+enable the zone's gRPC setting, or log in with `--grpc-web` so the config
+records it and the probe is skipped.
+
 ### What this step leaves open
 
-- **`argocd login` and `argocd app list` are not yet run against a live
-  session.** `app list` returns
-  `Unauthenticated … token signature is invalid` from the stale token of the
-  dead cluster — which does prove the transport end to end, because the error
-  came back from `argocd-server` through the route. The login itself needs the
-  admin password and so is the operator's to run.
 - **No Application or ApplicationSet exists yet.** That is the next chunk. Note
   that ArgoCD will reconcile against a repository whose paths have moved:
   `core/ingress-controller/`, `core/load-balancer/` and every
