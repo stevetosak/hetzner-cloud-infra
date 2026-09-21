@@ -1006,3 +1006,296 @@ every user out.** That is acceptable for a cache and a session store and is
 why the memory headroom can be as small as it is — `redis-server` never forks
 to write a snapshot. It would not be acceptable for anything else, so nothing
 else goes here.
+
+## 12. ArgoCD — and the gRPC claim ADR 0008 could not settle
+
+`core/argocd/` held two things before this step: `httproute.yaml`, and a
+`notifications/` directory with a tracked ConfigMap. **Nothing in this
+repository had ever installed ArgoCD.** The old install was done out of band
+and never written down, so there was nothing to recover and nothing to
+correct — only the route, which was wrong, and the notification config, which
+was in the wrong place.
+
+ArgoCD **v3.5.3**, chart **10.9.2**, digest
+`sha256:8a82bf6d8ac9f6f126a1eb9d0c5a68ce2db64f8f66a4da5c00b32cc3ef3fc93f`.
+The current line, pinned, the same choice step 11 made for Redis.
+
+### Why this is a render and not an upstream manifest
+
+The rule from step 9: render from a chart only where values are actually set.
+ADR 0008 asks two things of ArgoCD, and both are plain chart values, so a
+render keeps them out of a generated file where a hand edit dies at the next
+upgrade — `--insecure` on `argocd-server`, and a Service port advertising
+`appProtocol: kubernetes.io/h2c`.
+
+The render is deterministic, which was checked rather than assumed: two runs
+of `render.sh` produce identical files, and no template in the chart calls
+`randAlphaNum`, `genCA` or `uuidv4`.
+
+🔴 **One value would break that.** Setting
+`configs.secret.argocdServerAdminPassword` renders `admin.passwordMtime` from
+`now`, so the manifest would differ on every render and the commit diff would
+be worthless. It is not set. The initial password comes from
+`argocd-initial-admin-secret`, which `argocd-server` generates itself.
+
+### 🔴 `appProtocol` is single-valued per Service port, and ADR 0008 needs it not to be
+
+ADR 0008 states that "the `argocd-server` Service port carries `appProtocol:
+kubernetes.io/h2c`", and the committed `httproute.yaml` sent everything to
+port 80. Both are wrong, and the first one is wrong in a way that takes the
+web UI down completely.
+
+`argocd-server` serves the web UI and gRPC on **one** container port and
+splits them with cmux. In the insecure branch the two matchers are exclusive
+(`server/server.go`, v3.5.3, lines 633-636):
+
+```go
+httpL = tcpm.Match(cmux.HTTP1Fast("PATCH"))
+grpcL = tcpm.MatchWithWriters(cmux.HTTP2MatchHeaderFieldSendSettings(
+    "content-type", "application/grpc"))
+```
+
+There is no `cmux.Any()` fallback in that branch. So the UI listener accepts
+**HTTP/1.x only**, and an h2c connection that is not gRPC matches nothing and
+is dropped. Nor can the chart express the ADR's wording: there is no
+`servicePortHttpAppProtocol` value, and `templates/argocd-server/service.yaml`
+can set `appProtocol` on the `http2` and `https` ports only.
+
+The shape that works is two ports and two route rules. ArgoCD's own ingress
+documentation describes the same split.
+
+| Service port | Name | `appProtocol` | Upstream protocol | Routed |
+|---|---|---|---|---|
+| 80 | `http` | none | HTTP/1.1 | yes — UI, REST, gRPC-web |
+| 8080 | `http2` | `kubernetes.io/h2c` | HTTP/2 cleartext | yes — gRPC |
+| 443 | `https` | none | — | no |
+
+All three target container port 8080. Port 443 serves cleartext while
+`server.insecure` is true; the chart always renders it and no value removes
+it. Nothing points at it.
+
+Rule order in the HTTPRoute does not decide the split — Gateway API precedence
+does. Both rules carry the same `/` prefix, so the tie breaks on the number of
+header matches, and the gRPC rule has one. Confirmed in Envoy's own config:
+
+```
+route httproute/argocd/argocd/rule/0/... -> cluster .../rule/0
+   match: {"prefix": "/", "headers": [{"name": "Content-Type", ...}]}
+route httproute/argocd/argocd/rule/1/... -> cluster .../rule/1
+   match: {"prefix": "/"}
+
+cluster .../rule/0  explicit_http_config: {http2_protocol_options: {...}}
+cluster .../rule/1  (no protocol options — HTTP/1.1)
+```
+
+### Other values, and why
+
+**Dex is disabled.** No SSO is configured. Dex with no connector is a
+Deployment, a Service, two Secrets and a ServiceAccount that do nothing.
+
+**ArgoCD keeps its own Redis.** The shared instance from step 11 is a 384 MB
+session store on `volatile-lru` read by Authos and Duster. ArgoCD's cache is
+churn; sharing would make the two compete for the same memory, and an ArgoCD
+eviction would surface as a logged-out user in another namespace.
+
+🔴 **That bundled Redis needed the step 11 lesson applied.** The chart runs it
+with `--save '' --appendonly no` and **no `--maxmemory` at all**, so a memory
+limit on its own is an OOM kill waiting for the cache to fill. It runs with
+`--maxmemory 192mb` against a 256Mi limit. `allkeys-lru` is right here and
+wrong for the shared instance: everything in this one is a cache ArgoCD can
+rebuild, so evicting a key with no TTL is correct.
+
+**Resources are set on all six components**, against a chart default of none.
+600m CPU and 1216Mi memory requested in total. ArgoCD is the control plane for
+every deploy and a BestEffort pod is evicted first; two workers already
+requested about half their memory, and an unbounded application-controller
+could push a node into memory pressure and take CloudNativePG or Redis with
+it. Neither has a backup yet.
+
+**The notification config moved into the values file.** It used to be a tracked
+ConfigMap applied over the one the chart renders, so the rendered manifest held
+data that was overwritten immediately and re-applying the render reverted the
+configuration. `core/argocd/notifications/` is deleted; the `oncePer`
+rationale lives in `argocd-values.yaml` beside the trigger.
+
+**`notifications.secret.create: false`.** The chart otherwise renders an empty
+Secret with a `stringData:` key and nothing under it, which is a way to lose
+the token a later patch put there. `core/argocd/credentials.yaml` documents
+the shape — the same gap `db-credentials` and the `redis` Secret both had.
+
+**The five NetworkPolicy objects are kept, and they are inert.** The cluster
+runs Flannel, which does not enforce NetworkPolicy. They cost nothing and
+become correct the day a CNI that enforces them arrives, which ADR 0001 names
+as the trigger for Cilium. Do not read them as a live control.
+
+### Apply
+
+```bash
+kubectl apply -f core/argocd/namespace.yaml
+kubectl apply --server-side -f core/argocd/argocd.yaml
+
+# The operator creates this one — core/argocd/credentials.yaml has the shape.
+kubectl create secret generic argocd-notifications-secret \
+  --namespace argocd --from-literal=github-token=<FINE_GRAINED_PAT>
+
+kubectl apply -f core/argocd/httproute.yaml
+```
+
+🔴 **`--server-side` is mandatory.** The `applicationsets.argoproj.io` CRD
+alone renders to about 23,000 lines, far over the 256 KiB limit on the
+`last-applied-configuration` annotation a client-side apply writes. The same
+constraint the CloudNativePG operator has in step 9.
+
+### Verified
+
+Six workloads, one Job, spread over all three workers:
+
+| Pod | Node |
+|---|---|
+| `argocd-application-controller-0` (StatefulSet) | `k8swk3` |
+| `argocd-repo-server` | `k8swk3` |
+| `argocd-server` | `k8swk2` |
+| `argocd-applicationset-controller` | `k8swk2` |
+| `argocd-notifications-controller` | `k8swk1` |
+| `argocd-redis` | `k8swk1` |
+
+`argocd-server` ClusterIP `10.96.226.141`. Cluster total **37 pods Running**,
+1 Completed. The Service ports came out as designed, and only one carries the
+protocol hint:
+
+```
+port 80    name http   appProtocol (none)
+port 8080  name http2  appProtocol kubernetes.io/h2c
+port 443   name https  appProtocol (none)
+```
+
+`argocd-server` logs `tls: false` and `url: https://argocd.tosak.net`, so
+insecure mode and the domain both took. The HTTPRoute is `Accepted` with
+`ResolvedRefs` true.
+
+The UI answers 200 over both HTTP/1.1 and HTTP/2 from the client side, and
+serves the real ArgoCD document. Note that Cloudflare re-originates to the
+Gateway over HTTP/2 whatever the client used, so every request arrives at
+Envoy as HTTP/2 — the client-side protocol is not what the backend sees.
+
+Two things behave better than the old notes claimed:
+
+- **The notifications controller does not crash-loop with its Secret absent.**
+  It starts, logs `Controller is running.` as a warning, and waits.
+- **It watches the Secret.** It logged `invalidated cache for resource … with
+  the name: argocd-notifications-secret` at the moment the Secret was created,
+  with no restart. The old `notifications/README.md` told the operator to
+  `rollout restart` the controller; that is not needed.
+
+The `argocd-redis-secret-init` Job carries `ttlSecondsAfterFinished: 60`, so
+it deletes itself a minute after completing. Re-applying the manifest
+recreates it, which is harmless — it only writes keys that are missing.
+
+The `github-token` in `argocd-notifications-secret` decodes to **93 bytes**,
+which is exactly `github_pat_` plus 82 characters. A trailing newline would
+make 94, so that length is itself the proof the step 11 trap was avoided —
+and it was read without the value reaching anything.
+
+### 🔴 The acceptance test I ran first was worthless, and it looked like a pass
+
+`argocd version --server argocd.tosak.net` printed `argocd-server: v3.5.3`,
+which appears to prove plain gRPC end to end. It proves nothing. The CLI
+skips its gRPC probe entirely when the local config already says so
+(`pkg/apiclient/apiclient.go`, `if !c.GRPCWeb { … }`), and
+`~/.config/argocd/config` on this workstation carried:
+
+```yaml
+servers:
+  - {grpc-web: true, grpc-web-root-path: '', server: argocd.tosak.net}
+```
+
+left over from the ingress-nginx cluster — the very history ADR 0008 cites as
+the reason ArgoCD prefers passthrough. So the CLI sent gRPC-web, printed no
+warning, and the Envoy access log showed the request served by **rule/1**, the
+HTTP/1.1 fallthrough. One request per invocation, so there was no failed first
+attempt to notice either.
+
+Forcing a real attempt with `--config <an empty path>` gave the truth:
+
+```
+$ argocd version --server argocd.tosak.net --config /tmp/clean.conf --short
+argocd: v3.1.11+cc053b2
+{"level":"warning","msg":"Failed to invoke grpc call. Use flag --grpc-web ..."}
+argocd-server: v3.5.3
+```
+
+**Plain gRPC failed, and nothing reached Envoy at all** — so the failure was
+upstream of the origin.
+
+*The lesson is step 11's, in a new place: vary the shape of a check. The
+quoted, convenient form of this test agreed with the design and hid the
+failure. A second reading of the same shape would have re-proved nothing.*
+
+### The origin is correct. Cloudflare blocks plain gRPC
+
+Isolated with a hand-built gRPC request — a unary call to `VersionService` is
+an empty five-byte frame, so it needs no tooling and no credentials:
+
+```bash
+printf '\x00\x00\x00\x00\x00' > /tmp/grpc-empty.bin
+
+# direct to the load balancer, Cloudflare bypassed
+curl --http2 --resolve argocd.tosak.net:443:77.42.14.48 \
+  -H 'content-type: application/grpc' -H 'te: trailers' \
+  --data-binary @/tmp/grpc-empty.bin \
+  https://argocd.tosak.net/version.VersionService/Version
+```
+
+| `content-type` | through Cloudflare | direct to the load balancer |
+|---|---|---|
+| `application/grpc` | **403** | **200**, `grpc-status: 0`, body `v3.5.3` |
+| `application/grpc+proto` | **403** | **200**, `grpc-status: 0`, body `v3.5.3` |
+| `application/grpc-web+proto` | 200 | 200 |
+| `application/octet-stream` | 404 — from Envoy, so it passed the edge | — |
+
+**ADR 0008's unproven claim is PROVEN at the origin.** Envoy terminated TLS,
+matched `rule/0`, spoke h2c to `10.244.2.14:8080` and argocd-server's gRPC
+listener answered with `grpc-status: 0`. Terminating at the Gateway does carry
+the CLI's gRPC. TLS passthrough and a `TLSRoute` are not needed.
+
+**The 403 is Cloudflare's, and it is content-type specific** — `grpc-web` and
+`octet-stream` both pass, so it is the zone's gRPC setting being off and not a
+WAF rule. A `Zone:DNS:Edit` token cannot change it; that needs the dashboard or
+a second token, the same limit the origin lock has.
+
+This costs nothing today. The CLI probes plain gRPC, fails, and retries over
+gRPC-web by itself, which the second rule serves. Rule 0 stays: it is proven,
+and it is the path the moment the zone setting is enabled or Cloudflare is
+bypassed.
+
+### 🔴 The header match the test corrected
+
+The first version matched `Content-Type` exactly against `application/grpc`.
+The table above shows why that is too narrow: a gRPC client that sets a
+content subtype sends `application/grpc+proto`, which would have fallen
+through to the HTTP/1.1 rule and broken. ArgoCD's documentation has the
+opposite fault — its `^application/grpc.*$` also matches
+`application/grpc-web+proto`, and cmux's gRPC matcher accepts the bare value
+only, so gRPC-web would be sent to a listener that cannot match it.
+
+The route uses `^application/grpc(\+.*)?$`, which takes both gRPC forms and
+leaves gRPC-web to fall through. Verified at the origin after re-applying:
+`application/grpc` and `application/grpc+proto` both served by `rule/0` with
+`grpc-status: 0`, `application/grpc-web+proto` by `rule/1`.
+
+### What this step leaves open
+
+- **`argocd login` and `argocd app list` are not yet run against a live
+  session.** `app list` returns
+  `Unauthenticated … token signature is invalid` from the stale token of the
+  dead cluster — which does prove the transport end to end, because the error
+  came back from `argocd-server` through the route. The login itself needs the
+  admin password and so is the operator's to run.
+- **No Application or ApplicationSet exists yet.** That is the next chunk. Note
+  that ArgoCD will reconcile against a repository whose paths have moved:
+  `core/ingress-controller/`, `core/load-balancer/` and every
+  `projects/*/ingress.yaml` are gone.
+- **`argocd-initial-admin-secret` still exists.** It can be deleted after the
+  first login; deleting it does not change the password.
+- **The Cloudflare gRPC zone setting is off.** Optional, and not needed for the
+  CLI to work.

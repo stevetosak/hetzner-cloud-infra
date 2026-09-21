@@ -99,6 +99,14 @@ What it does: emit a GitHub `repository_dispatch` (`event_type: deploy-live`)
 when an Application goes Synced and Healthy on an image set it has not reported
 before. `.github/workflows/deploy-catalog.yml` consumes it.
 
+Two behaviours worth knowing, both measured on 2026-09-21. The controller
+**does not crash-loop while its Secret is absent** — it starts, logs
+`Controller is running.` as a warning, and waits. And it **watches** the
+Secret: it logged `invalidated cache for resource … argocd-notifications-secret`
+at the moment the Secret was created, with no restart. The old
+`notifications/README.md` told the operator to `rollout restart` the
+controller; that is not needed.
+
 Verify, without sending anything:
 
     kubectl -n argocd exec deploy/argocd-notifications-controller -- \

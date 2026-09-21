@@ -40,19 +40,45 @@
 # carry the same `/` prefix, so the tie breaks on the number of header matches,
 # and the gRPC rule has one.
 #
-# 🔴 The header match is EXACT, not the regex `^application/grpc.*$` that
-# ArgoCD's documentation uses. That regex also matches
-# `application/grpc-web+proto`, and cmux's gRPC matcher requires the value to
-# be exactly `application/grpc` — so gRPC-web would be sent to a listener that
-# cannot match it and the connection would be dropped. Exact matches what the
-# backend can actually accept, and gRPC-web correctly falls through to the
-# HTTP/1.1 rule.
+# 🔴 The header match is `^application/grpc(\+.*)?$`, and both obvious
+# alternatives are wrong. ArgoCD's documentation uses `^application/grpc.*$`,
+# which also matches `application/grpc-web+proto` — and cmux's gRPC matcher
+# accepts the value `application/grpc` only, so gRPC-web would be sent to a
+# listener that cannot match it and the connection would be dropped. An exact
+# match on `application/grpc` is too narrow the other way: a gRPC client that
+# sets a content subtype sends `application/grpc+proto`, which would fall
+# through to the HTTP/1.1 rule and break. This expression takes both gRPC
+# forms and leaves gRPC-web to fall through, which is correct.
 #
-# **This is the one unproven claim in ADR 0008.** The acceptance test is
-# `argocd login argocd.tosak.net` followed by `argocd app list`, plus the UI in
-# a browser. If gRPC still fails, the fallback is passthrough with a TLSRoute —
-# and TLSRoute is in the Gateway API STANDARD channel as of v1.6, so that
-# fallback no longer costs the experimental channel as ADR 0008 states.
+# 🔴 CLOUDFLARE BLOCKS PLAIN gRPC ON THIS ZONE, and the origin is not at
+# fault. Measured 2026-09-21 with a hand-built gRPC request:
+#
+#   content-type                 through Cloudflare   direct to the LB
+#   application/grpc                   403                200, grpc-status 0
+#   application/grpc+proto             403                —
+#   application/grpc-web+proto         200                —
+#   application/octet-stream           404 (from Envoy)   —
+#
+# The block is content-type specific, so it is the zone's gRPC setting being
+# off, not a WAF rule. A `Zone:DNS:Edit` token cannot change it.
+#
+# This costs nothing today: the `argocd` CLI probes plain gRPC, fails, and
+# retries over gRPC-web by itself, which the second rule serves. Rule 0 is
+# still proven and still required — it is the path the moment the zone setting
+# is enabled, or whenever Cloudflare is bypassed.
+#
+# ADR 0008's unproven claim is now PROVEN, at the origin: a plain gRPC call to
+# `/version.VersionService/Version` straight at the load balancer returned
+# `grpc-status: 0` and the server version, and the Envoy access log shows it
+# served by `rule/0` against `upstream_host …:8080`. TLS passthrough and a
+# `TLSRoute` are not needed.
+#
+# 🔴 Beware the shape of that test. `argocd version --server argocd.tosak.net`
+# appears to prove plain gRPC and proves nothing: the CLI skips its gRPC probe
+# entirely when the local `~/.config/argocd/config` already carries
+# `grpc-web: true`, which it does here, left over from the ingress-nginx
+# cluster. It then sends gRPC-web and prints no warning. Force a real test with
+# `--config <an empty path>`.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -73,9 +99,9 @@ spec:
             type: PathPrefix
             value: /
           headers:
-            - type: Exact
+            - type: RegularExpression
               name: Content-Type
-              value: application/grpc
+              value: ^application/grpc(\+.*)?$
       backendRefs:
         - name: argocd-server
           port: 8080
