@@ -165,10 +165,21 @@ before. `.github/workflows/deploy-catalog.yml` consumes it.
 Two behaviours worth knowing, both measured on 2026-09-21. The controller
 **does not crash-loop while its Secret is absent** — it starts, logs
 `Controller is running.` as a warning, and waits. And it **watches** the
-Secret: it logged `invalidated cache for resource … argocd-notifications-secret`
-at the moment the Secret was created, with no restart. The old
+Secret, so a changed token is picked up with no restart. The old
 `notifications/README.md` told the operator to `rollout restart` the
 controller; that is not needed.
+
+🔴 **But `invalidated cache for resource … argocd-notifications-secret` is NOT
+proof that it saw your change.** The controller emits that exact line on a
+**3-minute resync**, at `:03` seconds, as a pair — once for
+`argocd-notifications-cm` and once for the Secret. A real change shows up as a
+**single line naming one resource, off that 3-minute grid**. Measured on
+2026-09-21 while replacing the token: the cadence ran `20:15:03` then
+`20:18:03`, and the replacement logged one Secret-only line at `20:17:03`.
+
+This is the step-11 lesson again in a third place: the convenient form of the
+check agrees with the design whatever happens. Read the **timestamps and the
+pairing**, not the message.
 
 Verify, without sending anything:
 
