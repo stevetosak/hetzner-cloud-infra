@@ -32,7 +32,7 @@ bash projects/doma/scripts/init_secrets.sh
 
 # 3. Fill in the real Google OAuth client id (from the Google Cloud Console step — it's
 #    public, not a secret, but doma needs the real value to build its redirect URL). Also
-#    TELEGRAM_BOT_USERNAME once a bot exists (@BotFather) — optional, leave blank until then.
+#    TELEGRAM_BOT_USERNAME is already set to @domche_bot — the bot exists.
 $EDITOR projects/doma/web/manifests/configmap.yaml   # GOOGLE_CLIENT_ID: REPLACE_ME -> real value
 
 # 4. Apply the out-of-band manifests.
@@ -49,10 +49,16 @@ The `doma` repo also needs the variable **`INFRA_REPO_DOMA_OVERLAY_DIR`** =
 the secrets `DOCKERHUB_TOKEN` / `INFRA_REPO_TOKEN` (same names every other project's deploy
 workflow in this org uses).
 
-**Telegram reminders (M8):** `TELEGRAM_BOT_TOKEN` / `TELEGRAM_WEBHOOK_SECRET`
-(`credentials.yaml`, prompted by `init_secrets.sh`) and `TELEGRAM_BOT_USERNAME`
-(`configmap.yaml`) are all optional — the app runs fine with them blank, chore reminders and
-account linking just stay unavailable. To turn them on: create a bot with @BotFather, pick any
-random string for the webhook secret (`openssl rand -hex 32`), fill in all three, reapply the
-Secret/ConfigMap, and restart the pod (`kubectl rollout restart deploy/doma -n doma`) — boot
-self-registers the Telegram webhook against `APP_ORIGIN`, no separate `setWebhook` step.
+**Telegram reminders (M8):** the bot exists — `configmap.yaml` sets
+`TELEGRAM_BOT_USERNAME: 'domche_bot'`. The feature is switched on by
+`TELEGRAM_BOT_TOKEN` alone: `isTelegramConfigured()` tests that one value, and while it is
+blank the bot never starts and `/api/telegram/webhook` answers 404. Boot self-registers the
+webhook against `APP_ORIGIN`, so there is no separate `setWebhook` step.
+
+🔴 **`TELEGRAM_WEBHOOK_SECRET` is not optional once the token is set**, whatever
+`init_secrets.sh` used to call it. doma's HTTPRoute exposes everything under `/`, so
+`/api/telegram/webhook` is a public POST endpoint and that secret is its only authentication.
+An empty value does two harmful things: grammy skips the `X-Telegram-Bot-Api-Secret-Token`
+check (`secretToken: optionalEnv(...) || undefined`), and every boot calls
+`setWebhook(..., { secret_token: undefined })`, which clears any secret registered earlier.
+Fill both in together (`openssl rand -hex 32` for the secret), or leave both blank.
