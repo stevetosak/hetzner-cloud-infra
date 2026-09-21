@@ -6,7 +6,7 @@ not a new role).
 
 CI (`doma` repo `.github/workflows/deploy.yaml`) gates on typecheck/lint/format/unit tests,
 builds `stevetosak/doma:alpha-<sha>`, runs `kustomize edit set image` in
-`manifests/overlays/dev`, and pushes. ArgoCD Application `doma` (project `default`, path
+`manifests/overlays/dev`, and pushes. ArgoCD Application `doma-web` (project `doma`, path
 `projects/doma/web/manifests/overlays/dev`) syncs the Deployment.
 
 Migrations run at container boot (`scripts/start.mjs` in the app repo), behind a Postgres
@@ -27,7 +27,7 @@ overlay. The rest is applied by hand.
 kubectl apply -f core/cnpg/databases/doma.yaml
 
 # 2. Namespace + secrets (prompts interactively; nothing lands in git).
-kubectl create namespace doma
+kubectl apply -f projects/doma/namespace.yaml
 bash projects/doma/scripts/init_secrets.sh
 
 # 3. Fill in the real Google OAuth client id (from the Google Cloud Console step — it's
@@ -38,11 +38,10 @@ $EDITOR projects/doma/web/manifests/configmap.yaml   # GOOGLE_CLIENT_ID: REPLACE
 # 4. Apply the out-of-band manifests.
 kubectl apply -f projects/doma/web/manifests/configmap.yaml
 kubectl apply -f projects/doma/web/manifests/service.yaml
-kubectl apply -f projects/doma/ingress.yaml
+kubectl apply -f projects/doma/httproute.yaml
 
-# 5. After this overlay path is on infra master and deploy.yaml has bumped the image tag past
-#    `latest`:
-kubectl apply -f projects/doma/web/argocd-application.yaml
+# 5. Nothing to apply. The ApplicationSet in core/argocd/applicationset.yaml generates the
+#    `doma-web` Application from this overlay path as soon as it is on infra master.
 ```
 
 The `doma` repo also needs the variable **`INFRA_REPO_DOMA_OVERLAY_DIR`** =

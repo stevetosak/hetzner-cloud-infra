@@ -11,6 +11,8 @@
 | `argocd.yaml` | **generated. Do not edit.** Header carries version and digest |
 | `credentials.yaml` | the one Secret nothing creates: `argocd-notifications-secret` |
 | `httproute.yaml` | the public route, two rules |
+| `appprojects.yaml` | one AppProject per deployed project, each scoped to its own namespace |
+| `applicationset.yaml` | **the one ApplicationSet** (ADR 0003). One overlay directory is one Application |
 
 ## Why this is a render and not an upstream manifest
 
@@ -40,6 +42,12 @@ The namespace and the CRDs first, then everything else.
 
     kubectl apply -f core/argocd/httproute.yaml
 
+    # The declaration of everything ArgoCD deploys. Namespaces first: the
+    # AppProjects deny cluster-scoped resources, so ArgoCD cannot make them.
+    kubectl apply -f projects/authos/namespace.yaml -f projects/doma/namespace.yaml
+    kubectl apply -f core/argocd/appprojects.yaml
+    kubectl apply -f core/argocd/applicationset.yaml
+
 🔴 **`--server-side` is mandatory, not a preference.** The
 `applicationsets.argoproj.io` CRD alone is about 23,000 lines, far over the
 256 KiB limit on the `last-applied-configuration` annotation that a
@@ -49,6 +57,61 @@ First login:
 
     kubectl -n argocd get secret argocd-initial-admin-secret \
       -o go-template='{{index .data "password" | base64decode}}'
+
+## One ApplicationSet, and the rule that makes it total
+
+ADR 0003: hand-made Applications are replaced by one ApplicationSet with a git
+directory generator. Five of the eight Applications on the lost cluster existed
+only in the web UI, and the three that were committed disagreed with each other
+about which AppProject they belonged to.
+
+The rule has no exceptions and nothing is mapped by hand:
+
+| Path | `projects/<project>/<component>/manifests/overlays/dev` |
+|---|---|
+| Application name | `<project>-<component>` |
+| AppProject | `<project>` |
+| Namespace | `<project>` |
+
+So the Applications are `authos-api`, `authos-demo`, `authos-duster`,
+`authos-ui` and `doma-web`. Two of those are renames: the lost cluster called
+them `duster` and `doma`. `deployments/apps.json` is keyed on
+`.app.metadata.name` and was renamed to match, which cost nothing only because
+`deployments/history.jsonl` was still empty. **Anything that keys on an ArgoCD
+Application name must be checked whenever this rule changes.**
+
+🔴 **The generator lists its projects, it does not sweep them.** ADR 0003 scopes
+the restore to `authos` and `doma`. A `projects/*/*/manifests/overlays/dev`
+glob would also adopt `imaps` and `wasteio`, which stay in the repository
+unsynced — the exact hazard the ADR says makes this migration cheap against an
+empty cluster and expensive against a running one.
+
+### Adding a project
+
+Four edits, all deliberate:
+
+1. one `directories` entry in `applicationset.yaml`;
+2. one AppProject in `appprojects.yaml`;
+3. `projects/<project>/namespace.yaml`, applied out of band;
+4. the namespace added to `allowedRoutes` on **both** listeners in
+   `core/gateway/gateway.yaml`, or the project's route is refused with
+   `NotAllowedByListeners`.
+
+### What the AppProject actually stops
+
+Each project permits this repository only, its own namespace only, and **no
+cluster-scoped resource at all** (`clusterResourceWhitelist: []`). That last
+one is why `CreateNamespace=true` is not used: a namespace is cluster-scoped,
+so allowing ArgoCD to create one would reopen the boundary the empty list
+closes. The namespace is a committed file instead.
+
+### Deleting the ApplicationSet does not delete the workloads
+
+`syncPolicy.preserveResourcesOnDeletion: true`, so the generated Applications
+carry no resources finalizer. This cluster has already been lost once to a
+single deletion and no database here has a backup yet. The cost: removing a
+directory from the generator orphans that component's Deployment — the
+Application goes, the workload stays, and it must be deleted by hand.
 
 ## The route: two rules, and why ADR 0008 is wrong about it
 
@@ -110,7 +173,7 @@ controller; that is not needed.
 Verify, without sending anything:
 
     kubectl -n argocd exec deploy/argocd-notifications-controller -- \
-      argocd-notifications template notify app-deployed doma --recipient gh-infra
+      argocd-notifications template notify app-deployed doma-web --recipient gh-infra
 
     kubectl -n argocd logs deploy/argocd-notifications-controller -f
 

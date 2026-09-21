@@ -2,7 +2,7 @@
 
 Deployed like `authos-api` / `authos-ui`: CI (`authos` repo `.github/workflows/duster.yaml`)
 builds `stevetosak/authos-duster:alpha-<sha>`, runs `kustomize edit set image` in
-`manifests/overlays/dev`, and pushes. ArgoCD Application `duster` (project `authos`, path
+`manifests/overlays/dev`, and pushes. ArgoCD Application `authos-duster` (project `authos`, path
 `projects/authos/duster/manifests/overlays/dev`) syncs the Deployment.
 
 Runs in the **`authos`** namespace, shares the cluster Redis

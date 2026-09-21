@@ -1,0 +1,65 @@
+# One AppProject per deployed project, applied out of band into the `argocd`
+# namespace:
+#
+#   kubectl apply -f core/argocd/appprojects.yaml
+#
+# Nothing in this repository created an AppProject before 2026-09-21. The three
+# committed Applications named `project: authos`, and that AppProject existed
+# only because somebody made it in the web UI of the cluster that was lost. The
+# same gap `db-credentials` and the `redis` Secret both had (ADR 0003).
+#
+# WHAT A PROJECT PERMITS, AND WHY IT IS NARROW
+#
+#   sourceRepos                 this repository only. An Application in this
+#                               project cannot deploy from anywhere else.
+#   destinations                the project's own namespace only, on the local
+#                               cluster. An authos Application cannot write into
+#                               kube-system, or into doma.
+#   clusterResourceWhitelist    EMPTY, which denies every cluster-scoped kind.
+#                               The overlays render Deployments and nothing
+#                               else, so no project needs one. This is also why
+#                               `CreateNamespace=true` is NOT used: the
+#                               namespace is a committed file applied out of
+#                               band (projects/<project>/namespace.yaml).
+#   namespaceResourceWhitelist  every namespaced kind. Tighter is possible —
+#                               apps/Deployment alone would cover today — but
+#                               then adding a CronJob to a base fails at sync
+#                               time rather than at review time. The boundary
+#                               that matters is the namespace one above.
+#
+# The ApplicationSet derives `project` from the path, so the AppProject name
+# MUST equal the directory name under `projects/`, and the namespace MUST equal
+# it too. See core/argocd/applicationset.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: authos
+  namespace: argocd
+spec:
+  description: authos — api, ui, duster and demo, all in the authos namespace
+  sourceRepos:
+    - https://github.com/stevetosak/hetzner-cloud-infra.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: authos
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: doma
+  namespace: argocd
+spec:
+  description: doma — one web component in the doma namespace
+  sourceRepos:
+    - https://github.com/stevetosak/hetzner-cloud-infra.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: doma
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'

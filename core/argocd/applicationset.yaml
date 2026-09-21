@@ -1,0 +1,93 @@
+# ONE ApplicationSet for every deployed project (ADR 0003). Applied out of band
+# into the `argocd` namespace:
+#
+#   kubectl apply -f core/argocd/appprojects.yaml
+#   kubectl apply -f core/argocd/applicationset.yaml
+#
+# This replaces the hand-made Applications. Before the cluster was lost, five of
+# eight Applications existed only in the web UI; the three that were committed
+# (projects/authos/demo, projects/authos/duster, projects/doma/web) are deleted
+# in the same commit as this file, so that nobody applies one and has it fight
+# the generator for ownership of the same Application name.
+#
+# THE RULE IS TOTAL: ONE OVERLAY DIRECTORY IS ONE APPLICATION
+#
+#   projects/<project>/<component>/manifests/overlays/dev
+#            └ segment 1 ┘└ segment 2 ┘
+#
+#   name         <project>-<component>
+#   project      <project>          (the AppProject of the same name)
+#   namespace    <project>          (the namespace of the same name)
+#
+# Nothing is mapped by hand, so nothing can drift. The cost is paid in two
+# names: the Applications formerly called `duster` and `doma` are now
+# `authos-duster` and `doma-web`. `deployments/apps.json` is keyed on
+# `.app.metadata.name` and was renamed to match — cheap, because
+# `deployments/history.jsonl` was still empty. Check that file whenever this
+# naming rule changes, or the deploy catalog cannot resolve a version.
+#
+# 🔴 THE GENERATOR LISTS ITS PROJECTS, IT DOES NOT SWEEP THEM. ADR 0003 scopes
+# the restore to authos and doma; `projects/imaps/` and `projects/wasteio/` stay
+# in the repository unsynced, and `projects/debug/` is a bare pod. A single
+# `projects/*/*/manifests/overlays/dev` glob would adopt all of them, which is
+# exactly the hazard the ADR says makes this migration cheap only against an
+# empty cluster. Reviving a project is one line here, one AppProject, one
+# namespace file, and its namespace added to `allowedRoutes` in
+# core/gateway/gateway.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: projects
+  namespace: argocd
+spec:
+  # Go templating, not the legacy `{{path}}` fasttemplate. `.path.segments` is
+  # reachable only this way, and `missingkey=error` makes a mistyped field fail
+  # loudly instead of rendering an empty string into an Application name.
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+
+  generators:
+    - git:
+        repoURL: https://github.com/stevetosak/hetzner-cloud-infra.git
+        revision: HEAD
+        directories:
+          - path: projects/authos/*/manifests/overlays/dev
+          - path: projects/doma/*/manifests/overlays/dev
+
+  # 🔴 An Application this generator owns carries NO resources finalizer while
+  # this is true, so deleting the ApplicationSet leaves every Deployment
+  # running. Deliberate: this cluster has already been lost once to a single
+  # deletion, and no database here has a backup yet.
+  #
+  # The cost is that removing a directory from the generator above orphans that
+  # component's workloads — the Application goes, the Deployment stays. Delete
+  # it by hand when that day comes.
+  syncPolicy:
+    preserveResourcesOnDeletion: true
+
+  template:
+    metadata:
+      name: '{{index .path.segments 1}}-{{index .path.segments 2}}'
+    spec:
+      project: '{{index .path.segments 1}}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{index .path.segments 1}}'
+      source:
+        repoURL: https://github.com/stevetosak/hetzner-cloud-infra.git
+        targetRevision: HEAD
+        # The overlay's own kustomization.yaml already sets `namespace:`, so the
+        # `kustomize.namespace` override the old Applications carried was doing
+        # nothing. Dropped. The two must agree in any case, or ArgoCD refuses
+        # the sync.
+        path: '{{.path.path}}'
+      syncPolicy:
+        automated:
+          # Matches what the hand-made Applications did: auto-sync on, no prune
+          # and no selfHeal. The deploy pipeline only ever moves `newTag`
+          # forward, so there is nothing to prune; selfHeal is a separate
+          # decision, not one to take inside the migration.
+          enabled: true
+        syncOptions:
+          - ServerSideApply=true

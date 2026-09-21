@@ -1,0 +1,16 @@
+# The namespace that holds doma. Nothing else declared it: before 2026-09-21
+# the procedure was a bare `kubectl create ns doma`, which no file records.
+#
+# It is NOT created by ArgoCD. `CreateNamespace=true` would need `Namespace`
+# in the doma AppProject's `clusterResourceWhitelist`, and that list is empty
+# on purpose — see core/argocd/appprojects.yaml.
+#
+# The name is load-bearing in three other places, all of which assume namespace
+# == project name: the ApplicationSet derives it from the directory path;
+# `core/gateway/gateway.yaml` lists it in `allowedRoutes` on both listeners, by
+# `kubernetes.io/metadata.name`; and the doma AppProject permits this namespace
+# and no other.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: doma
