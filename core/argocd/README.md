@@ -76,9 +76,16 @@ The rule has no exceptions and nothing is mapped by hand:
 So the Applications are `authos-api`, `authos-demo`, `authos-duster`,
 `authos-ui` and `doma-web`. Two of those are renames: the lost cluster called
 them `duster` and `doma`. `deployments/apps.json` is keyed on
-`.app.metadata.name` and was renamed to match, which cost nothing only because
-`deployments/history.jsonl` was still empty. **Anything that keys on an ArgoCD
-Application name must be checked whenever this rule changes.**
+`.app.metadata.name` and was renamed to match. **Anything that keys on an
+ArgoCD Application name must be checked whenever this rule changes.**
+
+🔴 **And check it on `master`, not on your branch.** `deployments/history.jsonl`
+is empty on `feature/cluster-rebuild`, which made the rename look free. On
+`master` it holds two rows named `doma`, and `render-catalog.mjs` keys its
+"Current" table on the app name — so the rename leaves a stale `doma` row
+there, with a bare sha because `apps.json` no longer has that key. It cannot be
+repaired on a branch: `.gitattributes` gives that file `merge=union`, so editing
+the two lines would merge to four. **One commit on `master` after the merge.**
 
 🔴 **The generator lists its projects, it does not sweep them.** ADR 0003 scopes
 the restore to `authos` and `doma`. A `projects/*/*/manifests/overlays/dev`
