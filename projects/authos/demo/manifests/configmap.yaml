@@ -10,6 +10,10 @@ data:
   # A public OAuth client_id minted by authos-demo/scripts/bootstrap.ts — NOT a secret
   # (it ships in the browser bundle). Re-run bootstrap only mints a new one if the Duster
   # app named `authos-demo` is gone; otherwise it reuses this.
+  #
+  # 🔴 STALE since the 2026-09-20 rebuild. This id was minted against the old
+  # cluster's Authos database and Duster Redis, and both are new and empty. The
+  # demo cannot log in until bootstrap.ts is re-run and its output replaces it.
   DEMO_DUSTER_CLIENT_ID: "48b05869457fa490fa88a99975411c14d1c2969f6c051e92fb84da2c6747666c"
   # Match entrypoint.sh defaults; kept explicit because this is the real prod config.
   DEMO_DUSTER_BASE_PATH: "/duster/api/v1"
