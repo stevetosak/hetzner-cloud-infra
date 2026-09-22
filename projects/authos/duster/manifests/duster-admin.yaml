@@ -1,0 +1,16 @@
+# Template only — documents the shape. The real Secret is committed encrypted
+# as duster-admin.enc.yaml and applied with scripts/secrets.sh (ADR 0003).
+#
+# Bearer token for Duster's /duster/api/v1/internal/* API (app registry, CLI
+# credentials). Generate it with `openssl rand -hex 32`. When it is unset,
+# Duster fails closed and every internal call answers 401.
+#
+# dstr and authos-demo/scripts/bootstrap.ts must use the same value.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: duster-admin
+  namespace: authos
+type: Opaque
+stringData:
+  DUSTER_ADMIN_TOKEN: ""

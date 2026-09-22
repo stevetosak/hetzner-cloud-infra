@@ -17,10 +17,12 @@ Same convention as `authos-api`: ArgoCD manages only `base/deployment.yaml` via 
 kubectl apply -f manifests/configmap.yaml   # authos-duster-config
 kubectl apply -f manifests/service.yaml     # duster (ClusterIP :8785)
 
-# duster-admin secret — no template committed. Generate once:
-kubectl create secret generic duster-admin -n authos \
-  --from-literal=DUSTER_ADMIN_TOKEN="$(openssl rand -hex 32)"
+# duster-admin: committed encrypted, applied with SOPS (ADR 0003). credentials lives under api/.
+scripts/secrets.sh apply projects/authos/duster/manifests/duster-admin.enc.yaml
 ```
+
+`manifests/duster-admin.yaml` documents the shape. A new token is `openssl rand -hex 32`,
+written with `scripts/secrets.sh edit projects/authos/duster/manifests/duster-admin.enc.yaml`.
 
 `REDIS_PASSWORD` is sourced from the existing `credentials` secret (`.REDIS_PASS`) by the
 Deployment — no separate Redis secret for Duster.
