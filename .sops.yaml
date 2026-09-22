@@ -1,0 +1,11 @@
+# SOPS rules (ADR 0003). Every Secret is committed as `<name>.enc.yaml`, a whole
+# Kubernetes Secret manifest. Only `data` and `stringData` are encrypted, so
+# apiVersion, name, namespace and the key names stay readable in review.
+#
+# The recipient is the PUBLIC half of the age key. The private half lives in
+# the password manager and at ~/.config/sops/age/keys.txt on the operator's
+# machine — never in the cluster and never in this repository.
+creation_rules:
+  - path_regex: \.enc\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    age: age1djev7m4tq9z9lgrd8r3unhlzgzfkx3j6vz6dltu4rumqnnu7fq5q0aqtnd
