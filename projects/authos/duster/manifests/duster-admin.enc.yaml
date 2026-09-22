@@ -1,0 +1,23 @@
+apiVersion: v1
+data:
+    DUSTER_ADMIN_TOKEN: ENC[AES256_GCM,data:f/qjueEbFT3nt9Rnso0SQED3mLD6KJsgaMy0Olm+TMYFCslVG/WsB6GHwhOrgOkOnq881MtHayjhKMa/ntXwsxz+agGUZWMqXKxVmybDpN6zJ4ul19lpRA==,iv:IOpIIAzhDS0MH+V+SpA22PmdgjLHTNkMXyS58Hc35aE=,tag:AYlECTbBRQokP+b+8roN2g==,type:str]
+kind: Secret
+metadata:
+    creationTimestamp: null
+    name: duster-admin
+    namespace: authos
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB2eFVITHNOMm1SQWRySzBY
+            SC9nd0hoaStpN3NBblgwQWdrM0tpclpnWURVCmszVFI5OG5rRjJLakhUckpkZzRn
+            dmJlL0RVTkJWeDNyV1hjOE16TDQ2d3cKLS0tIEJxQ1FQZ0dKVG1aNkMwdnFxVDht
+            OFdCb3pnYk4rTXZqdTJudUw3dHdFajAKEBrX5Z83jYSOkp0TiEkIV4ScqVileTi3
+            WSgqPjwMiTjXLZjNsdOXG++fwSUwTaKLl+wYnNHpxxQez+iz5mjJdg==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1djev7m4tq9z9lgrd8r3unhlzgzfkx3j6vz6dltu4rumqnnu7fq5q0aqtnd
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-09-22T18:56:15Z"
+    mac: ENC[AES256_GCM,data:QjNp1GW4s9AdvYDDxs749alShzjzVHI06f7vhgd3p7lT8574U/KA5IfgOD2rRlNiUEcGRVdDh2PKQyKhPidsbTZqrTPgODZ37ez8l+1FKO036VDpPqhrRCtuZYrUeEwlR60Xk5w6wHraKwIQq30XFMPqiBjHvNYZ8O5KU8XPaZw=,iv:3wJMealD3BKFPP1ZBfQVdnES+Xc9aIULOmk03tOPnGE=,tag:mTekebwFpLaDWIEQAI6HAQ==,type:str]
+    version: 3.13.3
