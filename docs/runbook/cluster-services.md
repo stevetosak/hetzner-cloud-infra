@@ -1992,3 +1992,33 @@ checks once a day; watching archiving in real time stays with monitoring.
 
 Set with `gh secret set <NAME>`, which prompts without echo and keeps the value
 out of shell history. Neither new token can delete or change anything.
+
+### Verified — both paths, on the real runner
+
+The workflow can only be dispatched once it is on `master`, so it was proven
+after PR #18 merged, in this order:
+
+| Run | Secrets | Result |
+|---|---|---|
+| `36939650748` | the three new ones **not yet set** | red. One Telegram message: `backups: aws s3 cp failed`, `wal: aws s3api failed`, `volumes: hetzner HTTP 401` as "Watcher broken"; no drill line. `Report a broken run` skipped — no duplicate |
+| `36940023521` | set | green, **silent**. `backup.info files: 1`, `newest WAL recorded: yes`, `detached volumes in the first check: 0`, `drill not deployed — skipped`, `all clear` |
+
+Running it first without the secrets is a free negative test: every check fails
+for real, so the whole failure path — error codes, message, delivery, red run —
+is proven before the clean path. The public log of the red run was searched for
+an API body, `backup.info` content or an error JSON: none.
+
+### What this step leaves open
+
+- **The alert paths for an orphan, a stale backup and stale WAL are proven by
+  unit tests only.** None of those conditions exists today, and making one
+  on purpose would mean breaking backups. The second volume check has never
+  run live.
+- 🔴 **Who watches the watcher.** GitHub disables a scheduled workflow in a
+  public repository after 60 days without activity, silently — and a disabled
+  watcher looks exactly like a clean one. Deploy-catalog commits keep the
+  repository active today, but that is luck. A heartbeat service is the
+  monitoring scope's decision (ADR 0003).
+- **The drill check is armed but unproven** until chunk 4 writes its first
+  result.
+- **Daily granularity.** WAL that stops at 06:05 is reported the next morning.
