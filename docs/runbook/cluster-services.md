@@ -1747,6 +1747,7 @@ kubectl rollout restart deploy/authos-demo -n authos
 | `…/duster/api/v1/oauth/start?client_id=<new>` | `302` to `authos-api.tosak.net/oauth/authorize`, callback on the demo host |
 | that authorize URL | `302` to `authos.tosak.net/oauth/login` — Authos accepts the client and the redirect URI |
 | `config/config.js`, edge and origin | the new id; `cache-control: no-store`, `cf-cache-status: BYPASS` |
+| a real login in the browser, by the operator | **works** — the whole tier-0 flow, end to end |
 
 🔴 **The new id lives only as long as the shared Redis.** `bootstrap.ts`
 decides "reuse or create" by asking **Duster**, and Duster keeps its app record
@@ -1759,8 +1760,6 @@ look the app up in Authos first.
 
 ### What this step leaves open
 
-- **One real browser login on `authos-demo.tosak.net`** — every hop up to the
-  Authos login page is proven above; the login itself is not.
 - **Probes for `authos-api` and `authos-ui`.** `/actuator/health` is `404` —
   no actuator is exposed — so the probe needs another endpoint, and
   `authos-api` needs a start budget of about two minutes. The base Deployments
