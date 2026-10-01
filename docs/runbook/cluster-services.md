@@ -1926,3 +1926,69 @@ gets the marker, so the recovery runbook must account for it.
 - **`Backup` objects accumulate**, one a day; `backupOwnerReference` is unset.
 - **The recovery runbook**: read generation N, archive to N+1, add the lock
   rule for N+1, and the recovery marker above.
+
+## 16. The outside watcher — orphans, backup and WAL freshness, drill freshness
+
+Written on 2026-10-02. Step 15 made backups run; nothing yet noticed when they
+stop. This step adds one daily GitHub workflow,
+`.github/workflows/recoverability-watch.yml`, that looks at the cluster's
+recoverability from **outside** it (ADR 0003, Amendments 2026-10-01). It sees
+only Hetzner and R2 — the kube API is VPN-only, on purpose — so it still
+reports after the cluster is gone, which is the one moment that matters.
+
+**Silent when clean.** A finding goes to the infra Telegram bot and turns the
+run red, which also e-mails the repository owner.
+
+| Check | Alert when | Why |
+|---|---|---|
+| Orphaned Volume | a Hetzner volume is attached to no server in two checks 15 min apart | `Retain` keeps a deleted PVC's volume (step 15). It is reported, never deleted: after a total loss it is newer than R2 |
+| Base backups | the newest `DONE` base backup is older than 26 h, none exists, or the newest attempt is `FAILED` | the 03:00 schedule plus margin |
+| WAL | the newest object under `wals/` is older than 1 h | step 15, fact 3: a broken archiver does not fail a standby's base backup, so the check above cannot see it |
+| Restore Drill | no `pass` result in 35 days | a drill that silently stops running |
+| the watcher itself | a check cannot run (401, an R2 error, an unreadable answer) or the run crashes | a broken watcher looks exactly like a clean one |
+
+The WAL check is an addition to the ADR's three, chosen on 2026-10-02. It
+checks once a day; watching archiving in real time stays with monitoring.
+
+### How it is built
+
+- **The decisions are `.github/scripts/watch.mjs`**, pure functions with no
+  network access, tested by `watch.test.mjs` (`node --test .github/scripts/`).
+  The workflow's steps only collect: `curl` for Hetzner, `aws s3api` / `aws s3
+  cp` for R2, both already on the runner.
+- **The backup location is read from the manifests**: `serverName` from
+  `core/cnpg/pg-cluster.yaml`, bucket and endpoint from `objectstore.yaml`. A
+  recovery that moves archiving to the next generation needs no edit here.
+- **The second volume check waits 15 minutes only when the first finds a
+  detached volume**, so a clean run takes about a minute.
+- **One check failing does not hide the others.** Each step records an error
+  code in `_watch/errors/<check>` and carries on; the report lists every
+  check that did not run.
+- **The drill check is armed by the drill itself**: it runs only once
+  `core/pg-drill/` exists. Until then the log says `drill not deployed —
+  skipped`.
+- 🔴 **The log is public.** No step prints an API body, a `backup.info`, a
+  drill result or a credential — counts, ids and error codes only. The
+  Telegram message (volume ids and the delete command) goes only to the bot.
+
+### The contract the Restore Drill must keep
+
+`drill/<yyyy-mm>.json` in `tosak-drill-results`, with at least:
+
+```json
+{ "finishedAt": "2026-11-01T04:12:09Z", "result": "pass" }
+```
+
+`result` is `"pass"` or `"fail"`; only a `pass` resets the 35 days.
+`watch.mjs` `checkDrill` is the reader. Change both together.
+
+### Credentials
+
+| Repository secret | What it is |
+|---|---|
+| `R2_READONLY_ACCESS_KEY_ID`, `R2_READONLY_SECRET_ACCESS_KEY` | R2 **Account** token, **Object Read**, buckets `tosak-pg-backups` and `tosak-drill-results`. The drill (step 17) uses the same token from SOPS |
+| `HCLOUD_READONLY_TOKEN` | Hetzner project token, **Read** |
+| `INFRA_TELEGRAM_BOT_TOKEN`, `INFRA_TELEGRAM_CHAT_ID` | already there, shared with `deploy-catalog.yml` |
+
+Set with `gh secret set <NAME>`, which prompts without echo and keeps the value
+out of shell history. Neither new token can delete or change anything.
