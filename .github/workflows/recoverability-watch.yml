@@ -1,0 +1,162 @@
+# The outside watcher (ADR 0003, Amendments 2026-10-01/02). It sees only
+# Hetzner and R2 — never the kube API, which is VPN-only — so it still reports
+# after the cluster is gone. Silent when clean; the infra Telegram bot and a red
+# run when not. Runbook: docs/runbook/cluster-services.md, step 16.
+#
+# 🔴 This repository is public, and so is this log. No step may print an API
+# body, a backup.info, a drill result or a credential — only counts, ids and
+# error codes. The decisions live in .github/scripts/watch.mjs, which is tested.
+#
+# Known gap (ADR 0003): GitHub disables a scheduled workflow in a public
+# repository after 60 days without repository activity, silently.
+name: Recoverability watch
+
+on:
+  schedule:
+    - cron: '0 6 * * *' # 06:00 UTC, three hours after the 03:00 base backup
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: recoverability-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATA: ${{ github.workspace }}/_watch
+      DRILL_BUCKET: tosak-drill-results
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_READONLY_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_READONLY_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # Where the backups are is read from the manifests, so a recovery that
+      # moves archiving to the next serverName generation needs no edit here.
+      - name: Read the backup location from core/cnpg
+        run: |
+          SERVER=$(yq '.spec.plugins[] | select(.name == "barman-cloud.cloudnative-pg.io") | .parameters.serverName' core/cnpg/pg-cluster.yaml)
+          DEST=$(yq '.spec.configuration.destinationPath' core/cnpg/objectstore.yaml)
+          ENDPOINT=$(yq '.spec.configuration.endpointURL' core/cnpg/objectstore.yaml)
+          BUCKET=${DEST#s3://}; BUCKET=${BUCKET%%/*}
+          for v in SERVER BUCKET ENDPOINT; do
+            [ -n "${!v}" ] && [ "${!v}" != null ] || { echo "::error::cannot read $v from core/cnpg"; exit 1; }
+          done
+          echo "SERVER=$SERVER" >> "$GITHUB_ENV"
+          echo "BUCKET=$BUCKET" >> "$GITHUB_ENV"
+          echo "ENDPOINT=$ENDPOINT" >> "$GITHUB_ENV"
+          mkdir -p "$DATA/errors"
+          echo "watching s3://$BUCKET/$SERVER/"
+
+      # Each check below records an error CODE in $DATA/errors/<check> instead of
+      # failing, so one broken check is reported without hiding the others.
+      - name: Base backups
+        run: |
+          if ! aws s3 cp "s3://$BUCKET/$SERVER/base/" "$DATA/base/" --recursive \
+               --exclude '*' --include '*/backup.info' --quiet \
+               --endpoint-url "$ENDPOINT" 2>"$RUNNER_TEMP/err"; then
+            grep -oE '\([A-Za-z]+\)' "$RUNNER_TEMP/err" | head -1 | tr -d '()' > "$DATA/errors/backups" || true
+            [ -s "$DATA/errors/backups" ] || echo "aws s3 cp failed" > "$DATA/errors/backups"
+          fi
+          echo "backup.info files: $(find "$DATA/base" -name backup.info 2>/dev/null | wc -l)"
+
+      - name: Newest WAL
+        run: |
+          if NEWEST=$(aws s3api list-objects-v2 --bucket "$BUCKET" --prefix "$SERVER/wals/" \
+               --query 'Contents[].LastModified' --output text \
+               --endpoint-url "$ENDPOINT" 2>"$RUNNER_TEMP/err"); then
+            # `|| true`: grep exits 1 when the prefix is empty, and pipefail is on.
+            NEWEST=$(tr '\t' '\n' <<<"$NEWEST" | grep -v '^None$' | sort | tail -1 || true)
+            [ -z "$NEWEST" ] || echo "$NEWEST" > "$DATA/wal-newest"
+          else
+            grep -oE '\([A-Za-z]+\)' "$RUNNER_TEMP/err" | head -1 | tr -d '()' > "$DATA/errors/wal" || true
+            [ -s "$DATA/errors/wal" ] || echo "aws s3api failed" > "$DATA/errors/wal"
+          fi
+          echo "newest WAL recorded: $([ -s "$DATA/wal-newest" ] && echo yes || echo no)"
+
+      # Armed by the drill's own manifests: until core/pg-drill/ exists there is
+      # no drill, and an empty results bucket is expected.
+      - name: Restore Drill results
+        run: |
+          if [ ! -d core/pg-drill ]; then echo "drill not deployed — skipped"; exit 0; fi
+          touch "$DATA/drill-armed"
+          if ! aws s3 cp "s3://$DRILL_BUCKET/drill/" "$DATA/drill/" --recursive \
+               --exclude '*' --include '*.json' --quiet \
+               --endpoint-url "$ENDPOINT" 2>"$RUNNER_TEMP/err"; then
+            grep -oE '\([A-Za-z]+\)' "$RUNNER_TEMP/err" | head -1 | tr -d '()' > "$DATA/errors/drill" || true
+            [ -s "$DATA/errors/drill" ] || echo "aws s3 cp failed" > "$DATA/errors/drill"
+          fi
+          echo "drill results: $(find "$DATA/drill" -name '*.json' 2>/dev/null | wc -l)"
+
+      # An Orphaned Volume is detached in two checks 15 minutes apart. The wait
+      # happens only when the first check finds a candidate.
+      - name: Volumes — first check
+        id: vol1
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_READONLY_TOKEN }}
+        run: |
+          CODE=$(curl -sS -o "$DATA/volumes-1.json" -w '%{http_code}' \
+            -H "Authorization: Bearer $HCLOUD_TOKEN" \
+            'https://api.hetzner.cloud/v1/volumes?per_page=50' || echo 000)
+          if [ "$CODE" != 200 ]; then
+            echo "hetzner HTTP $CODE" > "$DATA/errors/volumes"; rm -f "$DATA/volumes-1.json"
+            echo "candidates=0" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if ! N=$(node .github/scripts/watch.mjs candidates "$DATA/volumes-1.json" 2>/dev/null); then
+            echo "unreadable volume list" > "$DATA/errors/volumes"; N=0
+          fi
+          echo "detached volumes in the first check: $N"
+          echo "candidates=$N" >> "$GITHUB_OUTPUT"
+
+      - name: Volumes — second check, 15 minutes later
+        if: steps.vol1.outputs.candidates != '0'
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_READONLY_TOKEN }}
+        run: |
+          sleep 900
+          CODE=$(curl -sS -o "$DATA/volumes-2.json" -w '%{http_code}' \
+            -H "Authorization: Bearer $HCLOUD_TOKEN" \
+            'https://api.hetzner.cloud/v1/volumes?per_page=50' || echo 000)
+          [ "$CODE" = 200 ] || echo "hetzner HTTP $CODE (second check)" > "$DATA/errors/volumes"
+
+      - name: Evaluate and report
+        id: report
+        env:
+          TG_TOKEN: ${{ secrets.INFRA_TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.INFRA_TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          MSG=$(node .github/scripts/watch.mjs evaluate "$DATA")
+          if [ -z "$MSG" ]; then echo "all clear"; exit 0; fi
+          TEXT=$(printf '%s\n\n%s' "$MSG" "$RUN_URL")
+          curl -sS --fail -o /dev/null -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TG_CHAT}" \
+            --data-urlencode "text=${TEXT}" \
+            --data-urlencode "disable_web_page_preview=true"
+          echo "reported=true" >> "$GITHUB_OUTPUT"
+          # Red on purpose: a failed scheduled run also e-mails the repo owner.
+          echo "::error::findings sent to Telegram — the message is not printed here"
+          exit 1
+
+      # The watcher itself crashed (bad manifest, node error, Telegram refused):
+      # that is reported too, or a broken watcher looks exactly like a clean one.
+      - name: Report a broken run
+        if: failure() && steps.report.outputs.reported != 'true'
+        env:
+          TG_TOKEN: ${{ secrets.INFRA_TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.INFRA_TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS --fail -o /dev/null -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TG_CHAT}" \
+            --data-urlencode "text=tosak recoverability watch: the run FAILED — see ${RUN_URL}" \
+            --data-urlencode "disable_web_page_preview=true"
