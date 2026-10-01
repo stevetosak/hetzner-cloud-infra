@@ -1,0 +1,36 @@
+# Where tosak-pg-cluster archives its WAL and base backups (ADR 0003,
+# Amendments 2026-10-01 and 2026-10-02).
+#
+# There is no `serverName` here on purpose: the plugin ignores it on an
+# ObjectStore and takes it from the Cluster's plugin parameters, so the
+# generation (tosak-pg-cluster-g1, -g2, …) is recorded in pg-cluster.yaml.
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: tosak-pg-backups
+  namespace: pg-cluster
+spec:
+  # A recovery window, not a count. Base backups older than the newest one
+  # before now − 30 days are deleted, with their WAL. Those objects are always
+  # older than the 30-day bucket lock, so the two never meet.
+  retentionPolicy: "30d"
+  configuration:
+    destinationPath: s3://tosak-pg-backups/
+    # The Cloudflare account's R2 endpoint — the same one the terraform
+    # backends name. The account id is not a secret.
+    endpointURL: https://5621ce9e64f6881e8e6229573adf3b36.r2.cloudflarestorage.com
+    s3Credentials:
+      accessKeyId:
+        name: r2-backup-credentials
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: r2-backup-credentials
+        key: ACCESS_SECRET_KEY
+    wal:
+      # archive_timeout (300 s) forces out a 16 MB segment that is nearly
+      # empty on these quiet databases; uncompressed that is up to 4.6 GB a
+      # day.
+      compression: zstd
+    data:
+      # zstd is not offered for base backups; gzip is.
+      compression: gzip

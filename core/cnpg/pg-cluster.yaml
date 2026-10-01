@@ -34,7 +34,25 @@ spec:
     # 10Gi per instance, three instances — the figure ADR 0005 costed at about
     # EUR 1.32/month. It was 5Gi here, which did not match the decision.
     size: 10Gi
-    storageClass: hcloud-volumes
+    # Retain, not the default class's Delete (ADR 0003, Amendments 2026-10-01).
+    # The three PVCs created before this line still name `hcloud-volumes` —
+    # CloudNativePG does not migrate existing PVCs — so their PVs were patched
+    # to Retain by hand. That mismatch is expected.
+    storageClass: hcloud-volumes-retain
+
+  # WAL archiving and base backups to R2, through the barman-cloud CNPG-I
+  # plugin (core/cnpg/plugin-barman-cloud.yaml, objectstore.yaml).
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: tosak-pg-backups
+        # The archive path's generation. A real recovery READS this one and
+        # ARCHIVES to the next (-g2): CloudNativePG refuses to archive into a
+        # non-empty path, the cluster must keep its name because every app
+        # addresses tosak-pg-cluster-rw, and the bucket lock means an old path
+        # cannot be cleared. Bump it here when a recovery happens.
+        serverName: tosak-pg-cluster-g1
 
   resources:
     requests:

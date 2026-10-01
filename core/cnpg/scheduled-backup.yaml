@@ -1,0 +1,24 @@
+# A full base backup every day at 03:00 UTC (ADR 0003, Amendments
+# 2026-10-01). WAL, not this, sets the RPO; daily keeps the WAL chain short at
+# restore. barman-cloud has no incremental base backups, so each one is a full
+# copy.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: tosak-pg-cluster-daily
+  namespace: pg-cluster
+spec:
+  # Six fields, seconds first — CloudNativePG's cron, not the five-field
+  # Kubernetes CronJob form.
+  schedule: "0 0 3 * * *"
+  # Take the first backup now, not at the next 03:00.
+  immediate: true
+  cluster:
+    name: tosak-pg-cluster
+  # The default, written out. A standby's backup does not load the primary —
+  # and, with archive_mode=on, does not wait for WAL archiving either, so a
+  # broken archiver does not fail this backup (step 15).
+  target: prefer-standby
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io

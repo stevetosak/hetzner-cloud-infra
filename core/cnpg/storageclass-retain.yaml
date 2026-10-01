@@ -1,0 +1,19 @@
+# The class every PostgreSQL instance volume is created from (ADR 0003,
+# Amendments 2026-10-01). Identical to the CSI chart's `hcloud-volumes` except
+# for `reclaimPolicy` — and NOT the default class.
+#
+# Retain means deleting a PVC (or the Cluster, or the namespace) leaves the
+# Hetzner volume in place, detached. That is an Orphaned Volume: it is
+# reported by the daily workflow and deleted by a person, never by automation.
+#
+# A class's policy is copied into a PV only when the PV is created, so the
+# three volumes that existed before this file were patched by hand
+# (docs/runbook/cluster-services.md, step 15).
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: hcloud-volumes-retain
+provisioner: csi.hetzner.cloud
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
