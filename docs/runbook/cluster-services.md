@@ -1570,3 +1570,146 @@ first catalog row of the rebuilt cluster is junk.
   chunk, and three more entries for the Phase 5 SOPS inventory.
 - **Three authos routes stay unapplied** — authos, authos-api, authos-demo —
   until those Secrets exist.
+
+## 14. authos — Secrets, config, and three public hosts
+
+Written on 2026-10-01. Step 13 left four authos Applications `Synced` and
+`Degraded`. This step brings them up. It closes the last item step 13 left
+open; the PAT and the two `doma` history rows were closed on `master` on
+2026-09-21 (PR #12 and `2c537a4`).
+
+The Secrets are the first in this repository under SOPS + age (ADR 0003,
+Amendments). How they were made, the keys, the backup drill and the
+leaked-key procedure are in `docs/runbook/secrets.md`; this step only applies
+them.
+
+### What was actually blocking
+
+Not only Secrets. Nothing in namespace `authos` had been applied out of band:
+
+| Pod | Waiting for |
+|---|---|
+| `authos-api` | `credentials`, `keystore-pass`, the `keystore` volume, `authos-api-config` |
+| `duster` | `credentials` (`REDIS_PASS`), `duster-admin`, `authos-duster-config` |
+| `authos-ui` | `authos-ui-config` — **no Secret at all** |
+| `authos-demo` | `authos-demo-config` — **no Secret at all** |
+
+Plus four Services and three routes. Every name each Deployment reads was
+checked against the committed files before anything was applied.
+
+### Secrets
+
+A masked server-side diff first. It proves three things without showing a
+value: the age key decrypts every file, the API server accepts the manifests,
+and each object is new (`-null`), so nothing live is overwritten.
+
+```bash
+scripts/secrets.sh diff projects/authos     # every value prints as '***'
+scripts/secrets.sh apply projects/authos
+```
+
+    secret/credentials serverside-applied
+    secret/keystore serverside-applied
+    secret/keystore-pass serverside-applied
+    secret/duster-admin serverside-applied
+
+### ConfigMaps and Services
+
+```bash
+kubectl apply \
+  -f projects/authos/api/manifests/configmap.yaml \
+  -f projects/authos/ui/manifests/configmap.yaml \
+  -f projects/authos/duster/manifests/configmap.yaml \
+  -f projects/authos/demo/manifests/configmap.yaml \
+  -f projects/authos/api/manifests/service.yaml \
+  -f projects/authos/ui/manifests/service.yaml \
+  -f projects/authos/duster/manifests/service.yaml \
+  -f projects/authos/demo/manifests/service.yaml
+```
+
+No rollout restart. The pods were already scheduled, so the kubelet retried
+on its own and all four went `1/1 Running` with zero restarts.
+
+### Verified — and why `Ready` proved nothing for two of them
+
+🔴 **`authos-api` and `authos-ui` have no probes.** `Ready` for them means only
+that the process started. `authos-api` refused connections for **92.6 seconds**
+after that (`Started AuthosApplication in 92.612 seconds`). So every check
+below goes to the application itself, through the API server's service proxy,
+which needs no route and no port-forward:
+
+    kubectl get --raw /api/v1/namespaces/authos/services/authos-api:80/proxy/.well-known/jwks.json
+
+| Component | Proof |
+|---|---|
+| `authos-api` → PostgreSQL | Hikari connected to `authos` on PostgreSQL 18.6. Flyway found an empty schema and applied **8 migrations**, now at `v8`. So `DB_USER`/`DB_PASS` are right |
+| `authos-api` → keystore | The JWKS publishes kid **`authos-jwt-sign`** with `iat 1766951557` = **2025-12-28 19:52 UTC**, the day `authos-cluster-keystore.p12` was built. The right keystore, and `KEYSTORE_PASS` opened it — Spring does not start otherwise (`CryptoConfig.kt`) |
+| `duster` → Redis | `/health` → `{"status":"ok","redis":"connected"}`. So `REDIS_PASS` is right |
+| `authos-api` → Redis | **Not proven.** It connects on first use. It reads the same `REDIS_PASS` duster just proved |
+| `authos-ui`, `authos-demo` | Both serve their HTML |
+
+Flyway warns that PostgreSQL 18.6 is newer than the newest version it is
+verified with (17). Harmless today; worth knowing when a migration misbehaves.
+
+### The catalog fired by itself — and too early for one app
+
+When the four Applications turned `Healthy`, the notifications controller sent
+four `deploy-live` dispatches. All four `deploy-catalog` runs passed and pushed
+four rows to `master` (`3fbb3f3`..`4b376b9`). The fix from PR #12 holds.
+`version` is `"unknown"` on all four, as designed: `apps.json` has
+`"repo": null` for authos until its repositories carry release-please tags.
+
+🔴 **The `authos-api` row was sent at 18:57:00, the container's start — 98
+seconds before the application could answer.** With no readiness probe,
+ArgoCD's `Healthy` and therefore the catalog's "deployed" mean "the process
+exists". Same cause as above, a second symptom.
+
+### Routes
+
+```bash
+kubectl apply --dry-run=server -f projects/authos/httproute.yaml
+kubectl apply -f projects/authos/httproute.yaml
+```
+
+All three `Accepted=True` and `ResolvedRefs=True`. `authos` was already in
+`allowedRoutes` on both listeners, so no Gateway change was needed. Measured
+through Cloudflare and direct to the load balancer
+(`curl --resolve <host>:443:77.42.14.48`):
+
+| URL | Edge | Origin |
+|---|---|---|
+| `https://authos.tosak.net/` | 200 | 200 |
+| `https://authos-api.tosak.net/.well-known/openid-configuration` | 200 | 200 |
+| `https://authos-demo.tosak.net/` | 200 | 200 |
+| `https://authos-demo.tosak.net/duster/api/v1/session?client_id=probe` | Duster's 500 | Duster's 500 |
+| `https://authos-demo.tosak.net/duster/api/v1/internal/apps` | 401 | 401 |
+
+### 🔴 The first `/duster` probe returned 404, and it was not the route
+
+`/duster/api/v1/` gave an empty `404` at the edge and at the origin. Envoy's
+"no route" 404 and Ktor's "no handler" 404 look the same: empty body, no
+distinguishing header. The way to tell them apart is to send the same path
+**past the Gateway**, through the service proxy above. It returned 404 too, so
+Duster sent it — there is no handler at the bare prefix. Probe a path Duster
+really serves. `session?client_id=probe` answers with Duster's own error text,
+which can only come from Duster, so the route is proven with the path intact.
+
+Two things that answer shows, both outside this repository:
+
+- **`/duster/api/v1/internal/*` is publicly routed** through the demo host.
+  It returns `401` without `DUSTER_ADMIN_TOKEN`, so that token is its only
+  guard.
+- **Duster returns the exception text in a 500** for an unknown client id
+  (`IllegalStateException: No app found for probe`). An Authos-repo bug.
+
+### What this step leaves open
+
+- **The demo cannot log in.** `DEMO_DUSTER_CLIENT_ID` names an OAuth app from
+  the lost cluster's database. Re-run `authos-demo/scripts/bootstrap.ts`
+  against the new api and duster, then update `authos-demo-config`.
+- **Probes for `authos-api` and `authos-ui`.** `/actuator/health` is `404` —
+  no actuator is exposed — so the probe needs another endpoint, and
+  `authos-api` needs a start budget of about two minutes. The base Deployments
+  are ArgoCD-synced, so this is a branch and a PR.
+- **`authos-api`'s Redis login** is unproven until the first request that uses
+  it.
