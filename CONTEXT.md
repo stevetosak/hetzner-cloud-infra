@@ -213,3 +213,12 @@ cluster, asserting the data is really there. Distinct from a backup **job**,
 which only proves that writing to the bucket succeeded.
 
 An unverified backup is not a backup.
+
+## Orphaned Volume
+
+A Hetzner volume attached to no server, seen detached twice, 15 minutes
+apart. A provider fact, not a Kubernetes one, so it can be seen after the
+cluster itself is gone — which is when an orphan is most likely to hold the
+newest data.
+
+_Avoid_: released volume, leaked volume.
