@@ -241,3 +241,47 @@ plugin plus an `ObjectStore`. What was decided:
 
   No credential that runs on a schedule can delete a backup or change a
   bucket's configuration.
+
+**2026-10-02 — the bucket lock covers the WAL only; found while building it.**
+The 2026-10-01 lock rule (30 days, no prefix) would have failed every base
+backup. What was found, and what replaces it:
+
+- **barman 3.19.0 and later writes `backup.info` twice** in one base backup:
+  status `STARTED` when the copy begins, then the same key again with `DONE`
+  or `FAILED` when it ends (`CloudBackup.coordinate_backup` in
+  `barman/cloud.py`, read at `release/3.20.1`, the version plugin v0.15.1
+  ships). **An R2 bucket lock refuses overwrites as well as deletes**, and R2
+  has no object versioning — on AWS S3 the same overwrite succeeds by making a
+  new version. Measured on this bucket with the backup token under the
+  no-prefix rule: the second `PutObject` and a `DeleteObject` both returned
+  `ObjectLockedByBucketPolicy`, and the object kept its first content. With
+  that rule, every base backup would end `FAILED` and leave a `STARTED`
+  `backup.info` that nobody could delete for 30 days. Upstream: barman issue
+  #1195, open, treated as a feature request.
+- **Decision: one lock rule, prefix `tosak-pg-cluster-g1/wals/`, 30 days.**
+  barman writes every WAL segment once, under a name that never repeats, so
+  the lock costs the WAL nothing. Rejected: pinning plugin v0.12.0, the last
+  release on barman 3.18 (one write) — it predates CloudNativePG 1.30, and
+  every later upgrade would break base backups again; and no lock at all.
+- **Cost: base backups are not locked.** A compromised cluster can delete
+  them with its own token, and WAL without any base backup restores nothing.
+  The daily workflow reports a missing or stale base backup within 26 hours;
+  that is detection, not prevention. The lock still stops the cluster, or a
+  barman fault, from erasing the WAL history.
+- **Each generation needs its own rule.** A prefix is literal, so a recovery
+  that moves archiving to `tosak-pg-cluster-g2` must add a rule for
+  `tosak-pg-cluster-g2/wals/` before the recovered cluster archives. The
+  recovery runbook carries this step.
+- **Revisit when barman stops overwriting `backup.info`** (issue #1195): then
+  the rule goes back to no prefix and base backups are locked too.
+- Three build-time facts, as promised in the decision above: `zstd` is
+  accepted for WAL (base backups offer no `zstd`; they use `gzip`). A base
+  backup taken from a standby **does not wait for WAL archiving** —
+  `pg_backup_stop()` waits only on a primary, or on a standby with
+  `archive_mode = always`, and CloudNativePG sets `on` — so a broken archiver
+  does not fail the base backup or trip the 26-hour check; monitoring must
+  watch archiving itself. And **`Cluster.status` does not record the last
+  archived WAL** under plugin archiving, nor does `ObjectStore.status`, so the
+  drill's assertion (2) needs another source for production's last archived
+  WAL; that is decided with the drill. Measurements:
+  `docs/runbook/cluster-services.md`, step 15.
