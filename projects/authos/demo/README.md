@@ -31,7 +31,7 @@ npm run bootstrap        # prints DEMO_DUSTER_CLIENT_ID
 $EDITOR manifests/configmap.yaml      # DEMO_DUSTER_CLIENT_ID: REPLACE_ME -> the printed value
 kubectl apply -f manifests/configmap.yaml   # authos-demo-config
 kubectl apply -f manifests/service.yaml     # authos-demo (ClusterIP :80)
-kubectl apply -f manifests/httproute.yaml   # authos-demo.tosak.net (the Gateway holds the certificate)
+kubectl apply -f ../httproute.yaml         # all three authos hosts (the Gateway holds the certificate)
 
 # 3. Nothing to apply. The ApplicationSet in core/argocd/applicationset.yaml generates the
 #    `authos-demo` Application from this overlay path as soon as it is on infra master.

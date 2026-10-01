@@ -435,8 +435,7 @@ covered.
 | File | Namespace | Hosts |
 |---|---|---|
 | `core/argocd/httproute.yaml` | `argocd` | `argocd` |
-| `projects/authos/httproute.yaml` | `authos` | `authos`, `authos-api` |
-| `projects/authos/demo/manifests/httproute.yaml` | `authos` | `authos-demo` |
+| `projects/authos/httproute.yaml` | `authos` | `authos`, `authos-api`, `authos-demo` |
 | `projects/doma/httproute.yaml` | `doma` | `doma` |
 | `projects/imaps/httproute.yaml` | `imaps` | `imaps`, `imaps-api` — **not applied** |
 | `projects/wasteio/httproute.yaml` | `wasteio` | `wasteio`, `wasteio-api` — **not applied** |

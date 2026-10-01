@@ -1,0 +1,5 @@
+#!/bin/bash
+# Refuses a commit that would publish an unencrypted *.enc.yaml. The repository
+# is public, so that mistake cannot be undone by a later commit.
+# Enable once per clone:  git config core.hooksPath .githooks
+exec scripts/secrets.sh check --staged

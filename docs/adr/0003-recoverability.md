@@ -80,3 +80,31 @@ the only other persistent volume is Prometheus history.
   ample for four hostnames but is a real ceiling during repeated rebuilds.
 - Reviving wasteio or imaps later means re-adding their overlay directories and
   provisioning their databases and secrets afresh.
+
+## Amendments
+
+**2026-09-22 — SOPS is pulled forward from Phase 5 and starts with authos.**
+The per-project `init_secrets.sh` scripts were hand-written prompt code, one
+per project, and each new Secret meant new code. authos needed a rewrite of
+its script, which Phase 5 would have deleted. So SOPS starts now; doma,
+`redis` and `db-credentials` move over later. What building it settled:
+
+- **One format for every Secret, including binary ones.** Each Secret is a
+  whole Kubernetes manifest, `<name>.enc.yaml`, beside its blank template
+  `<name>.yaml` — not only `credentials.enc.yaml`. The authos keystore is a
+  Secret manifest with `data.keystore.p12`, so a PKCS#12 file and a password
+  take the same path.
+- **Only `data` and `stringData` are encrypted** (`.sops.yaml`), so the name,
+  namespace and key names stay readable in review.
+- **One entry point, `scripts/secrets.sh`**, with `edit`, `encrypt`, `apply`
+  and `check`. `encrypt` reads a manifest on stdin, so a value that already
+  lives in a file or in the cluster never touches disk in plaintext.
+- **`.githooks/pre-commit` refuses an unencrypted `*.enc.yaml`**, reading the
+  index rather than the working tree. It must be enabled once per clone with
+  `git config core.hooksPath .githooks`.
+- 🔴 **This repository is public, and that has a cost this ADR did not state.**
+  The ciphertext is published for ever. If the age private key ever leaks,
+  every value in the history decrypts, and rotating the live Secret does not
+  protect the old commits. The signing keystore is the worst case: a leak of
+  the age key is a leak of Authos's signing key. Keep the age key in the
+  password manager and nowhere else durable.
