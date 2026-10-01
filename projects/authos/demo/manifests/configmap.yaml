@@ -8,13 +8,16 @@ metadata:
   namespace: authos
 data:
   # A public OAuth client_id minted by authos-demo/scripts/bootstrap.ts — NOT a secret
-  # (it ships in the browser bundle). Re-run bootstrap only mints a new one if the Duster
-  # app named `authos-demo` is gone; otherwise it reuses this.
+  # (it ships in the browser bundle). Minted 2026-10-01 against the rebuilt cluster.
   #
-  # 🔴 STALE since the 2026-09-20 rebuild. This id was minted against the old
-  # cluster's Authos database and Duster Redis, and both are new and empty. The
-  # demo cannot log in until bootstrap.ts is re-run and its output replaces it.
-  DEMO_DUSTER_CLIENT_ID: "48b05869457fa490fa88a99975411c14d1c2969f6c051e92fb84da2c6747666c"
+  # 🔴 It lives only as long as the shared Redis. bootstrap.ts decides "reuse or
+  # create" by asking Duster, whose app record is in Redis — which has no
+  # persistence (core/redis). After a Redis restart the demo cannot log in, and
+  # re-running bootstrap registers a SECOND Authos app with a NEW id, so this
+  # value must change again. Then: kubectl apply this file, and
+  # `kubectl rollout restart deploy/authos-demo -n authos` — entrypoint.sh reads
+  # it only at container start.
+  DEMO_DUSTER_CLIENT_ID: "c01a2189f5761d4358726ccd725f4884ecbbc64d9381a9511087b23391c0aeed"
   # Match entrypoint.sh defaults; kept explicit because this is the real prod config.
   DEMO_DUSTER_BASE_PATH: "/duster/api/v1"
   DEMO_AUTHOS_ORIGIN: "https://authos-api.tosak.net"

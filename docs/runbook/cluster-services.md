@@ -1702,11 +1702,64 @@ Two things that answer shows, both outside this repository:
 - **Duster returns the exception text in a 500** for an unknown client id
   (`IllegalStateException: No app found for probe`). An Authos-repo bug.
 
+### The demo client id, minted again
+
+`DEMO_DUSTER_CLIENT_ID` named an OAuth app from the lost cluster's database.
+`authos-demo/scripts/bootstrap.ts` (in the Authos repository) makes a new one.
+It writes to the live stack: it registers the demo owner in Authos, registers
+an OAuth app named `authos-demo`, creates a Duster service account, and copies
+the app into Duster.
+
+The operator ran it, because it needs the owner's password and the Duster
+admin token. Two details of how:
+
+- **Through a port-forward, never the public `/duster` route.** The script
+  sends the service account's `client_secret` in a **query string**
+  (`internal/credentials/save`). Through the route, Cloudflare and Envoy would
+  both see that URL. Duster itself has no `CallLogging`, so the port-forward
+  path logs it nowhere.
+- **Passwords read with `read -s`, the admin token decrypted from the SOPS
+  file**, so neither reaches `~/.zsh_history`.
+
+```bash
+kubectl port-forward -n authos svc/duster 8785:8785     # second terminal
+read -r 'DEMO_OWNER_EMAIL?Owner email: ' && export DEMO_OWNER_EMAIL
+read -rs 'DEMO_OWNER_PASSWORD?Owner password: ' && echo && export DEMO_OWNER_PASSWORD
+export DEMO_DUSTER_ADMIN_TOKEN="$(sops decrypt --extract '["data"]["DUSTER_ADMIN_TOKEN"]' \
+  projects/authos/duster/manifests/duster-admin.enc.yaml | base64 -d)"
+npm run bootstrap        # in Authos/authos-demo
+unset DEMO_OWNER_PASSWORD DEMO_DUSTER_ADMIN_TOKEN
+```
+
+The script ends by saying to set a **repository variable**. That is stale: here
+the value comes from `authos-demo-config` through `envFrom`, and
+`entrypoint.sh` renders it into `config/config.js` **only at container start**.
+So the new id needed both:
+
+```bash
+kubectl apply -f projects/authos/demo/manifests/configmap.yaml
+kubectl rollout restart deploy/authos-demo -n authos
+```
+
+| Check | Result |
+|---|---|
+| `…/duster/api/v1/session?client_id=<new>` | `401` — no session yet. The probe above got `500 No app found` |
+| `…/duster/api/v1/oauth/start?client_id=<new>` | `302` to `authos-api.tosak.net/oauth/authorize`, callback on the demo host |
+| that authorize URL | `302` to `authos.tosak.net/oauth/login` — Authos accepts the client and the redirect URI |
+| `config/config.js`, edge and origin | the new id; `cache-control: no-store`, `cf-cache-status: BYPASS` |
+| a real login in the browser, by the operator | **works** — the whole tier-0 flow, end to end |
+
+🔴 **The new id lives only as long as the shared Redis.** `bootstrap.ts`
+decides "reuse or create" by asking **Duster**, and Duster keeps its app record
+in Redis, which has no persistence (step 11). After a Redis restart the demo
+cannot log in, and a re-run registers a **second** Authos app with a **new**
+id — the Authos app in PostgreSQL is never consulted. The same thing happens
+if the script fails between `app/register` and `internal/apps/create`. The
+comment in `configmap.yaml` says so. The fix belongs in the Authos repository:
+look the app up in Authos first.
+
 ### What this step leaves open
 
-- **The demo cannot log in.** `DEMO_DUSTER_CLIENT_ID` names an OAuth app from
-  the lost cluster's database. Re-run `authos-demo/scripts/bootstrap.ts`
-  against the new api and duster, then update `authos-demo-config`.
 - **Probes for `authos-api` and `authos-ui`.** `/actuator/health` is `404` —
   no actuator is exposed — so the probe needs another endpoint, and
   `authos-api` needs a start budget of about two minutes. The base Deployments
