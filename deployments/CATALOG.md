@@ -6,6 +6,7 @@ _Generated from `deployments/history.jsonl` by `deployments/render-catalog.mjs`.
 
 | App | Version | Commit | Env | Deployed (UTC) |
 | --- | --- | --- | --- | --- |
+| authos-api | unknown | e9a30ae | dev | 2026-10-01T18:57:14Z |
 | authos-duster | unknown | e9a30ae | dev | 2026-10-01T18:56:34Z |
 | authos-demo | unknown | 48f3cad | dev | 2026-10-01T18:56:30Z |
 | authos-ui | unknown | 79fd738 | dev | 2026-10-01T18:56:23Z |
@@ -17,6 +18,7 @@ _Generated from `deployments/history.jsonl` by `deployments/render-catalog.mjs`.
 
 | App | Version | Commit | Env | Deployed (UTC) |
 | --- | --- | --- | --- | --- |
+| authos-api | unknown | e9a30ae | dev | 2026-10-01T18:57:14Z |
 | authos-duster | unknown | e9a30ae | dev | 2026-10-01T18:56:34Z |
 | authos-demo | unknown | 48f3cad | dev | 2026-10-01T18:56:30Z |
 | authos-ui | unknown | 79fd738 | dev | 2026-10-01T18:56:23Z |
