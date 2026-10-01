@@ -1,0 +1,101 @@
+# The monthly Restore Drill (ADR 0003, Amendments 2026-10-01 and 2026-10-02;
+# runbook step 17). The logic is drill/drill.sh; read its header first.
+#
+# Run it by hand at any time:
+#   kubectl create job --from=cronjob/restore-drill -n pg-drill restore-drill-manual-$(date -u +%Y%m%d%H%M)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: restore-drill
+  namespace: pg-drill
+spec:
+  # The 1st of each month, 09:00 UTC: well away from the 03:00 base backup,
+  # whose last WAL segment arrives up to 300 s after it, and after the 06:00
+  # outside watcher. The watcher alerts when the newest pass is older than 35
+  # days, so one missed month is reported within five days.
+  schedule: "0 9 1 * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  # A run missed while the control plane was down still happens that day.
+  startingDeadlineSeconds: 86400
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # A retry would restore a second time and report twice. A failure is
+      # reported and the next month runs again.
+      backoffLimit: 0
+      # Ready may take 30 min, the cleanup up to 10.
+      activeDeadlineSeconds: 3600
+      template:
+        spec:
+          serviceAccountName: restore-drill
+          restartPolicy: Never
+          # Time for drill.sh to delete the Cluster and report after SIGTERM.
+          terminationGracePeriodSeconds: 900
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: drill
+              # kubectl, aws, jq, yq, curl and bash in one image.
+              image: alpine/k8s:1.37.1@sha256:712dc5385d1c1a3f83b747fa9e40f64d433a97f72ff42f9755ff7dd1f62846e4
+              imagePullPolicy: IfNotPresent
+              command: [bash, /drill/drill.sh]
+              env:
+                - name: READY_TIMEOUT
+                  value: 30m
+                - name: JOB_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.labels['batch.kubernetes.io/job-name']
+                # kubectl and aws write caches under $HOME.
+                - name: HOME
+                  value: /tmp
+                - name: AWS_DEFAULT_REGION
+                  value: auto
+                # R2 does not support every checksum newer AWS clients send
+                # by default (plugin docs, "S3-compatible" section).
+                - name: AWS_REQUEST_CHECKSUM_CALCULATION
+                  value: when_required
+                - name: AWS_RESPONSE_CHECKSUM_VALIDATION
+                  value: when_required
+                - name: RO_ACCESS_KEY_ID
+                  valueFrom: {secretKeyRef: {name: r2-readonly-credentials, key: ACCESS_KEY_ID}}
+                - name: RO_ACCESS_SECRET_KEY
+                  valueFrom: {secretKeyRef: {name: r2-readonly-credentials, key: ACCESS_SECRET_KEY}}
+                - name: RESULTS_ACCESS_KEY_ID
+                  valueFrom: {secretKeyRef: {name: r2-drill-results-credentials, key: ACCESS_KEY_ID}}
+                - name: RESULTS_ACCESS_SECRET_KEY
+                  valueFrom: {secretKeyRef: {name: r2-drill-results-credentials, key: ACCESS_SECRET_KEY}}
+                - name: TG_BOT_TOKEN
+                  valueFrom: {secretKeyRef: {name: telegram, key: BOT_TOKEN}}
+                - name: TG_CHAT_ID
+                  valueFrom: {secretKeyRef: {name: telegram, key: CHAT_ID}}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ['ALL']
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 384Mi
+              volumeMounts:
+                - name: drill
+                  mountPath: /drill
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: drill
+              configMap:
+                name: restore-drill
+            - name: tmp
+              emptyDir: {}

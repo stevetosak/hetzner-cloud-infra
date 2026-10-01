@@ -1,0 +1,15 @@
+# Template only — documents the shape. The real Secret is committed encrypted
+# as telegram.enc.yaml and applied with scripts/secrets.sh.
+#
+# A copy of the infra Telegram bot — the same values as the repository secrets
+# INFRA_TELEGRAM_BOT_TOKEN and INFRA_TELEGRAM_CHAT_ID. The drill reports on
+# pass AND on fail (ADR 0003). Rotate the bot token in both places together.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: telegram
+  namespace: pg-drill
+type: Opaque
+stringData:
+  BOT_TOKEN: ""
+  CHAT_ID: ""

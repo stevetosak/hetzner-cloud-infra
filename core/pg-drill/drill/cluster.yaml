@@ -1,0 +1,48 @@
+# The drill's throw-away Cluster. NOT applied by hand: drill.sh fills in the
+# two `set-by-drill.sh` values from the production Cluster and creates it, and
+# deletes it at the end of every run.
+#
+# - One instance, restored to the END of the WAL: `recovery` with no target
+#   takes the newest base backup and replays every segment after it — the
+#   path a real recovery takes.
+# - 🔴 NO `plugins` stanza. Without it there is no WAL archiver, so a fault in
+#   the drill can never write a second timeline into the locked bucket.
+# - `hcloud-volumes` (Delete), never `hcloud-volumes-retain`, or every drill
+#   would leave an Orphaned Volume behind.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: drill
+  namespace: pg-drill
+spec:
+  instances: 1
+  # Production's image, so the major version always matches.
+  imageName: set-by-drill.sh
+
+  bootstrap:
+    recovery:
+      source: production
+
+  externalClusters:
+    - name: production
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: tosak-pg-backups-readonly
+          # Production's current generation, e.g. tosak-pg-cluster-g1.
+          serverName: set-by-drill.sh
+
+  storage:
+    # Hetzner's minimum volume size.
+    size: 10Gi
+    storageClass: hcloud-volumes
+
+  # Small on purpose: the workers carry production. On 2026-10-02 k8swk3 had
+  # 91 % of its memory requested.
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi

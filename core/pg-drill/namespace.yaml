@@ -1,0 +1,8 @@
+# The Restore Drill's own namespace (ADR 0003, Amendments 2026-10-01). The
+# drill creates and deletes a CloudNativePG Cluster here and nowhere else, so
+# its RBAC never reaches the production cluster in `pg-cluster` beyond reading
+# two kinds of metadata (rbac.yaml).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pg-drill

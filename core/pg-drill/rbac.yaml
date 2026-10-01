@@ -1,0 +1,79 @@
+# What the Restore Drill may do (ADR 0003, Amendments 2026-10-01 and 2026-10-02).
+#
+# In `pg-drill`: create and delete its own Cluster, read its ObjectStore, and
+# exec into its own instance to run psql over the local socket — no database
+# credential exists for the drill at all. The only pods in this namespace are
+# the drill's.
+#
+# In `pg-cluster`: READ two kinds of metadata, never data. The production
+# Cluster gives the image, the archive's serverName and `initdb.database`; the
+# Database objects give every other database production declares. Neither
+# object holds a secret. No exec, no Secrets, no pods there.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: restore-drill
+  namespace: pg-drill
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: restore-drill
+  namespace: pg-drill
+rules:
+  - apiGroups: [postgresql.cnpg.io]
+    resources: [clusters]
+    verbs: [get, list, watch, create, delete]
+  - apiGroups: [barmancloud.cnpg.io]
+    resources: [objectstores]
+    verbs: [get]
+  - apiGroups: ['']
+    resources: [pods, persistentvolumeclaims]
+    verbs: [get, list, watch]
+  - apiGroups: ['']
+    resources: [pods/exec]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: restore-drill
+  namespace: pg-drill
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: restore-drill
+subjects:
+  - kind: ServiceAccount
+    name: restore-drill
+    namespace: pg-drill
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: restore-drill-read-production
+  namespace: pg-cluster
+rules:
+  - apiGroups: [postgresql.cnpg.io]
+    resources: [clusters]
+    resourceNames: [tosak-pg-cluster]
+    verbs: [get]
+  # `list` cannot be limited by name. A Database object is a name, an owner
+  # and a cluster reference.
+  - apiGroups: [postgresql.cnpg.io]
+    resources: [databases]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: restore-drill-read-production
+  namespace: pg-cluster
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: restore-drill-read-production
+subjects:
+  - kind: ServiceAccount
+    name: restore-drill
+    namespace: pg-drill
