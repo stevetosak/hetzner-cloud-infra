@@ -1824,7 +1824,8 @@ scripts/secrets.sh diff  core/cnpg/r2-backup-credentials.enc.yaml   # new object
 scripts/secrets.sh apply core/cnpg/r2-backup-credentials.enc.yaml
 kubectl apply --server-side --field-manager=cloud-infra -f core/cnpg/plugin-barman-cloud.yaml
 kubectl apply -f core/cnpg/storageclass-retain.yaml
-kubectl patch pv <the three PV names> -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}'
+kubectl patch pv pvc-58e6fabb-6261-4ec2-a5d2-d9dc2279489c pvc-c9a6c360-17da-4769-a0b7-627841a46dfa \
+  pvc-287edf10-b6d7-4968-bfba-c799edc16b8d -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}'
 kubectl apply -f core/cnpg/objectstore.yaml
 kubectl apply -f core/cnpg/pg-cluster.yaml        # restarts every instance — see below
 kubectl apply -f core/cnpg/scheduled-backup.yaml  # immediate: true — the first backup runs now

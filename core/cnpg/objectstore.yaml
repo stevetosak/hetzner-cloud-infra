@@ -11,8 +11,10 @@ metadata:
   namespace: pg-cluster
 spec:
   # A recovery window, not a count. Base backups older than the newest one
-  # before now − 30 days are deleted, with their WAL. Those objects are always
-  # older than the 30-day bucket lock, so the two never meet.
+  # before now − 30 days are deleted, with their WAL. Those objects are
+  # normally older than the 30-day lock on the WAL prefix. A segment uploaded
+  # late (after archiving was broken) can still be locked; its delete fails
+  # and the next retention run retries it.
   retentionPolicy: "30d"
   configuration:
     destinationPath: s3://tosak-pg-backups/
