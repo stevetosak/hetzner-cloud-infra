@@ -4,7 +4,10 @@ Date: 2026-09-20
 
 ## Status
 
-Accepted
+Accepted, and **amended** on 2026-09-22 (SOPS), 2026-10-01 (the backup
+design) and **2026-10-02, which reverses one 2026-10-01 decision**: the bucket
+lock covers the WAL only. Read **Amendments** at the end before building
+anything from the body.
 
 ## Context
 
@@ -127,13 +130,17 @@ plugin plus an `ObjectStore`. What was decided:
   password manager → age key → git → token → bucket, and no step depends on
   the cluster. `scripts/secrets.sh` and `.sops.yaml` already accept any path,
   so `core/` needs no change to either.
-- **A 30-day bucket lock rule, no prefix, from the first backup.** R2's Object
+- **A 30-day bucket lock rule, no prefix, from the first backup.**
+  *Superseded 2026-10-02: the rule covers `tosak-pg-cluster-g1/wals/` only —
+  a no-prefix lock fails every base backup. See below.* R2's Object
   Read & Write permission includes delete, and that token lives in the
   cluster, so without a lock the cluster could erase its own history. The
   in-cluster token cannot edit bucket configuration; only the operator can
   remove the rule, from the dashboard. The lock does not fight retention: the
   plugin's 30-day recovery window deletes only objects older than the newest
-  backup before now − 30 days, which are always outside the lock. Cost: no
+  backup before now − 30 days, which are normally outside the lock (a segment
+  uploaded late, after archiving was broken for a while, can still be locked;
+  its delete then fails and the next retention run retries it). Cost: no
   backup can be deleted inside 30 days, so tests write to another
   `serverName` path, and the bucket cannot be emptied until the rule is
   removed.
@@ -191,7 +198,9 @@ plugin plus an `ObjectStore`. What was decided:
   tolerance, and against a fixed floor expiring rows fail it for nothing. It
   asserts instead: (1) the restored cluster is `Ready` within 30 minutes;
   (2) `pg_last_wal_replay_lsn()` is at or past production's last archived WAL,
-  read from the production `Cluster` status before the restore — physical
+  read from the production `Cluster` status before the restore (*2026-10-02:
+  that status does not carry it under plugin archiving; the source is decided
+  with the drill*) — physical
   replay is exact, so reaching that LSN means the rows are production's rows;
   (3) every database production declares (`initdb.database` and the
   `Database` objects) exists, with at least one user table and more than zero
@@ -203,7 +212,8 @@ plugin plus an `ObjectStore`. What was decided:
   with the read-only R2 token and reports when the newest base backup is
   older than 26 hours. That one check catches a stopped plugin, a dead token
   and a dead cluster alike, because nothing inside a dead cluster can report
-  its own death.
+  its own death. (*2026-10-02: it does NOT catch a broken WAL archiver — a
+  base backup from a standby does not wait for archiving. See below.*)
 - **The drill leaves a trace outside the cluster.** It writes its result
   (`drill/<yyyy-mm>.json`: time, LSN reached, databases, pass or fail) to a
   separate bucket, `tosak-drill-results`, with a token that can write to that
@@ -239,5 +249,51 @@ plugin plus an `ObjectStore`. What was decided:
   | Hetzner token, Read | list volumes | GitHub repo secret |
   | Infra Telegram bot token (a copy) | send a message as that bot | SOPS (`pg-drill`) |
 
-  No credential that runs on a schedule can delete a backup or change a
-  bucket's configuration.
+  No credential that runs on a schedule can change a bucket's configuration.
+  *2026-10-02: the backup token CAN delete base backups — they are not locked
+  (see below) — and the plugin's retention deletes expired ones with it on
+  purpose. Only the WAL is beyond its reach.*
+
+**2026-10-02 — the bucket lock covers the WAL only; found while building it.**
+The 2026-10-01 lock rule (30 days, no prefix) would have failed every base
+backup. What was found, and what replaces it:
+
+- **barman 3.19.0 and later writes `backup.info` twice** in one base backup:
+  status `STARTED` when the copy begins, then the same key again with `DONE`
+  or `FAILED` when it ends (`CloudBackup.coordinate_backup` in
+  `barman/cloud.py`, read at `release/3.20.1`, the version plugin v0.15.1
+  ships). **An R2 bucket lock refuses overwrites as well as deletes**, and R2
+  has no object versioning — on AWS S3 the same overwrite succeeds by making a
+  new version. Measured on this bucket with the backup token under the
+  no-prefix rule: the second `PutObject` and a `DeleteObject` both returned
+  `ObjectLockedByBucketPolicy`, and the object kept its first content. With
+  that rule, every base backup would end `FAILED` and leave a `STARTED`
+  `backup.info` that nobody could delete for 30 days. Upstream: barman issue
+  #1195, open, treated as a feature request.
+- **Decision: one lock rule, prefix `tosak-pg-cluster-g1/wals/`, 30 days.**
+  barman writes every WAL segment once, under a name that never repeats, so
+  the lock costs the WAL nothing. Rejected: pinning plugin v0.12.0, the last
+  release on barman 3.18 (one write) — it predates CloudNativePG 1.30, and
+  every later upgrade would break base backups again; and no lock at all.
+- **Cost: base backups are not locked.** A compromised cluster can delete
+  them with its own token, and WAL without any base backup restores nothing.
+  The daily workflow reports a missing or stale base backup within 26 hours;
+  that is detection, not prevention. The lock still stops the cluster, or a
+  barman fault, from erasing the WAL history.
+- **Each generation needs its own rule.** A prefix is literal, so a recovery
+  that moves archiving to `tosak-pg-cluster-g2` must add a rule for
+  `tosak-pg-cluster-g2/wals/` before the recovered cluster archives. The
+  recovery runbook carries this step.
+- **Revisit when barman stops overwriting `backup.info`** (issue #1195): then
+  the rule goes back to no prefix and base backups are locked too.
+- Three build-time facts, as promised in the decision above: `zstd` is
+  accepted for WAL (base backups offer no `zstd`; they use `gzip`). A base
+  backup taken from a standby **does not wait for WAL archiving** —
+  `pg_backup_stop()` waits only on a primary, or on a standby with
+  `archive_mode = always`, and CloudNativePG sets `on` — so a broken archiver
+  does not fail the base backup or trip the 26-hour check; monitoring must
+  watch archiving itself. And **`Cluster.status` does not record the last
+  archived WAL** under plugin archiving, nor does `ObjectStore.status`, so the
+  drill's assertion (2) needs another source for production's last archived
+  WAL; that is decided with the drill. Measurements:
+  `docs/runbook/cluster-services.md`, step 15.

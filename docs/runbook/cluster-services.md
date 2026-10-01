@@ -1766,3 +1766,163 @@ look the app up in Authos first.
   are ArgoCD-synced, so this is a branch and a PR.
 - **`authos-api`'s Redis login** is unproven until the first request that uses
   it.
+
+## 15. Backups — WAL archiving and a daily base backup to R2
+
+Written on 2026-10-02. The cluster was lost on 2026-09-13 because no database
+had a backup. This step makes `tosak-pg-cluster` archive its WAL and take a
+daily base backup to R2, and makes its volumes survive a deletion. The design
+is ADR 0003, Amendments **2026-10-01**; one decision in it did not survive the
+build, and the replacement is Amendment **2026-10-02**. Read both before
+changing anything here.
+
+| File | What it is |
+|---|---|
+| `core/cnpg/plugin-barman-cloud.yaml` | The barman-cloud CNPG-I plugin, upstream `v0.15.1` `manifest.yaml`, byte for byte |
+| `core/cnpg/r2-backup-credentials.{yaml,enc.yaml}` | The R2 token that writes backups. Template and SOPS file |
+| `core/cnpg/objectstore.yaml` | Bucket, endpoint, compression, 30-day retention |
+| `core/cnpg/storageclass-retain.yaml` | `hcloud-volumes-retain`, the class PostgreSQL volumes are made from |
+| `core/cnpg/pg-cluster.yaml` | `plugins` (with `serverName: tosak-pg-cluster-g1`) and the Retain class |
+| `core/cnpg/scheduled-backup.yaml` | Daily at 03:00 UTC, from a standby |
+
+### Prerequisites the operator made in the Cloudflare dashboard
+
+- Bucket `tosak-pg-backups`, default jurisdiction (the endpoint has no `.eu.`).
+- **One** bucket lock rule: prefix **`tosak-pg-cluster-g1/wals/`**, 30 days.
+- An **Account** API token (not a User token, which dies with the user):
+  Object Read & Write on `tosak-pg-backups` only. Encrypted with
+  `read -rs` into two shell variables piped through
+  `kubectl create secret … --dry-run=client | scripts/secrets.sh encrypt`, so
+  neither value reached shell history or disk.
+
+### 🔴 Why the lock covers the WAL only
+
+The design said one rule, no prefix. barman 3.19+ uploads `backup.info` as
+`STARTED` and then **overwrites** it with `DONE`, and an R2 lock refuses an
+overwrite. Measured before any backup ran, with a throw-away Pod holding the
+backup token and the no-prefix rule in place:
+
+    key-id length: 32  secret length: 64
+    PUT 1      : ok
+    PUT 2      : refused  (ObjectLockedByBucketPolicy)
+    DELETE     : refused  (ObjectLockedByBucketPolicy)
+    GET after  : exists, content=one
+    CONFIG READ: refused  (AccessDenied — not an Admin token)
+
+`ObjectLockedByBucketPolicy` and `AccessDenied` are different faults: the
+first is the lock, the second is the token's scope. In a sidecar log they
+point at different fixes.
+
+The probe object `lock-test/probe-20261001T222831Z` is outside every
+`serverName` path and is harmless. The rule was then narrowed to the WAL
+prefix and read back from the dashboard.
+
+### Apply
+
+```bash
+scripts/secrets.sh diff  core/cnpg/r2-backup-credentials.enc.yaml   # new object, values '***'
+scripts/secrets.sh apply core/cnpg/r2-backup-credentials.enc.yaml
+kubectl apply --server-side --field-manager=cloud-infra -f core/cnpg/plugin-barman-cloud.yaml
+kubectl apply -f core/cnpg/storageclass-retain.yaml
+kubectl patch pv pvc-58e6fabb-6261-4ec2-a5d2-d9dc2279489c pvc-c9a6c360-17da-4769-a0b7-627841a46dfa \
+  pvc-287edf10-b6d7-4968-bfba-c799edc16b8d -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}'
+kubectl apply -f core/cnpg/objectstore.yaml
+kubectl apply -f core/cnpg/pg-cluster.yaml        # restarts every instance — see below
+kubectl apply -f core/cnpg/scheduled-backup.yaml  # immediate: true — the first backup runs now
+```
+
+The plugin must sit in the operator's namespace, `cnpg-system`, and needs
+cert-manager. CloudNativePG finds it by the `barman-cloud` Service's
+`cnpg.io/pluginName` label, not by a registry. Two
+`Secret "barman-cloud-server-tls" not found` errors in the operator log right
+after the install are cert-manager not having issued yet; the next line is
+`Registered plugin`.
+
+`kubectl diff -f core/cnpg/pg-cluster.yaml` before the apply proves the
+CloudNativePG webhook accepts both changes, including `storage.storageClass`
+on a live Cluster. The three existing PVCs keep `hcloud-volumes`; their PVs
+were patched to `Retain`. Only a new instance volume gets the new class.
+
+### 🔴 The Cluster apply blocked writes for 3½ minutes
+
+Adding `plugins` injects a sidecar, so every instance restarts. The replicas
+went first. The primary was then **restarted in place, not switched over** —
+`primaryUpdateMethod` defaults to `restart` — and spent the whole
+`smartShutdownTimeout` (180 s) in a smart shutdown, because authos and doma
+hold pooled connections that never disconnect on their own. Writes were down
+from 22:37:06 to 22:40:38 UTC. Do not force-delete a primary that is in this
+state: Kubernetes forgets the Pod while PostgreSQL still runs, and the
+operator may fail over — which makes a *former primary*, the trigger for the
+plugin bug below.
+
+During the shutdown the old primary's `archive_command` already pointed at
+the plugin, but its Pod had no sidecar yet: `pg_stat_archiver` shows 9
+failures, the last at 22:40:07. PostgreSQL kept those segments and archived
+them in order after the restart — a failed archive is retried, not lost.
+
+### Verified
+
+| Check | Result |
+|---|---|
+| Plugin | `barman-cloud` 1/1, both Certificates `Ready`, `pluginStatus` shows `0.15.1` |
+| PVs | all three `Retain` — volumes 106916161, 106916168, 106916171 |
+| WAL in the bucket | `…/wals/000000010000000B/000000010000000B00000066.zst` 10.9 KB, `…67.zst` 15.6 KB — 16 MB segments, zstd |
+| The lock on the real path | `CopyObject` of a WAL object onto itself → `ObjectLockedByBucketPolicy` |
+| No other rule | overwriting the old `lock-test/` probe → allowed |
+| First base backup | `tosak-pg-cluster-daily-20261001224308`, `completed` in 8 s on standby `tosak-pg-cluster-2`, WAL `…68` |
+| ObjectStore | `firstRecoverabilityPoint` = `lastSuccessfulBackupTime` = `2026-10-01T22:43:16Z` |
+
+The self-copy is the safe way to test a lock on objects that matter: if the
+lock does not hold, the object is rewritten with its own bytes. A delete test
+on a real WAL segment would leave a gap in the chain.
+
+`completed` also proves the `backup.info` overwrite went through: barman exits
+non-zero when the final `backup.info` upload fails, and the plugin reports
+`completed` only on success.
+
+🔴 **`ContinuousArchiving=True` proves nothing here.** It was already `True`
+before this step, with no archiver at all: CloudNativePG marked each segment
+`.done` and sent it nowhere. Prove archiving by objects in the bucket.
+
+A base backup is restorable only once its `endWal` is archived, which takes up
+to `archive_timeout` (300 s) after the backup ends.
+
+### The three build-time facts
+
+1. **`zstd` for WAL — yes.** The objects above. Base backups offer no `zstd`
+   (bzip2, gzip, lz4, snappy); they use `gzip`.
+2. **`Cluster.status` does NOT record the last archived WAL under plugin
+   archiving.** Its only plugin field is `pluginStatus`; the in-tree fields are
+   absent. `ObjectStore.status` carries timestamps only, no WAL name or LSN.
+   The drill's LSN assertion needs another source — decided in the drill
+   chunk.
+3. **A base backup does not wait for WAL archiving.** barman calls
+   `pg_backup_stop()`, whose wait applies on a primary, or on a standby only
+   with `archive_mode = always`; CloudNativePG sets `on`, and backups run on a
+   standby. So a broken archiver does not fail the daily backup and does not
+   trip the 26-hour freshness check. Archiving needs its own watch.
+
+### plugin#828 — checked, not active
+
+Upstream, archiving stops for good after a failover with
+`Expected empty archive`. The check runs only while the
+`.check-empty-wal-archive` marker exists in `PGDATA`, and on 2026-10-02 it
+existed on none of the three instances. A cluster **bootstrapped by recovery**
+gets the marker, so the recovery runbook must account for it.
+
+### What this step leaves open
+
+- **The daily workflow** (base backup < 26 h, Orphaned Volumes, drill
+  freshness) and **the Restore Drill** — chunks 3 and 4.
+- **The drill's LSN source** (fact 2). Proposal: the drill lists
+  `tosak-pg-cluster-g1/wals/` with its read-only token and takes the newest
+  segment name — the bucket itself, no production credential.
+- **Archiving is not watched** (fact 3). Monitoring scope.
+- **Base backups are not locked** (Amendment 2026-10-02). Revisit when barman
+  issue #1195 is fixed.
+- **Every primary restart blocks writes for the full 180 s.** A lower
+  `smartShutdownTimeout`, or `primaryUpdateMethod: switchover`, would shorten
+  it; the second makes plugin#828 matter. Not decided.
+- **`Backup` objects accumulate**, one a day; `backupOwnerReference` is unset.
+- **The recovery runbook**: read generation N, archive to N+1, add the lock
+  rule for N+1, and the recovery marker above.
