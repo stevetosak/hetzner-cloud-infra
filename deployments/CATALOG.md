@@ -6,6 +6,7 @@ _Generated from `deployments/history.jsonl` by `deployments/render-catalog.mjs`.
 
 | App | Version | Commit | Env | Deployed (UTC) |
 | --- | --- | --- | --- | --- |
+| authos-duster | unknown | e9a30ae | dev | 2026-10-01T18:56:34Z |
 | authos-demo | unknown | 48f3cad | dev | 2026-10-01T18:56:30Z |
 | authos-ui | unknown | 79fd738 | dev | 2026-10-01T18:56:23Z |
 | doma-web | v0.3.0-3-g6051907 | [6051907](https://github.com/stevetosak/doma/commit/605190726c0d413069db765680feccffb8bf3ba2) | dev | 2026-09-21T20:56:32Z |
@@ -16,6 +17,7 @@ _Generated from `deployments/history.jsonl` by `deployments/render-catalog.mjs`.
 
 | App | Version | Commit | Env | Deployed (UTC) |
 | --- | --- | --- | --- | --- |
+| authos-duster | unknown | e9a30ae | dev | 2026-10-01T18:56:34Z |
 | authos-demo | unknown | 48f3cad | dev | 2026-10-01T18:56:30Z |
 | authos-ui | unknown | 79fd738 | dev | 2026-10-01T18:56:23Z |
 | doma-web | v0.3.0-3-g6051907 | [6051907](https://github.com/stevetosak/doma/commit/605190726c0d413069db765680feccffb8bf3ba2) | dev | 2026-09-21T20:56:32Z |
