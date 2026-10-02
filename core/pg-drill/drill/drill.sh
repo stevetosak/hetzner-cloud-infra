@@ -35,6 +35,8 @@ TEMPLATE=/drill/cluster.yaml
 step="start"            # what was running when it failed
 result=fail
 server="" newest_wal="" lsn_reached="" ready_seconds=""
+owns_cluster=no         # set once no other drill is running; until then
+                        # `finish` must not delete a Cluster `drill`
 db_report=()            # "authos: 9 tables, 1234 rows"
 db_json='[]'
 
@@ -58,11 +60,16 @@ psql_drill() {
 
 # Deletes the drill Cluster and waits until its PVC is gone. CloudNativePG
 # owns the PVC; its PV is `Delete`, so the Hetzner volume goes with it.
+#
+# Explicit returns: it is also called as `delete_drill_cluster || …`, where
+# errexit is off. A failed `get` is never read as "gone".
 delete_drill_cluster() {
-  kubectl delete cluster "$DRILL" -n "$DRILL_NS" --ignore-not-found --wait --timeout=5m
-  local _
+  kubectl delete cluster "$DRILL" -n "$DRILL_NS" --ignore-not-found --wait --timeout=5m || return 1
+  local _ left
   for _ in $(seq 60); do
-    [ -z "$(kubectl get pvc -n "$DRILL_NS" -l "cnpg.io/cluster=$DRILL" -o name)" ] && return 0
+    if left=$(kubectl get pvc -n "$DRILL_NS" -l "cnpg.io/cluster=$DRILL" -o name); then
+      [ -z "$left" ] && return 0
+    fi
     sleep 5
   done
   echo "the drill PVC is still there after 5 minutes" >&2
@@ -77,13 +84,16 @@ telegram() {
 }
 
 finish() {
-  local code=$? cleaned=yes key written=yes text http finished_at
+  local code=$? cleaned=skipped key written=yes text http finished_at
   trap - EXIT
   set +e
   [ "$result" = pass ] || log "FAILED at: $step (exit $code)"
 
-  log "deleting the drill Cluster"
-  delete_drill_cluster || cleaned=no
+  if [ "$owns_cluster" = yes ]; then
+    log "deleting the drill Cluster"
+    cleaned=yes
+    delete_drill_cluster || cleaned=no
+  fi
 
   finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   key="drill/$(date -u +%Y%m%dT%H%M%SZ).json"
@@ -96,6 +106,12 @@ finish() {
           serverName: $serverName, newestWal: $newestWal, lsnReached: $lsnReached,
           readySeconds: ($readySeconds | tonumber? // null), databases: $databases,
           cleanedUp: ($cleanedUp == "yes")}' >/tmp/result.json
+  # Never upload an empty or broken object: the watcher cannot parse it and
+  # would report itself broken every day until someone deleted it.
+  # (`-s` too: jq 1.6 exits 0 on empty input.)
+  if ! { [ -s /tmp/result.json ] && jq -e '.finishedAt and .result' /tmp/result.json >/dev/null 2>&1; }; then
+    printf '{"finishedAt":"%s","result":"%s"}\n' "$finished_at" "$result" >/tmp/result.json
+  fi
   if [ -z "${ENDPOINT:-}" ] \
      || ! aws_results s3 cp /tmp/result.json "s3://$RESULTS_BUCKET/$key" --quiet; then
     written=no
@@ -112,7 +128,7 @@ Failed at: $step.
 Log: kubectl logs -n $DRILL_NS job/$JOB_NAME"
   fi
   [ "$written" = yes ] || text+=$'\n'"⚠️ The result was NOT written to $RESULTS_BUCKET — the watcher will report a missing pass."
-  [ "$cleaned" = yes ] || text+=$'\n'"⚠️ The drill Cluster or its volume was NOT deleted. The next run deletes it; check: kubectl get cluster,pvc -n $DRILL_NS"
+  [ "$cleaned" != no ] || text+=$'\n'"⚠️ The drill Cluster or its volume was NOT deleted. The next run deletes it; check: kubectl get cluster,pvc -n $DRILL_NS"
 
   http=$(telegram "$text")
   log "telegram: HTTP $http"
@@ -124,6 +140,28 @@ trap finish EXIT
 # The Job's deadline sends SIGTERM; exit through `finish` so the Cluster is
 # still deleted and the failure still reported.
 trap 'step+=" (killed by the Job deadline)"; exit 143' TERM
+
+# First, so that a failure in any later step can still write its result.
+step="read the bucket from the drill's ObjectStore"
+store=$(kubectl get objectstores.barmancloud.cnpg.io "$STORE" -n "$DRILL_NS" -o json)
+ENDPOINT=$(jq -er '.spec.configuration.endpointURL' <<<"$store")
+bucket=$(jq -er '.spec.configuration.destinationPath' <<<"$store")
+bucket=${bucket#s3://}; bucket=${bucket%%/*}
+
+# Every run uses the Cluster name `drill`. concurrencyPolicy: Forbid does not
+# cover a Job made by hand, and a second run would delete the first one's
+# restore — and the first one's `kubectl wait` could then pass on the
+# second one's Cluster.
+step="check that no other drill is running"
+running=$(kubectl get pods -n "$DRILL_NS" -l batch.kubernetes.io/job-name \
+  --field-selector=status.phase=Running \
+  -o jsonpath='{range .items[*]}{.metadata.labels.batch\.kubernetes\.io/job-name}{"\n"}{end}')
+others=$(grep -vx -e "$JOB_NAME" -e '' <<<"$running" || true)
+if [ -n "$others" ]; then
+  step="refused to start: another drill is running ($(tr '\n' ' ' <<<"$others"))"
+  exit 1
+fi
+owns_cluster=yes
 
 step="delete a drill Cluster left by an earlier run"
 log "$step"
@@ -147,12 +185,6 @@ mapfile -t databases < <(
 )
 [ "${#databases[@]}" -gt 0 ] || { echo "production declares no database" >&2; exit 1; }
 log "image $image, archive $server, databases: ${databases[*]}"
-
-step="read the bucket from the drill's ObjectStore"
-store=$(kubectl get objectstores.barmancloud.cnpg.io "$STORE" -n "$DRILL_NS" -o json)
-ENDPOINT=$(jq -er '.spec.configuration.endpointURL' <<<"$store")
-bucket=$(jq -er '.spec.configuration.destinationPath' <<<"$store")
-bucket=${bucket#s3://}; bucket=${bucket%%/*}
 
 # Segment names sort in WAL order — timeline first, then position. Skip
 # `.history`, `.partial` and `.backup` objects; allow a compression suffix.

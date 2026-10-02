@@ -112,7 +112,8 @@ export function checkWal(lastModified, now) {
 
 // --- Restore Drill ----------------------------------------------------------
 
-// The drill writes drill/<yyyy-mm>.json to tosak-drill-results. The contract
+// The drill writes drill/<UTC timestamp>.json to tosak-drill-results, one
+// object per run (core/pg-drill/drill/drill.sh). The contract
 // this check relies on: `finishedAt` (ISO 8601) and `result` ("pass"|"fail").
 export function checkDrill(results, now) {
   const passes = results

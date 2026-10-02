@@ -200,7 +200,9 @@ plugin plus an `ObjectStore`. What was decided:
   (2) `pg_last_wal_replay_lsn()` is at or past production's last archived WAL,
   read from the production `Cluster` status before the restore (*2026-10-02:
   that status does not carry it under plugin archiving; the drill lists the
-  bucket instead — see the last amendment*) — physical
+  bucket instead, and reads the end of its replay from the timeline history,
+  because the function is NULL after CloudNativePG's recovery — see the last
+  amendment*) — physical
   replay is exact, so reaching that LSN means the rows are production's rows;
   (3) every database production declares (`initdb.database` and the
   `Database` objects) exists, with at least one user table and more than zero

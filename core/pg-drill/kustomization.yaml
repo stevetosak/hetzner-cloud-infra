@@ -1,11 +1,11 @@
 # kubectl apply -k core/pg-drill — after namespace.yaml and the Secrets
-# (README.md). The *.enc.yaml Secrets and their blank templates are NOT
-# listed: the Secrets go through scripts/secrets.sh, and a template must
-# never be applied.
+# (README.md). NOT listed: the namespace, which is applied by hand like every
+# namespace in this repository (so `kubectl delete -k` cannot remove it), the
+# *.enc.yaml Secrets, which go through scripts/secrets.sh, and their blank
+# templates, which must never be applied.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - namespace.yaml
   - rbac.yaml
   - objectstore.yaml
   - cronjob.yaml

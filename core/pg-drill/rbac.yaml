@@ -27,9 +27,14 @@ rules:
   - apiGroups: [barmancloud.cnpg.io]
     resources: [objectstores]
     verbs: [get]
+  # get: exec needs it. list: the check that no other drill is running.
   - apiGroups: ['']
-    resources: [pods, persistentvolumeclaims]
-    verbs: [get, list, watch]
+    resources: [pods]
+    verbs: [get, list]
+  # list: the wait until the drill's PVC is gone.
+  - apiGroups: ['']
+    resources: [persistentvolumeclaims]
+    verbs: [list]
   - apiGroups: ['']
     resources: [pods/exec]
     verbs: [create]

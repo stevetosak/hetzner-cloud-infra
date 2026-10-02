@@ -2041,13 +2041,18 @@ deletes it (ADR 0003, Amendments 2026-10-01 and the drill amendment of
 
 Pass or fail it writes `drill/<UTC timestamp>.json` to `tosak-drill-results`,
 sends one Telegram message, and deletes its Cluster — on every exit,
-including the Job deadline's SIGTERM.
+including the Job deadline's SIGTERM. Two exceptions, both by design: if the
+drill cannot read its own ObjectStore (its first step) it has no endpoint and
+writes no result; and if another drill Job is already Running it refuses to
+start and deletes nothing — every run uses the Cluster name `drill`, and
+`concurrencyPolicy: Forbid` does not cover a Job made by hand.
 
 ### What it may touch
 
 - **`pg-drill`**: create and delete Clusters, read its own ObjectStore,
-  `exec` into pods (psql as `postgres` over the local socket — the drill has
-  no database credential at all). Secrets reach it only as `env`.
+  `get`/`list` pods and `exec` into them (psql as `postgres` over the local
+  socket — the drill has no database credential at all), `list` PVCs.
+  Secrets reach it only as `env`.
 - **`pg-cluster`**: `get` on `tosak-pg-cluster` and `list` on `Database`
   objects. Nothing else — no Secrets, no exec, no delete.
 - **R2**: the watcher's read-only token for the backups, and a token that
@@ -2062,7 +2067,7 @@ Kubernetes 1.35 the WebSocket exec is authorised as `create`.
 ### Apply
 
 ```bash
-kubectl apply -f core/pg-drill/namespace.yaml
+kubectl apply -f core/pg-drill/namespace.yaml   # by hand, not in the kustomization
 scripts/secrets.sh diff  core/pg-drill      # three new Secrets, values '***'
 scripts/secrets.sh apply core/pg-drill
 kubectl diff  -k core/pg-drill
@@ -2093,7 +2098,7 @@ the segment *before* it — and the first real run hit exactly that case.
 
 | Run | Result |
 |---|---|
-| `restore-drill-manual-202610012346` | **pass.** Newest segment listed `…0B00000074`. PostgreSQL: `redo done at B/7401D790`, timeline 2. Ready in **146 s**. Switch point **`B/75000000`** — the first byte of the next segment, so the boundary rule above decided it. authos 15 tables / 18 rows, doma 33 / 3182. `drill/20261001T234920Z.json` written, Telegram ✅ received, Cluster and PVC deleted, Hetzner back to 106916161/168/171 |
+| `restore-drill-manual-202610012346` | **pass.** Newest segment listed `…0B00000074`. PostgreSQL: `redo done at B/7401D790`, timeline 2. Ready in **146 s**. Switch point **`B/75000000`** — the first byte of the next segment, so the boundary rule above decided it. Both declared databases (authos, doma) have tables and rows. `drill/20261001T234920Z.json` written, Telegram ✅ received, Cluster and PVC deleted, Hetzner back to 106916161/168/171 |
 | `restore-drill-negative-202610012353` | **fail, on purpose**: the Job made from the CronJob with `READY_TIMEOUT=60s`. `FAILED at: wait for the restore to be Ready (limit 60s)`, `drill/20261001T235451Z.json` with `"result":"fail"`, Telegram 🔴 sent, Job `Failed`, cleanup done |
 
 The negative run costs nothing to repeat and needs no edit to any file:
@@ -2123,5 +2128,7 @@ cluster-scoped grant on PVs.
   by its own message.
 - **The image is about 1 GB** (`alpine/k8s`, with tools the drill does not
   use). Pulled once per node and cached; a smaller image is a later choice.
-- **`authos` passes on 18 rows**, mostly Flyway's history. Assertion ③ proves
-  presence, not completeness — completeness is assertion ②.
+- **`authos` passes on a handful of rows**, mostly Flyway's history.
+  Assertion ③ proves presence, not completeness — completeness is assertion
+  ②. Exact counts are in the result object and the Telegram message, not
+  here: this repository is public.

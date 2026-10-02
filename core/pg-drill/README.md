@@ -13,7 +13,7 @@ CloudNativePG Cluster, prove they are complete, report, and delete it
 | `cronjob.yaml` | 1st of the month, 09:00 UTC |
 | `drill/drill.sh` | The drill. Its header lists the three assertions |
 | `drill/cluster.yaml` | The throw-away Cluster: 1 instance, no WAL archiver, `hcloud-volumes` (Delete) |
-| `kustomization.yaml` | Puts `drill/` into a ConfigMap; lists everything except the Secrets |
+| `kustomization.yaml` | Puts `drill/` into a ConfigMap; lists everything except the namespace (applied by hand) and the Secrets |
 | `r2-readonly-credentials.{yaml,enc.yaml}` | R2 Object Read, `tosak-pg-backups` + `tosak-drill-results` (the watcher's token) |
 | `r2-drill-results-credentials.{yaml,enc.yaml}` | R2 Object Read & Write, `tosak-drill-results` only |
 | `telegram.{yaml,enc.yaml}` | A copy of the infra bot token and chat id |
