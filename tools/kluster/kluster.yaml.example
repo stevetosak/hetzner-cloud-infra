@@ -1,0 +1,30 @@
+# Copy to kluster.yaml (gitignored) and fill in controlPlane.publicIP, or
+# leave it blank and export CONTROL_PLANE_IP instead.
+
+controlPlane:
+  publicIP: "" # falls back to $CONTROL_PLANE_IP
+  privateIP: "10.0.1.5"
+  vpnIP: "10.100.0.1"
+  sshUser: root
+
+node:
+  sshUser: root
+  user: tosak
+  networkInterface: enp7s0
+
+wireguard:
+  subnet: "10.100.0.0/24"
+  port: 51820
+  peers:
+    - name: admin-laptop
+      publicKey: "7v0/KwZNn08j5rtN8IQ2C8f9kOeuEqKEIlWwr4Qhq00="
+      allowedIPs: "10.100.0.69/32"
+
+versions:
+  containerd: "2.2.0"
+  runc: "1.4.0"
+  cniPlugins: "1.9.0"
+  kubernetes: "v1.34"
+
+terraform:
+  workDir: ../../infra
