@@ -1,0 +1,26 @@
+# The production backups, seen READ-ONLY from the drill's namespace. An
+# ObjectStore is namespaced and a Cluster can only name one in its own
+# namespace, so the drill cannot use `pg-cluster/tosak-pg-backups`.
+#
+# Same bucket and endpoint as core/cnpg/objectstore.yaml — change both
+# together. Different token: r2-readonly-credentials cannot write or delete.
+#
+# No `retentionPolicy`, no `wal`/`data` settings: the drill never archives and
+# never takes a backup, and barman detects compression from the object name
+# when it restores.
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: tosak-pg-backups-readonly
+  namespace: pg-drill
+spec:
+  configuration:
+    destinationPath: s3://tosak-pg-backups/
+    endpointURL: https://5621ce9e64f6881e8e6229573adf3b36.r2.cloudflarestorage.com
+    s3Credentials:
+      accessKeyId:
+        name: r2-readonly-credentials
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: r2-readonly-credentials
+        key: ACCESS_SECRET_KEY

@@ -1973,7 +1973,8 @@ checks once a day; watching archiving in real time stays with monitoring.
 
 ### The contract the Restore Drill must keep
 
-`drill/<yyyy-mm>.json` in `tosak-drill-results`, with at least:
+`drill/<UTC timestamp>.json` in `tosak-drill-results` — one object per run,
+so a failed re-run cannot overwrite a month's pass — with at least:
 
 ```json
 { "finishedAt": "2026-11-01T04:12:09Z", "result": "pass" }
@@ -2020,5 +2021,115 @@ an API body, `backup.info` content or an error JSON: none.
   repository active today, but that is luck. A heartbeat service is the
   monitoring scope's decision (ADR 0003).
 - **The drill check is armed but unproven** until chunk 4 writes its first
-  result.
+  result. *(2026-10-02: the first `pass` is in the bucket — step 17. The
+  watcher's read of it is proven by its first run after that merge.)*
 - **Daily granularity.** WAL that stops at 06:05 is reported the next morning.
+
+## 17. The Restore Drill — a monthly restore from R2, asserted
+
+Written on 2026-10-02. Steps 15 and 16 make backups run and notice when they
+stop; neither proves a backup **restores**. This step adds a monthly CronJob
+that restores the production backups into a throw-away Cluster, asserts, and
+deletes it (ADR 0003, Amendments 2026-10-01 and the drill amendment of
+2026-10-02). Everything is in `core/pg-drill/`; its README has the file list.
+
+| Assertion | How |
+|---|---|
+| ① Ready within 30 min | `kubectl wait cluster/drill --for=condition=Ready` |
+| ② the replay reached production's last archived WAL | before the restore, list `<serverName>/wals/` and take the newest segment; after it, read the new timeline's switch point from its `.history` file |
+| ③ every declared database has data | `initdb.database` + production `Database` objects; each must have ≥ 1 user table and > 0 rows |
+
+Pass or fail it writes `drill/<UTC timestamp>.json` to `tosak-drill-results`,
+sends one Telegram message, and deletes its Cluster — on every exit,
+including the Job deadline's SIGTERM. Two exceptions, both by design: if the
+drill cannot read its own ObjectStore (its first step) it has no endpoint and
+writes no result; and if another drill Job is already Running it refuses to
+start and deletes nothing — every run uses the Cluster name `drill`, and
+`concurrencyPolicy: Forbid` does not cover a Job made by hand.
+
+### What it may touch
+
+- **`pg-drill`**: create and delete Clusters, read its own ObjectStore,
+  `get`/`list` pods and `exec` into them (psql as `postgres` over the local
+  socket — the drill has no database credential at all), `list` PVCs.
+  Secrets reach it only as `env`.
+- **`pg-cluster`**: `get` on `tosak-pg-cluster` and `list` on `Database`
+  objects. Nothing else — no Secrets, no exec, no delete.
+- **R2**: the watcher's read-only token for the backups, and a token that
+  can write `tosak-drill-results` only.
+
+Checked with `kubectl auth can-i … --as=system:serviceaccount:pg-drill:restore-drill`.
+🔴 **`can-i create pods/exec` answers `no` even when it is granted**: the
+slash means *resource/name*, a pod called `exec`. Ask
+`can-i create pods --subresource=exec`. Only `create` is granted — since
+Kubernetes 1.35 the WebSocket exec is authorised as `create`.
+
+### Apply
+
+```bash
+kubectl apply -f core/pg-drill/namespace.yaml   # by hand, not in the kustomization
+scripts/secrets.sh diff  core/pg-drill      # three new Secrets, values '***'
+scripts/secrets.sh apply core/pg-drill
+kubectl diff  -k core/pg-drill
+kubectl apply -k core/pg-drill
+```
+
+The three Secrets were encrypted by the operator with `read -rs` into shell
+variables piped through `kubectl create secret … --dry-run=client -o yaml |
+scripts/secrets.sh encrypt`. Their shapes were checked **without
+decrypting**: a SOPS `data:` field is the base64 of the encrypted value, so
+its decoded size is the size of the (base64) value — 44 and 88 bytes for a
+32/64 R2 pair. That cannot tell 31, 32 or 33 bytes apart; `read -rs` and
+`--from-literal` cannot add a newline, and the run is the proof.
+
+### 🔴 Why the replay LSN comes from the `.history` file
+
+CloudNativePG restores in a separate `<cluster>-1-full-recovery` Job, which
+replays, promotes and stops. The instance then starts **normally**, and on a
+normal start `pg_last_wal_replay_lsn()` is NULL (checked on PostgreSQL 18).
+Promotion records where the replay ended as the switch point in the new
+timeline's `.history` file, so the drill reads that with `pg_read_file`.
+
+The comparison is `pg_walfile_name(switch point) >= newest segment`, done by
+PostgreSQL. `pg_walfile_name` maps an LSN exactly on a segment boundary to
+the segment *before* it — and the first real run hit exactly that case.
+
+### Verified
+
+| Run | Result |
+|---|---|
+| `restore-drill-manual-202610012346` | **pass.** Newest segment listed `…0B00000074`. PostgreSQL: `redo done at B/7401D790`, timeline 2. Ready in **146 s**. Switch point **`B/75000000`** — the first byte of the next segment, so the boundary rule above decided it. Both declared databases (authos, doma) have tables and rows. `drill/20261001T234920Z.json` written, Telegram ✅ received, Cluster and PVC deleted, Hetzner back to 106916161/168/171 |
+| `restore-drill-manual-202610020004` | **pass**, after the review fixes (ObjectStore read first, the guard against a second running drill, fail-closed cleanup). Newest segment `…77`, switch point `B/78000000`, Ready in 133 s; doma had more rows than 18 minutes earlier — the restore carries production's newest writes. Cleanup and Hetzner as above |
+| `restore-drill-negative-202610012353` | **fail, on purpose**: the Job made from the CronJob with `READY_TIMEOUT=60s`. `FAILED at: wait for the restore to be Ready (limit 60s)`, `drill/20261001T235451Z.json` with `"result":"fail"`, Telegram 🔴 sent, Job `Failed`, cleanup done |
+
+The negative run costs nothing to repeat and needs no edit to any file:
+
+```bash
+kubectl create job --from=cronjob/restore-drill -n pg-drill --dry-run=client -o json restore-drill-negative-$(date -u +%Y%m%d%H%M) \
+  | jq '(.spec.template.spec.containers[0].env[] | select(.name=="READY_TIMEOUT")).value = "60s"' \
+  | kubectl create -f -
+```
+
+**"Deleted" means the PVC is gone, not the Hetzner volume.** In the negative
+run the pod was deleted while its volume was still attaching; the provisioner
+logged `VolumeFailedDelete … still attached` five times and deleted volume
+107010434 about 30 s after the drill had reported. A volume whose delete
+never finishes stays detached, which is exactly what the watcher reports as
+an Orphaned Volume — so the drill does not wait for it, and needs no
+cluster-scoped grant on PVs.
+
+### What this step leaves open
+
+- **A passing drill does not prove a real recovery.** It never archives, so
+  it never meets generation `g2`, its lock rule, or plugin#828's
+  `.check-empty-wal-archive` marker. That is the recovery runbook (chunk 5),
+  and only after it: delete snapshot 349712331.
+- **Only `pass`/`fail` reach the watcher.** A drill whose CronJob stops
+  running is found after 35 days; one that runs and fails is reported at once
+  by its own message.
+- **The image is about 1 GB** (`alpine/k8s`, with tools the drill does not
+  use). Pulled once per node and cached; a smaller image is a later choice.
+- **`authos` passes on a handful of rows**, mostly Flyway's history.
+  Assertion ③ proves presence, not completeness — completeness is assertion
+  ②. Exact counts are in the result object and the Telegram message, not
+  here: this repository is public.
