@@ -2099,6 +2099,7 @@ the segment *before* it — and the first real run hit exactly that case.
 | Run | Result |
 |---|---|
 | `restore-drill-manual-202610012346` | **pass.** Newest segment listed `…0B00000074`. PostgreSQL: `redo done at B/7401D790`, timeline 2. Ready in **146 s**. Switch point **`B/75000000`** — the first byte of the next segment, so the boundary rule above decided it. Both declared databases (authos, doma) have tables and rows. `drill/20261001T234920Z.json` written, Telegram ✅ received, Cluster and PVC deleted, Hetzner back to 106916161/168/171 |
+| `restore-drill-manual-202610020004` | **pass**, after the review fixes (ObjectStore read first, the guard against a second running drill, fail-closed cleanup). Newest segment `…77`, switch point `B/78000000`, Ready in 133 s; doma had more rows than 18 minutes earlier — the restore carries production's newest writes. Cleanup and Hetzner as above |
 | `restore-drill-negative-202610012353` | **fail, on purpose**: the Job made from the CronJob with `READY_TIMEOUT=60s`. `FAILED at: wait for the restore to be Ready (limit 60s)`, `drill/20261001T235451Z.json` with `"result":"fail"`, Telegram 🔴 sent, Job `Failed`, cleanup done |
 
 The negative run costs nothing to repeat and needs no edit to any file:
