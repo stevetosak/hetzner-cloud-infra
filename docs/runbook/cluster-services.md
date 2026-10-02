@@ -2021,8 +2021,10 @@ an API body, `backup.info` content or an error JSON: none.
   repository active today, but that is luck. A heartbeat service is the
   monitoring scope's decision (ADR 0003).
 - **The drill check is armed but unproven** until chunk 4 writes its first
-  result. *(2026-10-02: the first `pass` is in the bucket — step 17. The
-  watcher's read of it is proven by its first run after that merge.)*
+  result. *(2026-10-02: proven. After PR #20 merged, dispatch run
+  `36944861710` read the three drill objects — `drill results: 3` — and
+  stayed green and silent with the check armed. Its public log holds no
+  result field and no count.)*
 - **Daily granularity.** WAL that stops at 06:05 is reported the next morning.
 
 ## 17. The Restore Drill — a monthly restore from R2, asserted
@@ -2124,6 +2126,8 @@ cluster-scoped grant on PVs.
   it never meets generation `g2`, its lock rule, or plugin#828's
   `.check-empty-wal-archive` marker. That is the recovery runbook (chunk 5),
   and only after it: delete snapshot 349712331.
+- ~~The watcher's read of a real drill result~~ — proven by dispatch run
+  `36944861710` after the merge (step 16).
 - **Only `pass`/`fail` reach the watcher.** A drill whose CronJob stops
   running is found after 35 days; one that runs and fails is reported at once
   by its own message.
