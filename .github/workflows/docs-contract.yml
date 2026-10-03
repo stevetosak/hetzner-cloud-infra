@@ -31,6 +31,8 @@ jobs:
           repository: stevetosak/tosak-docs
           ssh-key: ${{ secrets.TOSAK_DOCS_DEPLOY_KEY }}
           path: tosak-docs
+          # Full history here: the build will not fetch, and the key is not kept.
+          fetch-depth: 0
           persist-credentials: false
       # The pull request's pages, with full history: "last updated" comes from git log.
       - uses: actions/checkout@v7
