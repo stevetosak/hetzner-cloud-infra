@@ -114,4 +114,4 @@ waits for the operator's approval.
 ## Lesson candidates
 
 - [ ] ~~**A patch that renders a recovery manifest starts with a `test` op on the generation it reads.**~~ — not chosen 2026-10-04
-- [x] **An archiver failure counter after a recovery is read with its failed command before it is called a fault.** — [Lesson](../lessons/an-archiver-failure-counter-after-a-recovery-is-read-with-its-failed-command-before-it-is-called-a-fault.md)
+- [ ] ~~**An archiver failure counter after a recovery is read with its failed command before it is called a fault.**~~ — dropped 2026-10-04, below the Lesson bar

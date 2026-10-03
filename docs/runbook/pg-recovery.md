@@ -112,7 +112,8 @@ so it works on the first day of a total loss. The patch refuses to run unless
    was: false`, about once a second near its end. That is CloudNativePG
    holding archiving off on purpose until the real instance starts; the
    segments wait in `pg_wal` and are archived a few seconds later. It is not
-   a fault. The line that matters is
+   a fault, and `pg_stat_archiver.failed_count` on the new primary counts
+   these failures too (12 in the rehearsal). The line that matters is
    `barman-cloud-check-wal-archive checking the first wal` near the start,
    followed by no error: the empty-archive check passed on `g2`.
 
