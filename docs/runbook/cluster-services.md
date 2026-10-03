@@ -2130,7 +2130,7 @@ cluster-scoped grant on PVs.
 - **A passing drill does not prove a real recovery.** It never archives, so
   it never meets generation `g2`, its lock rule, or plugin#828's
   `.check-empty-wal-archive` marker. That is the recovery runbook (chunk 5),
-  and only after it: delete snapshot 349712331.
+  and only after it was the old snapshot 349712331 deleted (done 2026-10-04).
 - ~~The watcher's read of a real drill result~~ — proven by dispatch run
   `36944861710` after the merge (step 16).
 - **Only `pass`/`fail` reach the watcher.** A drill whose CronJob stops
