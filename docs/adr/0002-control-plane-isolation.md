@@ -1,6 +1,11 @@
-# 2. Isolate the control plane from worker operations
-
-Date: 2026-09-20
+---
+title: "Isolate the control plane from worker operations"
+description: "The four layers that keep automation acting on Workers from ever touching the control plane, starting with three Terraform root modules."
+type: decision
+status: accepted
+date: 2026-09-20
+topics: [provisioning, kubernetes]
+---
 
 ## Status
 
@@ -59,7 +64,7 @@ stale state file, a rogue token, and any future CLI bug. Every
 
 **4. State leaves git.** State moves to Cloudflare R2 via the `s3` backend
 with `use_lockfile = true`, one key per module. R2 also holds the backups
-introduced in ADR 0003, and charges no egress, so restores are free.
+introduced in [ADR 0003](./0003-recoverability.md), and charges no egress, so restores are free.
 
 ## Consequences
 

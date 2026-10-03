@@ -1,4 +1,9 @@
-# Context — hetzner-cloud-infra
+---
+title: "Context — hetzner-cloud-infra"
+description: "The terms used for the cluster and its automation, each with its one meaning."
+type: glossary
+topics: [kubernetes]
+---
 
 Glossary for the cluster and its automation. Terms only. No procedures, no
 implementation detail, no status.
@@ -22,7 +27,7 @@ its own database, its ArgoCD project.
 Shared infrastructure once carried `authos-*` names, from when Authos was the
 only tenant. Three other applications then held a connection string naming a
 fourth. The names were corrected during the 2026-09-20 rebuild, while none of
-the resources existed (ADR 0007). Anything written before that date names them
+the resources existed ([ADR 0007](./docs/adr/0007-shared-infrastructure-is-named-for-the-organisation.md)). Anything written before that date names them
 the old way; match by ID.
 
 _Avoid_: project, tenant, service.
@@ -161,7 +166,7 @@ A Route carries no certificate and no listener. Those belong to the Public Entry
 Point. The split is deliberate: an application declares what it answers to, and
 the organisation decides what is exposed.
 
-Written as `HTTPRoute`. `Ingress` is retired (ADR 0008) and anything still
+Written as `HTTPRoute`. `Ingress` is retired ([ADR 0008](./docs/adr/0008-gateway-api-and-the-public-entry-point.md)) and anything still
 written as an Ingress is from before the 2026-09-20 rebuild.
 
 _Avoid_: ingress, ingress rule.

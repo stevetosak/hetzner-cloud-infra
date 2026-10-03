@@ -1,6 +1,11 @@
-# 1. Cluster network plan
-
-Date: 2026-09-20
+---
+title: "Cluster network plan"
+description: "The pod and service CIDRs of the rebuilt cluster, the range kept free for a later move to Cilium, and why Flannel is the CNI."
+type: decision
+status: accepted
+date: 2026-09-20
+topics: [networking, kubernetes]
+---
 
 ## Status
 

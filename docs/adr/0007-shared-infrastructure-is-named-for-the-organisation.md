@@ -1,6 +1,11 @@
-# 7. Shared infrastructure is named for the organisation, not for an application
-
-Date: 2026-09-20
+---
+title: "Shared infrastructure is named for the organisation, not for an application"
+description: "Why shared resources carry the name tosak while an application names only what is its own, and what was renamed."
+type: decision
+status: accepted
+date: 2026-09-20
+topics: [provisioning]
+---
 
 ## Status
 
@@ -36,7 +41,7 @@ names only what is its own.**
 | Was | Is |
 |---|---|
 | `authos-net` | `tosak-net` |
-| `authos-cluster-firewall` | `tosak-cp-firewall`, plus a new `tosak-worker-firewall` (ADR 0006) |
+| `authos-cluster-firewall` | `tosak-cp-firewall`, plus a new `tosak-worker-firewall` ([ADR 0006](./0006-network-paths-and-control-plane-endpoint.md)) |
 | `authos-cluster` (ssh key) | `tosak-cluster` |
 | `cp-authos-ip` | `tosak-cp-ip` |
 | `authos-lb` | `tosak-lb` |
@@ -59,9 +64,9 @@ state move rather than a replacement.
 - **Hetzner IDs did not change.** Names there are mutable labels, so nothing
   was destroyed or recreated. Anything written before 2026-09-20 uses the old
   names, and the correspondence is by ID — the table in
-  `docs/runbook/rebuild-2026-09-20.md` records both.
+  [`docs/runbook/rebuild-2026-09-20.md`](../runbook/rebuild-2026-09-20.md) records both.
 - `control-plane/` and `workers/` find shared resources by name, so the rename
-  had to land in one commit across all three modules. ADR 0002 designed that to
+  had to land in one commit across all three modules. [ADR 0002](./0002-control-plane-isolation.md) designed that to
   fail at plan time, which is how a missed reference surfaces.
 - The CCM's `hcloud` Secret carries `network=tosak-net`. It must be created
   after `shared/` is applied, or the CCM looks for a network that is not there

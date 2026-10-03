@@ -1,10 +1,15 @@
-# 5. Hetzner Volumes, no Longhorn, stable worker names
-
-Date: 2026-09-20
+---
+title: "Hetzner Volumes, no Longhorn, stable worker names"
+description: "Why PostgreSQL moved to Hetzner Cloud Volumes, Longhorn was removed, and Worker names became stable for good."
+type: decision
+status: accepted
+date: 2026-09-20
+topics: [storage, databases, provisioning]
+---
 
 ## Status
 
-Accepted. Supersedes the worker-naming decision in ADR 0004; the rest of
+Accepted. Supersedes the worker-naming decision in [ADR 0004](./0004-kluster-safety-model.md); the rest of
 ADR 0004 stands.
 
 ## Context
@@ -30,7 +35,7 @@ been since before this incident: read literally, every full worker reset ever
 run destroyed every database.
 
 An audit found only three manifests using Longhorn at all —
-`core/cnpg/pg-cluster.yaml`, and two under `projects/wasteio/`, which ADR 0003
+`core/cnpg/pg-cluster.yaml`, and two under `projects/wasteio/`, which [ADR 0003](./0003-recoverability.md)
 places out of scope. Prometheus declares no storage class and takes the
 cluster default. So PostgreSQL was Longhorn's only in-scope consumer.
 
@@ -41,7 +46,7 @@ have been destroyed with no data loss.
 ## Decision
 
 **PostgreSQL moves to Hetzner Cloud Volumes.** Install `hcloud-csi-driver`
-alongside the CCM already required by ADR 0001, and make `hcloud-volumes` the
+alongside the CCM already required by [ADR 0001](./0001-cluster-network-plan.md), and make `hcloud-volumes` the
 default StorageClass. Three 10 GB volumes, roughly €1.32/month.
 
 **Longhorn is removed entirely.** With PostgreSQL moved, it has no in-scope
@@ -54,7 +59,7 @@ lost on restart, which is proportionate.
 
 **Worker names become stable** — `k8swk1`, `k8swk2`, `k8swk3`, forever. The
 disk-UUID constraint was the only reason they ever needed to change, and it is
-gone. `var.node_suffix`, the per-worker `name_suffix` proposed in ADR 0004,
+gone. `var.node_suffix`, the per-worker `name_suffix` proposed in [ADR 0004](./0004-kluster-safety-model.md),
 `nodeSuffixNow()`, and `liveNamesByTfvarsKey` with its prefix inference are all
 deleted.
 

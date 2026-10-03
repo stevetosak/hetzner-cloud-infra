@@ -1,7 +1,12 @@
-# Secrets — SOPS + age
+---
+title: "Secrets — SOPS + age"
+description: "How every Secret in the cluster is stored, applied, recovered and rotated, including the backup-key drill and the leaked-key steps."
+type: procedure
+topics: [secrets, security]
+---
 
 How every Secret in this cluster is stored, applied, recovered and rotated.
-The decision is ADR 0003 and its 2026-09-22 amendment. The tool is
+The decision is [ADR 0003](../adr/0003-recoverability.md) and its 2026-09-22 amendment. The tool is
 `scripts/secrets.sh`; this file is what that script cannot tell you.
 
 🔴 **This repository is public.** Every `*.enc.yaml` is published for ever.
@@ -131,4 +136,4 @@ nothing; **the values themselves must change.**
   ciphertext here is public for ever, which is exactly the "collect now,
   decrypt later" case they exist for.
 - **No ArgoCD plugin.** Secrets are applied out of band, like every other
-  object that holds a value set once (ADR 0003).
+  object that holds a value set once ([ADR 0003](../adr/0003-recoverability.md)).
