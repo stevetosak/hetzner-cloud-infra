@@ -113,5 +113,5 @@ waits for the operator's approval.
 
 ## Lesson candidates
 
-- [ ] **A patch that renders a recovery manifest starts with a `test` op on the generation it reads.** — Without it a stale patch reads the wrong archive silently; the `g9` probe ended with exit 1 and "test failed".
-- [ ] **An archiver failure counter after a recovery is read with its failed command before it is called a fault.** — `failed_count` 12 looked like a broken archiver; the detail "The failed archive command was: false" came from the full-recovery job.
+- [ ] ~~**A patch that renders a recovery manifest starts with a `test` op on the generation it reads.**~~ — not chosen 2026-10-04
+- [x] **An archiver failure counter after a recovery is read with its failed command before it is called a fault.** — [Lesson](../lessons/an-archiver-failure-counter-after-a-recovery-is-read-with-its-failed-command-before-it-is-called-a-fault.md)

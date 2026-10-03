@@ -53,4 +53,4 @@ written.
 
 ## Lesson candidates
 
-- [ ] **A successor session unlocks a predecessor's work tree only after it proves the tree clean and merged.** — `git worktree remove` was refused on a lock held by the idle predecessor (pid 307710, 2026-10-04). A candidate only if it recurs.
+- [ ] ~~**A successor session unlocks a predecessor's work tree only after it proves the tree clean and merged.**~~ — not chosen 2026-10-04
