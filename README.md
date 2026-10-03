@@ -76,3 +76,18 @@ edge address. The real client comes from `CF-Connecting-IP`, which
 Pulls using a **per-zone** certificate. **This is not configured yet.** Do not reach for a
 `SecurityPolicy` IP allowlist instead: `clientCIDRs` matches the *detected* address, so it
 would check the forgeable header against itself.
+
+## Documentation
+
+Every page under `docs/`, plus `CONTEXT.md` and `deployments/HOW-IT-WORKS.md`, is published
+on `docs.tosak.net/cloud-infra`. Each page carries frontmatter that the site's Contract
+checks; the Contract and the Style Guide are pages on that site, and the checker lives in the
+private `stevetosak/tosak-docs` repository.
+
+- **Pre-commit** (`.githooks/pre-commit`) checks frontmatter when a Markdown file is staged,
+  using a `tosak-docs` clone beside this one. Without that clone it skips the check and says so.
+- **Pull requests** that change a Markdown file run `.github/workflows/docs-contract.yml`:
+  frontmatter and links. It checks out `tosak-docs` with the read-only deploy key in the
+  `TOSAK_DOCS_DEPLOY_KEY` secret.
+- **Links between pages are Markdown links.** A path in a code span is not a link, and the
+  link check cannot see it.

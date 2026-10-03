@@ -1,0 +1,53 @@
+# Checks the docs.tosak.net Contract on every pull request that changes a page:
+# frontmatter (`npm run check`) and links (the site build). The checker lives
+# in the private repository stevetosak/tosak-docs, so a read-only deploy key on
+# that one repository (secret TOSAK_DOCS_DEPLOY_KEY) checks it out. GitHub does
+# not let a public repository call a private repository's reusable workflow.
+#
+# 🔴 This repository is public, and so is this log. The build is limited to
+# the site's Public pages and this repository's (TOSAK_SOURCES_ONLY); a full
+# build would print the path of every Private page.
+name: Docs contract
+
+on:
+  pull_request:
+    paths:
+      - '**.md'
+      - .github/workflows/docs-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      TOSAK_SOURCES_DIR: ${{ github.workspace }}/sources
+      TOSAK_SOURCES_ONLY: cloud-infra
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: stevetosak/tosak-docs
+          ssh-key: ${{ secrets.TOSAK_DOCS_DEPLOY_KEY }}
+          path: tosak-docs
+          # Full history here: the build will not fetch, and the key is not kept.
+          fetch-depth: 0
+          persist-credentials: false
+      # The pull request's pages, with full history: "last updated" comes from git log.
+      - uses: actions/checkout@v7
+        with:
+          path: sources/cloud-infra
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: tosak-docs/.nvmrc
+          cache: npm
+          cache-dependency-path: tosak-docs/package-lock.json
+      - run: npm ci
+        working-directory: tosak-docs
+      - run: npm run check -- cloud-infra
+        working-directory: tosak-docs
+      - run: npm run build
+        working-directory: tosak-docs

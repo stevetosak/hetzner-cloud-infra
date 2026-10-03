@@ -1,4 +1,9 @@
-# Deploy-live notifications & the version catalog — how it works
+---
+title: "Deploy-live notifications and the version catalog — how it works"
+description: "How one ArgoCD signal becomes a Telegram message, a GitHub Deployment and a row in the version catalog, and how that flow fails."
+type: explanation
+topics: [gitops, ci]
+---
 
 This is the architecture reference for the deploy-notify + version-catalog flow.
 For day-to-day operations (adding an app, replaying an event, the required secrets)

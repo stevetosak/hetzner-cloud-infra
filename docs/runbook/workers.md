@@ -1,10 +1,15 @@
-# Workers — build runbook
+---
+title: "Workers — build runbook"
+description: "Every command that built and joined the three Workers on 2026-09-20, in order, with the checks that proved each step."
+type: procedure
+topics: [provisioning, kubernetes, networking]
+---
 
-Written verbatim as each command ran, on 2026-09-20 (ADR 0004). This file is
+Written verbatim as each command ran, on 2026-09-20 ([ADR 0004](../adr/0004-kluster-safety-model.md)). This file is
 the deliverable of Phase 3. Phase 6 ports it into `kluster`.
 
-Read `docs/runbook/rebuild-2026-09-20.md` for the surrounding plan,
-`docs/runbook/control-plane.md` for the Control Plane this joins to, and
+Read [`docs/runbook/rebuild-2026-09-20.md`](./rebuild-2026-09-20.md) for the surrounding plan,
+[`docs/runbook/control-plane.md`](./control-plane.md) for the Control Plane this joins to, and
 `docs/adr/0006` for why the network settings are what they are.
 
 **Conventions in this file.** A fenced block is a command that was run, exactly
@@ -26,7 +31,7 @@ were known or found before a command was run:
 
 1. **`kubeadm join` would fail on every Worker.** `kubeadm token create
    --print-join-command` prints the control-plane endpoint
-   `k8s-cp.tosak.internal:6443` (ADR 0006). No Worker resolves that name, and
+   `k8s-cp.tosak.internal:6443` ([ADR 0006](../adr/0006-network-paths-and-control-plane-endpoint.md)). No Worker resolves that name, and
    `bootstrap_node-4-kubernetes.sh` writes no `/etc/hosts` line.
 2. **The driver would destroy the hub config.** It rebuilds the Control
    Plane's `/etc/wireguard/wg0.conf` from a template, discarding the hub
@@ -44,7 +49,7 @@ were known or found before a command was run:
    with a `NOPASSWD` sudoers drop-in.
 
 So the procedure below is the record, and the scripts are corrected from it
-afterwards. That is the order ADR 0004 asks for.
+afterwards. That is the order [ADR 0004](../adr/0004-kluster-safety-model.md) asks for.
 
 ---
 
@@ -129,7 +134,7 @@ Zero destroy and zero replace is the gate. Read the plan for what it does
 **not** contain: the names are literally `k8swk1`, `k8swk2`, `k8swk3`, with no
 suffix of any kind. `var.node_suffix` is gone and nothing replaced it, so the
 mechanism that renamed and therefore destroyed every worker on 2026-09-13
-cannot be expressed by this module (ADR 0005).
+cannot be expressed by this module ([ADR 0005](../adr/0005-storage-and-worker-identity.md)).
 
 ```
 Apply complete! Resources: 3 added, 0 changed, 0 destroyed.
@@ -155,11 +160,11 @@ curl -s -H "Authorization: Bearer $TF_VAR_HCLOUD_TOKEN" \
 | k8swk3 | `166652124` | cx23 | hel1 | 2.29.31.80 | none | 10.0.2.8 | `11651947` applied | none | `role=worker` |
 
 The project now holds exactly four servers. All four are in `hel1`, which
-ADR 0005 requires: Hetzner Volumes are location-bound, so a Worker must sit
+[ADR 0005](../adr/0005-storage-and-worker-identity.md) requires: Hetzner Volumes are location-bound, so a Worker must sit
 where the PostgreSQL volumes are.
 
 Workers carry **no** delete or rebuild protection, unlike the Control Plane.
-That is deliberate (ADR 0002): a Worker is meant to be replaceable.
+That is deliberate ([ADR 0002](../adr/0002-control-plane-isolation.md)): a Worker is meant to be replaceable.
 
 **API shape note.** `/v1/servers` now returns `location` at the top level of
 each server and no `datacenter` object at all. A `.datacenter.location.name`
@@ -285,7 +290,7 @@ actually reports.
 
 The API server is already reachable over the private network from every
 Worker. The VPN is **not** needed to join a Worker — it exists so the operator
-can reach the Worker (ADR 0006).
+can reach the Worker ([ADR 0006](../adr/0006-network-paths-and-control-plane-endpoint.md)).
 
 ### A correction to the Phase 2 notes
 
@@ -380,7 +385,7 @@ echo '10.0.1.5  k8s-cp.tosak.internal' >> /etc/hosts
 
 `kubeadm token create --print-join-command` prints
 `kubeadm join k8s-cp.tosak.internal:6443 …`, because `kubeadm init` was given
-`--control-plane-endpoint` (ADR 0006). `.internal` is ICANN-reserved and this
+`--control-plane-endpoint` ([ADR 0006](../adr/0006-network-paths-and-control-plane-endpoint.md)). `.internal` is ICANN-reserved and this
 name is deliberately not in public DNS, so every node resolves it from its own
 `/etc/hosts`. **Nothing in the pipeline writes this line.** Without it the
 join cannot find the API server, and the failure looks like a DNS problem
@@ -420,7 +425,7 @@ it has no configuration yet. That is correct, not a fault.
 A Worker does **not** need the VPN to join the cluster — it reaches the API
 server over the private network, which step 3 already proved. The tunnel
 exists so the operator can reach the Worker, and so the Worker's port 22 need
-never be open publicly (ADR 0006).
+never be open publicly ([ADR 0006](../adr/0006-network-paths-and-control-plane-endpoint.md)).
 
 ### Worker side, each host as `root`
 
@@ -656,7 +661,7 @@ shows as a TCP black hole, where small packets pass and large ones vanish.
 Both directions moved 4 MiB cleanly.
 
 DNS resolving to `10.96.0.1` also confirms the narrowed service CIDR
-`10.96.0.0/16` (ADR 0001). The `/12` default would have contained the
+`10.96.0.0/16` ([ADR 0001](../adr/0001-cluster-network-plan.md)). The `/12` default would have contained the
 WireGuard range `10.100.0.0/24`.
 
 BusyBox `ping` has no `-M do` flag, so a don't-fragment test was not possible
@@ -704,7 +709,7 @@ Three `apply_to` entries — servers `166652124`, `166652125`, `166652126` —
 identical before and after. `apply_to` is Optional+Computed in the provider,
 so a refresh fills it in from the API even though this module never names a
 server; the Workers attached themselves through `firewall_ids` in the
-`workers` module, as ADR 0002 requires. **The attachment is not being torn
+`workers` module, as [ADR 0002](../adr/0002-control-plane-isolation.md) requires. **The attachment is not being torn
 off.** The only real change is `rule: [one] → []`.
 
 Which is exactly the update the provider cannot perform.
@@ -724,7 +729,7 @@ curl -s -H "Authorization: Bearer $TF_VAR_HCLOUD_TOKEN" \
 ```
 
 **Port 22 was open on all three Workers while Terraform's state said it was
-closed.** This is the precise failure ADR 0004 exists to prevent, and it was
+closed.** This is the precise failure [ADR 0004](../adr/0004-kluster-safety-model.md) exists to prevent, and it was
 caught only because the standing rule is to read the API rather than trust
 apply output. Predicted in advance from the Control Plane's experience, and it
 still happened exactly as written.

@@ -1,9 +1,14 @@
-# Control plane — build runbook
+---
+title: "Control plane — build runbook"
+description: "Every command that built the control plane on 2026-09-20, in order, with the checks that proved each step."
+type: procedure
+topics: [provisioning, kubernetes]
+---
 
-Written verbatim as each command ran, on 2026-09-20 (ADR 0004). This file is
+Written verbatim as each command ran, on 2026-09-20 ([ADR 0004](../adr/0004-kluster-safety-model.md)). This file is
 the deliverable of Phase 2. Phase 6 ports it into `kluster cp init` stages.
 
-Read `docs/runbook/rebuild-2026-09-20.md` for the surrounding plan, and
+Read [`docs/runbook/rebuild-2026-09-20.md`](./rebuild-2026-09-20.md) for the surrounding plan, and
 `docs/adr/0006` for why the network settings are what they are.
 
 **Conventions in this file.** A fenced block is a command that was run, exactly
@@ -98,7 +103,7 @@ The readback that established the starting point:
 | swap | none |
 
 `enp7s0` is load-bearing. It is the interface the kubelet `--node-ip` and the
-Flannel `--iface-regex` both select, and it is what makes ADR 0006's
+Flannel `--iface-regex` both select, and it is what makes [ADR 0006](../adr/0006-network-paths-and-control-plane-endpoint.md)'s
 three-interface rule hold. A future image that names it differently breaks
 both, silently.
 
@@ -208,7 +213,7 @@ to silence it.
 ## 3. WireGuard hub
 
 The Control Plane is the VPN hub **and its router**: an operator reaches a
-Worker because the hub forwards between two of its own peers (ADR 0006). The
+Worker because the hub forwards between two of its own peers ([ADR 0006](../adr/0006-network-paths-and-control-plane-endpoint.md)). The
 `net.ipv4.ip_forward = 1` set in step 2 is what makes that true, and the
 `FORWARD` policy was confirmed `ACCEPT` before relying on it.
 
@@ -331,7 +336,7 @@ systemctl enable kubelet
 | Setting | What breaks without it |
 |---|---|
 | the `/etc/hosts` line | `kubeadm init` cannot resolve its own `--control-plane-endpoint` and fails outright. `.internal` is ICANN-reserved and deliberately absent from public DNS. |
-| `--node-ip=10.0.1.5` | The node advertises its public address and cluster traffic leaves the Private Network. One of the six settings in ADR 0006. |
+| `--node-ip=10.0.1.5` | The node advertises its public address and cluster traffic leaves the Private Network. One of the six settings in [ADR 0006](../adr/0006-network-paths-and-control-plane-endpoint.md). |
 | `--cloud-provider=external` | The node never gets a `providerID`, so the CSI driver can never attach a volume. The worker pipeline sets this; nothing set it for the control plane. |
 
 ### Verified
@@ -419,9 +424,9 @@ kubeadm init \
 
 | Flag | Why |
 |---|---|
-| `--control-plane-endpoint` | Without it a second control plane is impossible without a rebuild. It was absent from the original plan (ADR 0006). |
+| `--control-plane-endpoint` | Without it a second control plane is impossible without a rebuild. It was absent from the original plan ([ADR 0006](../adr/0006-network-paths-and-control-plane-endpoint.md)). |
 | `--apiserver-advertise-address=10.0.1.5` | The API server binds the Private Network, not the Public Interface. |
-| `--pod-network-cidr=10.244.0.0/16` | Must match Flannel (ADR 0001). |
+| `--pod-network-cidr=10.244.0.0/16` | Must match Flannel ([ADR 0001](../adr/0001-cluster-network-plan.md)). |
 | `--service-cidr=10.96.0.0/16` | Narrowed from the `/12` default, which **contains** the VPN range `10.100.0.0/24` — a latent API-server hijack (ADR 0001). |
 | `--apiserver-cert-extra-sans` | `10.100.0.1` is the operator route. `46.62.209.249` is break-glass only; port 6443 stays closed to the world. kubeadm adds the endpoint name itself. |
 
@@ -502,7 +507,7 @@ rm -f admin.conf merged
 
 kubeadm writes the Endpoint name into `admin.conf`. The workstation
 deliberately does not resolve `.internal`, so the server line is rewritten to
-the VPN address, which is in the certificate (ADR 0006).
+the VPN address, which is in the certificate ([ADR 0006](../adr/0006-network-paths-and-control-plane-endpoint.md)).
 
 `admin.conf` is a `cluster-admin` credential. It was held only in a temporary
 directory and deleted after the merge.
@@ -552,7 +557,7 @@ I0920 19:26:41 match.go:269] Using interface with name enp7s0 and address 10.0.1
 
 `enp7s0` is the Private Network interface. Had `--iface-regex=^10\.0\.` been
 missing, flannel would have bound the public NIC and every pod packet would
-have left the private network (ADR 0006).
+have left the private network ([ADR 0006](../adr/0006-network-paths-and-control-plane-endpoint.md)).
 
 ```
 ip -d link show flannel.1
@@ -562,7 +567,7 @@ ip -d link show flannel.1
 ### Correction — the MTU was set twice
 
 The manifest originally carried `Backend.MTU = 1400`, matching the number in
-ADR 0001. The cluster came up with `FLANNEL_MTU=1350`.
+[ADR 0001](../adr/0001-cluster-network-plan.md). The cluster came up with `FLANNEL_MTU=1350`.
 
 **Flannel treats `Backend.MTU` as the underlay MTU and subtracts the 50-byte
 VXLAN overhead itself.** Writing 1400 subtracts twice: 1400 − 50 = 1350. The
@@ -630,7 +635,7 @@ kubectl -n kube-system create secret generic hcloud \
 The token is read from the environment that `infra/.envrc` exports. It is never
 typed into a file, never echoed, and never committed. `network=tosak-net` is
 what makes the CCM network-aware: without it the node gets a public
-`InternalIP` and ADR 0006 is reversed.
+`InternalIP` and [ADR 0006](../adr/0006-network-paths-and-control-plane-endpoint.md) is reversed.
 
 ### 8b. The CCM
 
@@ -654,7 +659,7 @@ I node_controller.go:477] Successfully initialized node k8s-cp with cloud provid
 the chart ties them to `networking.enabled` with no way to drop them. With
 routes off they are inert. Routes must stay off: Hetzner refuses a route
 destination outside `10.0.0.0/16`, and the pod CIDR is `10.244.0.0/16`.
-Enabling them would reverse ADR 0001.
+Enabling them would reverse [ADR 0001](../adr/0001-cluster-network-plan.md).
 
 Immediately after:
 
@@ -671,7 +676,7 @@ kubectl apply -f core/hcloud/csi.yaml
 ```
 
 Chart `v2.23.0`. It creates `hcloud-volumes` **already marked default**, so
-ADR 0005 needs no override:
+[ADR 0005](../adr/0005-storage-and-worker-identity.md) needs no override:
 
 ```
 hcloud-volumes (default)  csi.hetzner.cloud  Delete  WaitForFirstConsumer  true
@@ -722,7 +727,7 @@ Pending   hcloud-csi-controller        — by design, waits for a Worker
 
 ## 9. Close bootstrap SSH
 
-ADR 0004 makes this the last step of Phase 2. Port 22 was open to
+[ADR 0004](../adr/0004-kluster-safety-model.md) makes this the last step of Phase 2. Port 22 was open to
 `185.100.244.43/32` from step 1 onward; the VPN route replaced it at step 3 and
 has carried every command since.
 
@@ -734,7 +739,7 @@ start closed: a new Worker has no tunnel until stage 2 of its own bootstrap,
 and that stage runs over SSH, so its first SSH must use the public address.
 
 The variable is now two, `allow_public_ssh_cp` and `allow_public_ssh_worker`,
-both defaulting to false. The two-firewall decision of ADR 0006 is unchanged —
+both defaulting to false. The two-firewall decision of [ADR 0006](../adr/0006-network-paths-and-control-plane-endpoint.md) is unchanged —
 two firewalls that each say one thing now have one control each. Documented
 under "Bootstrap SSH" in `infra/README.md`.
 
@@ -794,7 +799,7 @@ the empty rule set in state, so the call removed drift rather than creating it.
 that close is the same one-rule-to-none update that silently failed here, on
 firewalls that will by then be attached to three running servers. Terraform
 would print `Apply complete` while port 22 stayed open on all three. That is
-the ADR 0004 failure exactly: believing a port is closed when it is open.
+the [ADR 0004](../adr/0004-kluster-safety-model.md) failure exactly: believing a port is closed when it is open.
 
 **Phase 3 must verify the close over the API and clear by `set_rules` if the
 rule survives.** Never trust the apply output for this one. The repo's standing

@@ -1,6 +1,11 @@
-# 8. Gateway API replaces ingress-nginx, and the cluster gets one public entry point
-
-Date: 2026-09-20
+---
+title: "Gateway API replaces ingress-nginx, and the cluster gets one public entry point"
+description: "Why Envoy Gateway on the Gateway API replaced ingress-nginx, how the one Public Entry Point is built, and what was corrected while building it."
+type: decision
+status: accepted
+date: 2026-09-20
+topics: [ingress, networking, security]
+---
 
 ## Status
 
@@ -33,7 +38,7 @@ of the decision.
 **The private class has no consumer.** `private-nginx` was cited as one of two
 classes to reproduce, and its `hostNetwork` DaemonSet was the hardest thing to
 reproduce in Gateway API. Its only two consumers in the repository are
-`core/longhorn/longhorn-ingress.yaml`, deleted with Longhorn by ADR 0005, and
+`core/longhorn/longhorn-ingress.yaml`, deleted with Longhorn by [ADR 0005](./0005-storage-and-worker-identity.md), and
 `core/whoami-test-ingress.yaml`, a test. Every real host uses `public-nginx`.
 The private class exists to put the Longhorn UI on the VPN, and Longhorn is
 gone.
@@ -71,7 +76,7 @@ carried it across.
 
 **The controller is Envoy Gateway. Flannel stays.**
 
-Cilium ships a Gateway API implementation, and ADR 0001 reserves
+Cilium ships a Gateway API implementation, and [ADR 0001](./0001-cluster-network-plan.md) reserves
 `10.245.0.0/16` for a per-node Cilium migration, so one decision could have
 settled CNI and Gateway together. It was rejected, for now:
 
@@ -84,7 +89,7 @@ settled CNI and Gateway together. It was rejected, for now:
   of this decision". The cluster still has zero NetworkPolicy objects. Adopting
   a CNI to obtain a Gateway is adopting it for a reason that is not about the
   CNI.
-- ADR 0006 lists six settings that silently point at the wrong interface if left
+- [ADR 0006](./0006-network-paths-and-control-plane-endpoint.md) lists six settings that silently point at the wrong interface if left
   alone. Cilium adds more of that class: it auto-detects devices on hosts
   carrying `eth0`, `enp7s0`, `wg0`, `flannel.1` and `cni0`, and the MTU chain
   proven end to end in Phase 3 would have to be proven again.
@@ -144,7 +149,7 @@ proxy to reach the origin. The wildcard does not cover the apex `tosak.net`; no
 host uses the apex.
 
 The cost is a credential: a Cloudflare API token scoped to `Zone:DNS:Edit` on
-`tosak.net` alone, encrypted with SOPS and age per ADR 0003.
+`tosak.net` alone, encrypted with SOPS and age per [ADR 0003](./0003-recoverability.md).
 
 **The real client address comes from `CF-Connecting-IP`, and the origin is
 locked with Authenticated Origin Pulls.** `ClientTrafficPolicy` sets
@@ -215,7 +220,7 @@ the repository unsynced.
 ## Amendments — 2026-09-21, found while building Phase 4
 
 Everything here was verified against an upstream chart, a CRD schema, a live
-API or the cluster itself. `docs/runbook/cluster-services.md` holds the
+API or the cluster itself. [`docs/runbook/cluster-services.md`](../runbook/cluster-services.md) holds the
 evidence. **The decision does not change.** These are corrections of fact, and
 a gap.
 

@@ -1,5 +1,21 @@
 #!/bin/bash
-# Refuses a commit that would publish an unencrypted *.enc.yaml. The repository
-# is public, so that mistake cannot be undone by a later commit.
+# 1. Refuses a commit that would publish an unencrypted *.enc.yaml. The
+#    repository is public, so that mistake cannot be undone by a later commit.
+# 2. Checks the docs.tosak.net Contract (frontmatter) when a Markdown file is
+#    staged, with the checker from a tosak-docs clone beside this one. Without
+#    that clone it says so and lets the commit through; the PR check
+#    (.github/workflows/docs-contract.yml) runs the full check either way.
 # Enable once per clone:  git config core.hooksPath .githooks
-exec scripts/secrets.sh check --staged
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+scripts/secrets.sh check --staged
+
+if git diff --cached --name-only --diff-filter=ACMR | grep -q '\.md$'; then
+	docs="$(dirname "$PWD")/tosak-docs"
+	if [ -x "$docs/agent/bin/run-node" ]; then
+		"$docs/agent/bin/run-node" "$docs/contract/cli.ts" cloud-infra --root "$PWD"
+	else
+		echo "pre-commit: no tosak-docs clone at $docs; Contract check skipped (the PR check still runs it)." >&2
+	fi
+fi

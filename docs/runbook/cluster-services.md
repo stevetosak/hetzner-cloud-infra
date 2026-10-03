@@ -1,11 +1,16 @@
-# Cluster services — build runbook
+---
+title: "Cluster services — build runbook"
+description: "How every cluster service was installed and proven — ingress, certificates, PostgreSQL, Redis, ArgoCD, the applications, backups and the restore drill."
+type: procedure
+topics: [kubernetes, ingress, databases, gitops, backups]
+---
 
-Written verbatim as each command ran, on 2026-09-21 (ADR 0004). This file is
+Written verbatim as each command ran, on 2026-09-21 ([ADR 0004](../adr/0004-kluster-safety-model.md)). This file is
 the deliverable of Phase 4.
 
-Read `docs/runbook/rebuild-2026-09-20.md` for the surrounding plan,
+Read [`docs/runbook/rebuild-2026-09-20.md`](./rebuild-2026-09-20.md) for the surrounding plan,
 `docs/adr/0008` for every decision about the Public Entry Point, and
-`docs/runbook/workers.md` for the cluster this builds on.
+[`docs/runbook/workers.md`](./workers.md) for the cluster this builds on.
 
 **Conventions in this file.** A fenced block is a command that was run, exactly
 as it was run. Output is quoted only where it was used as evidence. Every
@@ -33,7 +38,7 @@ before anything was applied. Each one changed the work.
 
 1. **`TLSRoute` is in the Gateway API STANDARD channel** as of v1.6, together
    with `TCPRoute`, `UDPRoute` and `ListenerSet`. Verified against the
-   upstream `standard-install.yaml` for both v1.6.1 and v1.6.2. ADR 0008 says
+   upstream `standard-install.yaml` for both v1.6.1 and v1.6.2. [ADR 0008](../adr/0008-gateway-api-and-the-public-entry-point.md) says
    the ArgoCD passthrough fallback "costs the experimental CRDs". It no longer
    does. This does not change the decision to terminate TLS at the Gateway, but
    it makes the fallback cheap.
@@ -53,7 +58,7 @@ before anything was applied. Each one changed the work.
 
 ## 1. Gateway API CRDs — standard channel
 
-ADR 0008 allows the standard channel only.
+[ADR 0008](../adr/0008-gateway-api-and-the-public-entry-point.md) allows the standard channel only.
 
 `core/gateway-api/crds.yaml` is upstream `standard-install.yaml` **v1.6.2**,
 unmodified. v1.6.2 was chosen over the v1.6.1 that Envoy Gateway v1.9.1
@@ -80,7 +85,7 @@ All ten CRDs report `channel: standard`, `bundle-version: v1.6.2`:
 The standard bundle also carries a `ValidatingAdmissionPolicy` named
 `safe-upgrades.gateway.networking.k8s.io`, with `failurePolicy: Fail` and
 `validationActions: ["Deny"]`. It refuses any attempt to install experimental
-channel CRDs on top of standard ones. That makes ADR 0008's "standard channel
+channel CRDs on top of standard ones. That makes [ADR 0008](../adr/0008-gateway-api-and-the-public-entry-point.md)'s "standard channel
 only" rule enforced by the cluster and not only by this document.
 
 🔴 **The guard does not cover everything.** Its CEL expression tests
@@ -114,7 +119,7 @@ produced in Phase 2. Not a fault.
 `crds.gatewayAPI.channel` defaults to `experimental`, and the CRDs sit in
 Helm's `crds/` directory, where **no value can deselect them** — `crds/` is not
 templated. A plain `helm install` of Envoy Gateway therefore contradicts
-ADR 0008 by default.
+[ADR 0008](../adr/0008-gateway-api-and-the-public-entry-point.md) by default.
 
 `render.sh` pipes the rendered output through
 `core/gateway/strip-gatewayapi-crds.py`, which removes them.
@@ -178,7 +183,7 @@ cert-manager **v1.21.2**, rendered by `core/cert-manager/render.sh`.
 
 - `crds.enabled` defaults to **false**. Without it the controller starts and
   then fails on every Certificate, because the types do not exist.
-- The Gateway API option is **`config.gatewayAPI.enabled`**. ADR 0008 and the
+- The Gateway API option is **`config.gatewayAPI.enabled`**. [ADR 0008](../adr/0008-gateway-api-and-the-public-entry-point.md) and the
   Phase 4 checklist both call it `config.enableGatewayAPI`, which this chart
   does not have. The `ExperimentalGatewayAPISupport` feature gate has been on
   by default since 1.15, so the gate was never what was missing.
@@ -237,12 +242,12 @@ notAfter= Dec 19 21:33:18 2026 GMT
 ```
 
 **It issued with no load balancer in existence.** That is the whole reason
-ADR 0008 chose DNS-01. The ACME TXT records were cleaned up afterwards: the
+[ADR 0008](../adr/0008-gateway-api-and-the-public-entry-point.md) chose DNS-01. The ACME TXT records were cleaned up afterwards: the
 zone holds zero TXT records.
 
 ### 🔴 The apex is in the certificate, and ADR 0008 said it would not be
 
-ADR 0008 records that "no host uses the apex". The zone holds a **proxied A
+[ADR 0008](../adr/0008-gateway-api-and-the-public-entry-point.md) records that "no host uses the apex". The zone holds a **proxied A
 record for `tosak.net`**, and a wildcard does not match an apex. Without the
 second name, `https://tosak.net` would reach the entry point with no matching
 certificate. `tosak.net` is listed beside `*.tosak.net` for that reason.
@@ -262,7 +267,7 @@ kubectl apply --server-side --field-manager=cloud-infra \
 
 The `EnvoyProxy` carries the Hetzner annotations that used to live on the
 hand-written Service in `core/load-balancer/`. Only one was dropped: the mqtt
-port 1883, because wasteio is out of scope (ADR 0003).
+port 1883, because wasteio is out of scope ([ADR 0003](../adr/0003-recoverability.md)).
 
 ### 🔴 The old load balancer had to be deleted FIRST
 
@@ -294,7 +299,7 @@ connection.
 
 ### 🔴 `enableProxyProtocol` is deprecated
 
-ADR 0008 and the Phase 4 checklist both name `enableProxyProtocol`. The field
+[ADR 0008](../adr/0008-gateway-api-and-the-public-entry-point.md) and the Phase 4 checklist both name `enableProxyProtocol`. The field
 still exists, but `kubectl explain` says:
 
 ```
@@ -339,7 +344,7 @@ path direct. A third replica would make all three healthy.
 ### Acceptance test
 
 A `whoami` Deployment, Service and HTTPRoute were applied to `gateway`,
-tested, and deleted. They are **not** committed — ADR 0008 deletes the old
+tested, and deleted. They are **not** committed — [ADR 0008](../adr/0008-gateway-api-and-the-public-entry-point.md) deletes the old
 `core/whoami-test-ingress.yaml` for the same reason.
 
 **Straight to the origin, bypassing Cloudflare**, which proves the
@@ -388,7 +393,7 @@ The checklist says "update the four Cloudflare A records". The zone held
 
 | Record | Proxied | In scope? |
 |---|---|---|
-| `argocd`, `authos`, `authos-api`, `authos-demo`, `doma` | yes | yes (ADR 0003) |
+| `argocd`, `authos`, `authos-api`, `authos-demo`, `doma` | yes | yes ([ADR 0003](../adr/0003-recoverability.md)) |
 | `imaps`, `imaps-api`, `wasteio`, `wasteio-api` | yes | no — apps inactive |
 | `tosak.net` (apex), `www` | yes | not in any plan document |
 | `mqtt` | **no** | dropped with port 1883 |
@@ -412,14 +417,14 @@ Deleting a Hetzner load balancer releases its public IP to the pool. Had the
 new one been given a different address, all twelve records would have pointed
 at an address Hetzner could hand to another customer — and eleven of them are
 **proxied**, so Cloudflare would have kept forwarding traffic to a stranger's
-server. ADR 0008 calls the rebuild "low risk … an origin change behind the
+server. [ADR 0008](../adr/0008-gateway-api-and-the-public-entry-point.md) calls the rebuild "low risk … an origin change behind the
 proxy". That is true for visitors and not true for the origin address itself.
 
 ---
 
 ## 6. The old shape comes out, and routes go in
 
-Deleted whole, per ADR 0008:
+Deleted whole, per [ADR 0008](../adr/0008-gateway-api-and-the-public-entry-point.md):
 
 ```
 core/ingress-controller/      both classes
@@ -447,7 +452,7 @@ authos-demo and doma"; only the ArgoCD route can be applied in this phase, and
 only after ArgoCD is installed.
 
 `imaps` and `wasteio` are committed and unapplied, matching how the rest of
-their manifests sit in the repository (ADR 0003). Two things keep that honest:
+their manifests sit in the repository ([ADR 0003](../adr/0003-recoverability.md)). Two things keep that honest:
 their namespaces do not exist, and the Gateway's `allowedRoutes` does not name
 them, so an accidental apply is refused with `NotAllowedByListeners` rather
 than quietly claiming a host.
@@ -494,7 +499,7 @@ code. The ADR checked one annotation carefully and generalised from it.
 
 ## 7. Documentation that taught the old shape
 
-ADR 0008 flags `README.md` and `~/Projects/Active/CLAUDE.md` for describing two
+[ADR 0008](../adr/0008-gateway-api-and-the-public-entry-point.md) flags `README.md` and `~/Projects/Active/CLAUDE.md` for describing two
 ingress-nginx classes. Reading them found more than that.
 
 **`README.md`** — the ingress section was rewritten around the single Public
@@ -757,8 +762,8 @@ the PVC it backs:
 | `106916171` | `tosak-pg-cluster-3` | `166652126` | `k8swk1` |
 
 Each attachment matches where the pod actually runs, checked against the
-server IDs recorded in `docs/runbook/workers.md`. 10 GB is also exactly
-Hetzner's minimum volume size, so the ADR 0005 figure is the floor, not a
+server IDs recorded in [`docs/runbook/workers.md`](./workers.md). 10 GB is also exactly
+Hetzner's minimum volume size, so the [ADR 0005](../adr/0005-storage-and-worker-identity.md) figure is the floor, not a
 choice that can be trimmed.
 
 🔴 **`protection.delete` is `false` on all three volumes.** The control plane
@@ -786,7 +791,7 @@ postgres| postgres
 
 **`databases/imaps.yaml` and `databases/wasteio.yaml` were NOT applied** and
 the namespace holds exactly one `Database` object. Those projects are inactive
-(ADR 0003); their manifests stay committed and unsynced.
+([ADR 0003](../adr/0003-recoverability.md)); their manifests stay committed and unsynced.
 
 Roles present: `tosak` (owner, login, not superuser), `postgres`,
 `streaming_replica`, `cnpg_metrics_exporter`. Superuser access is disabled,
@@ -988,7 +993,7 @@ getent hosts redis-master.redis.svc.cluster.local     # 10.96.30.54
 timeout 3 bash -c "</dev/tcp/redis-master.redis.svc.cluster.local/6379"   # opens
 ```
 
-Flannel enforces no NetworkPolicy (ADR 0001), so every pod in this cluster can
+Flannel enforces no NetworkPolicy ([ADR 0001](../adr/0001-cluster-network-plan.md)), so every pod in this cluster can
 open that port. `--requirepass` is the entire boundary. This is the standing
 argument for Cilium; until then the Redis password is a cluster-wide
 credential, and it belongs in the Phase 5 SOPS inventory as one.
@@ -1022,7 +1027,7 @@ The current line, pinned, the same choice step 11 made for Redis.
 ### Why this is a render and not an upstream manifest
 
 The rule from step 9: render from a chart only where values are actually set.
-ADR 0008 asks two things of ArgoCD, and both are plain chart values, so a
+[ADR 0008](../adr/0008-gateway-api-and-the-public-entry-point.md) asks two things of ArgoCD, and both are plain chart values, so a
 render keeps them out of a generated file where a hand edit dies at the next
 upgrade — `--insecure` on `argocd-server`, and a Service port advertising
 `appProtocol: kubernetes.io/h2c`.
@@ -1039,7 +1044,7 @@ be worthless. It is not set. The initial password comes from
 
 ### 🔴 `appProtocol` is single-valued per Service port, and ADR 0008 needs it not to be
 
-ADR 0008 states that "the `argocd-server` Service port carries `appProtocol:
+[ADR 0008](../adr/0008-gateway-api-and-the-public-entry-point.md) states that "the `argocd-server` Service port carries `appProtocol:
 kubernetes.io/h2c`", and the committed `httproute.yaml` sent everything to
 port 80. Both are wrong, and the first one is wrong in a way that takes the
 web UI down completely.
@@ -1124,7 +1129,7 @@ the shape — the same gap `db-credentials` and the `redis` Secret both had.
 
 **The five NetworkPolicy objects are kept, and they are inert.** The cluster
 runs Flannel, which does not enforce NetworkPolicy. They cost nothing and
-become correct the day a CNI that enforces them arrives, which ADR 0001 names
+become correct the day a CNI that enforces them arrives, which [ADR 0001](../adr/0001-cluster-network-plan.md) names
 as the trigger for Cilium. Do not read them as a live control.
 
 ### Apply
@@ -1208,7 +1213,7 @@ servers:
   - {grpc-web: true, grpc-web-root-path: '', server: argocd.tosak.net}
 ```
 
-left over from the ingress-nginx cluster — the very history ADR 0008 cites as
+left over from the ingress-nginx cluster — the very history [ADR 0008](../adr/0008-gateway-api-and-the-public-entry-point.md) cites as
 the reason ArgoCD prefers passthrough. So the CLI sent gRPC-web, printed no
 warning, and the Envoy access log showed the request served by **rule/1**, the
 HTTP/1.1 fallthrough. One request per invocation, so there was no failed first
@@ -1252,7 +1257,7 @@ curl --http2 --resolve argocd.tosak.net:443:77.42.14.48 \
 | `application/grpc-web+proto` | 200 | 200 |
 | `application/octet-stream` | 404 — from Envoy, so it passed the edge | — |
 
-**ADR 0008's unproven claim is PROVEN at the origin.** Envoy terminated TLS,
+**[ADR 0008](../adr/0008-gateway-api-and-the-public-entry-point.md)'s unproven claim is PROVEN at the origin.** Envoy terminated TLS,
 matched `rule/0`, spoke h2c to `10.244.2.14:8080` and argocd-server's gRPC
 listener answered with `grpc-status: 0`. Terminating at the Gateway does carry
 the CLI's gRPC. TLS passthrough and a `TLSRoute` are not needed.
@@ -1295,7 +1300,7 @@ grpc.code=OK grpc.service=application.ApplicationService grpc.method=List
 ```
 
 and Envoy served it on `rule/1`, because Cloudflare blocks plain gRPC and the
-CLI fell back to gRPC-web by itself. **ADR 0008's acceptance test passes.**
+CLI fell back to gRPC-web by itself. **[ADR 0008](../adr/0008-gateway-api-and-the-public-entry-point.md)'s acceptance test passes.**
 
 One detail worth knowing: a fresh `argocd login` writes the server into the
 local config **without** `grpc-web`, so from then on every CLI call probes
@@ -1323,7 +1328,7 @@ Written on 2026-09-21, eleventh session of the day. Step 12 left ArgoCD running
 and deploying nothing. This step gives it the declaration of everything it
 deploys, and proves the whole path from a git commit to a live host with doma.
 
-ADR 0003 decided this shape during the rebuild and said why: every hazard that
+[ADR 0003](../adr/0003-recoverability.md) decided this shape during the rebuild and said why: every hazard that
 had deferred the migration before — adopting Applications without ownerRefs,
 the `waste-bin-agent` directory versus the live `wasteio-bin-agents` name, a
 glob swallowing `projects/imaps/**` — exists only against a *running* cluster.
@@ -1383,7 +1388,7 @@ the state of the world.
       - path: projects/authos/*/manifests/overlays/dev
       - path: projects/doma/*/manifests/overlays/dev
 
-ADR 0003 scopes the restore to authos and doma. A single
+[ADR 0003](../adr/0003-recoverability.md) scopes the restore to authos and doma. A single
 `projects/*/*/manifests/overlays/dev` would also adopt `projects/imaps/` and
 `projects/wasteio/`, which stay in the repository unsynced, and it would reach
 `projects/debug/` the day that grew an overlay. Reviving a project is four
@@ -1578,9 +1583,9 @@ Written on 2026-10-01. Step 13 left four authos Applications `Synced` and
 open; the PAT and the two `doma` history rows were closed on `master` on
 2026-09-21 (PR #12 and `2c537a4`).
 
-The Secrets are the first in this repository under SOPS + age (ADR 0003,
+The Secrets are the first in this repository under SOPS + age ([ADR 0003](../adr/0003-recoverability.md),
 Amendments). How they were made, the keys, the backup drill and the
-leaked-key procedure are in `docs/runbook/secrets.md`; this step only applies
+leaked-key procedure are in [`docs/runbook/secrets.md`](./secrets.md); this step only applies
 them.
 
 ### What was actually blocking
@@ -1772,7 +1777,7 @@ look the app up in Authos first.
 Written on 2026-10-02. The cluster was lost on 2026-09-13 because no database
 had a backup. This step makes `tosak-pg-cluster` archive its WAL and take a
 daily base backup to R2, and makes its volumes survive a deletion. The design
-is ADR 0003, Amendments **2026-10-01**; one decision in it did not survive the
+is [ADR 0003](../adr/0003-recoverability.md), Amendments **2026-10-01**; one decision in it did not survive the
 build, and the replacement is Amendment **2026-10-02**. Read both before
 changing anything here.
 
@@ -1932,7 +1937,7 @@ gets the marker, so the recovery runbook must account for it.
 Written on 2026-10-02. Step 15 made backups run; nothing yet noticed when they
 stop. This step adds one daily GitHub workflow,
 `.github/workflows/recoverability-watch.yml`, that looks at the cluster's
-recoverability from **outside** it (ADR 0003, Amendments 2026-10-01). It sees
+recoverability from **outside** it ([ADR 0003](../adr/0003-recoverability.md), Amendments 2026-10-01). It sees
 only Hetzner and R2 — the kube API is VPN-only, on purpose — so it still
 reports after the cluster is gone, which is the one moment that matters.
 
@@ -2019,7 +2024,7 @@ an API body, `backup.info` content or an error JSON: none.
   public repository after 60 days without activity, silently — and a disabled
   watcher looks exactly like a clean one. Deploy-catalog commits keep the
   repository active today, but that is luck. A heartbeat service is the
-  monitoring scope's decision (ADR 0003).
+  monitoring scope's decision ([ADR 0003](../adr/0003-recoverability.md)).
 - **The drill check is armed but unproven** until chunk 4 writes its first
   result. *(2026-10-02: proven. After PR #20 merged, dispatch run
   `36944861710` read the three drill objects — `drill results: 3` — and
@@ -2032,7 +2037,7 @@ an API body, `backup.info` content or an error JSON: none.
 Written on 2026-10-02. Steps 15 and 16 make backups run and notice when they
 stop; neither proves a backup **restores**. This step adds a monthly CronJob
 that restores the production backups into a throw-away Cluster, asserts, and
-deletes it (ADR 0003, Amendments 2026-10-01 and the drill amendment of
+deletes it ([ADR 0003](../adr/0003-recoverability.md), Amendments 2026-10-01 and the drill amendment of
 2026-10-02). Everything is in `core/pg-drill/`; its README has the file list.
 
 | Assertion | How |

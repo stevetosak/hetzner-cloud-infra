@@ -1,10 +1,15 @@
-# 6. Network paths, and the control plane's name for itself
-
-Date: 2026-09-20
+---
+title: "Network paths, and the control plane's name for itself"
+description: "The one job of each network interface, the six settings that hold it, and the control-plane endpoint name that makes a second control plane possible."
+type: decision
+status: accepted
+date: 2026-09-20
+topics: [networking, security, kubernetes]
+---
 
 ## Status
 
-Accepted. Extends ADR 0001, which chose the CIDRs and the CNI. This one says
+Accepted. Extends [ADR 0001](./0001-cluster-network-plan.md), which chose the CIDRs and the CNI. This one says
 which interface carries which traffic, and what holds that true.
 
 Amended 2026-09-20, at the close of Phase 2: the single `allow_public_ssh`
@@ -22,7 +27,7 @@ Network `10.0.0.0/16`, and `wg0` on the VPN `10.100.0.0/24`. Cluster traffic
 went over private addresses in the cluster that was lost — but that rule was
 written down nowhere. It survived in operators' memory and in a handful of
 flags scattered across scripts, which is the same way the previous cluster's
-CNI choice survived: not at all (ADR 0001).
+CNI choice survived: not at all ([ADR 0001](./0001-cluster-network-plan.md)).
 
 Auditing the rule turned up three things.
 
@@ -42,7 +47,7 @@ interface.
 **`--control-plane-endpoint` was missing from the planned `kubeadm init`.**
 Without it kubeadm writes a literal IP into every kubeconfig and into the
 record joining nodes read, and a cluster built that way can never gain a second
-control plane without being rebuilt. Setting it costs one argument. ADR 0002
+control plane without being rebuilt. Setting it costs one argument. [ADR 0002](./0002-control-plane-isolation.md)
 assumes one control plane, and that assumption is sound — but there is a
 difference between choosing one and making a second impossible.
 
@@ -82,7 +87,7 @@ filtering is ever wanted, the layer depends on what is being filtered:
 node-to-node is host `nftables` on `enp7s0`, where the subnets pay off;
 pod-to-pod is NetworkPolicy and therefore Cilium, where they do not, because
 between nodes that traffic is VXLAN and a host firewall sees only UDP 8472
-between node addresses. `10.0.3.0/24` is **reserved and empty** — ADR 0005 put
+between node addresses. `10.0.3.0/24` is **reserved and empty** — [ADR 0005](./0005-storage-and-worker-identity.md) put
 PostgreSQL in a pod on a Volume, so nothing will hold an address there unless a
 core server outside Kubernetes is added.
 

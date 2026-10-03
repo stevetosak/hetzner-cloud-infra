@@ -1,10 +1,15 @@
-# 4. kluster is an assistant, not the backbone
-
-Date: 2026-09-20
+---
+title: "kluster is an assistant, not the backbone"
+description: "Why the kluster CLI shows before it acts and is never the only record of how the cluster is built."
+type: decision
+status: accepted
+date: 2026-09-20
+topics: [provisioning]
+---
 
 ## Status
 
-Accepted. The worker-naming decision below is **superseded by ADR 0005**, which
+Accepted. The worker-naming decision below is **superseded by [ADR 0005](./0005-storage-and-worker-identity.md)**, which
 removes Longhorn and with it the disk-UUID constraint that required changing
 names at all. Worker names are now stable and the suffix machinery is deleted.
 Everything else here — plan mode, intent assertion, the `--apply` abort, and
@@ -32,7 +37,7 @@ Three defects combined:
   VPN, which stopped being true after the first `node add`.
 
 Note also that the incident's most expensive loss — the control plane — is
-addressed structurally in ADR 0002, not here.
+addressed structurally in [ADR 0002](./0002-control-plane-isolation.md), not here.
 
 ## Decision
 
@@ -41,7 +46,7 @@ authority.** Terraform state and the written procedure are the backbone. kluster
 must default to showing rather than doing, and must never be the only thing
 that knows how the cluster is built.
 
-**Per-worker name suffixes.** *(Superseded by ADR 0005 — worker names are now
+**Per-worker name suffixes.** *(Superseded by [ADR 0005](./0005-storage-and-worker-identity.md) — worker names are now
 stable and carry no suffix. Retained here because the reasoning explains why
 the original global suffix was wrong.)* Each entry in the workers map carries its own
 `name_suffix`, written once at creation and never rewritten.
@@ -70,7 +75,7 @@ its whole job is to show you what is about to happen.
 
 **Bootstrap SSH is closed again.** Any command that opens
 `allow_public_ssh_worker` — or `allow_public_ssh_cp`, though kluster never
-touches the Control Plane (ADR 0002) — applies the default back once
+touches the Control Plane ([ADR 0002](./0002-control-plane-isolation.md)) — applies the default back once
 bootstrapping finishes.
 
 ## Consequences
