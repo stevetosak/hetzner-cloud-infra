@@ -26,7 +26,9 @@ comes back with data.
 
 It does **not** prove a real recovery. The drill never archives, so it never
 meets the next `serverName` generation, its lock rule, or plugin#828's
-`.check-empty-wal-archive` marker. The recovery runbook owns those.
+`.check-empty-wal-archive` marker.
+[The PostgreSQL recovery runbook](../../docs/runbook/pg-recovery.md) owns
+those, and its rehearsal proves them.
 
 ## 🔴 Its presence arms the outside watcher
 

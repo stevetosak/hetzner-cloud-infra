@@ -1,0 +1,32 @@
+[
+  { "op": "test", "path": "/metadata/name", "value": "tosak-pg-cluster" },
+  { "op": "test", "path": "/spec/plugins/0/parameters/serverName", "value": "tosak-pg-cluster-g1" },
+  { "op": "remove", "path": "/spec/bootstrap/initdb" },
+  {
+    "op": "add",
+    "path": "/spec/bootstrap/recovery",
+    "value": {
+      "source": "tosak-pg-cluster-g1",
+      "database": "authos",
+      "owner": "tosak",
+      "secret": { "name": "db-credentials" }
+    }
+  },
+  {
+    "op": "add",
+    "path": "/spec/externalClusters",
+    "value": [
+      {
+        "name": "tosak-pg-cluster-g1",
+        "plugin": {
+          "name": "barman-cloud.cloudnative-pg.io",
+          "parameters": {
+            "barmanObjectName": "tosak-pg-backups",
+            "serverName": "tosak-pg-cluster-g1"
+          }
+        }
+      }
+    ]
+  },
+  { "op": "replace", "path": "/spec/plugins/0/parameters/serverName", "value": "tosak-pg-cluster-g2" }
+]

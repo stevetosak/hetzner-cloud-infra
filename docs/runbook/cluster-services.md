@@ -1913,7 +1913,8 @@ Upstream, archiving stops for good after a failover with
 `Expected empty archive`. The check runs only while the
 `.check-empty-wal-archive` marker exists in `PGDATA`, and on 2026-10-02 it
 existed on none of the three instances. A cluster **bootstrapped by recovery**
-gets the marker, so the recovery runbook must account for it.
+gets the marker, so the recovery runbook must account for it. It does:
+[PostgreSQL recovery runbook](./pg-recovery.md), checked in its rehearsal.
 
 ### What this step leaves open
 
@@ -1929,8 +1930,10 @@ gets the marker, so the recovery runbook must account for it.
   `smartShutdownTimeout`, or `primaryUpdateMethod: switchover`, would shorten
   it; the second makes plugin#828 matter. Not decided.
 - **`Backup` objects accumulate**, one a day; `backupOwnerReference` is unset.
-- **The recovery runbook**: read generation N, archive to N+1, add the lock
-  rule for N+1, and the recovery marker above.
+- ~~**The recovery runbook**: read generation N, archive to N+1, add the lock
+  rule for N+1, and the recovery marker above.~~ Written and rehearsed
+  2026-10-03: [PostgreSQL recovery runbook](./pg-recovery.md). The marker was
+  gone after the first archive, and a switchover kept archiving.
 
 ## 16. The outside watcher — orphans, backup and WAL freshness, drill freshness
 
@@ -2129,8 +2132,10 @@ cluster-scoped grant on PVs.
 
 - **A passing drill does not prove a real recovery.** It never archives, so
   it never meets generation `g2`, its lock rule, or plugin#828's
-  `.check-empty-wal-archive` marker. That is the recovery runbook (chunk 5),
-  and only after it was the old snapshot 349712331 deleted (done 2026-10-04).
+  `.check-empty-wal-archive` marker. The
+  [PostgreSQL recovery runbook](./pg-recovery.md) covers those, and its
+  rehearsal (2026-10-03) archived, switched over and took a base backup.
+  Only after it was the old snapshot 349712331 deleted (done 2026-10-04).
 - ~~The watcher's read of a real drill result~~ — proven by dispatch run
   `36944861710` after the merge (step 16).
 - **Only `pass`/`fail` reach the watcher.** A drill whose CronJob stops
