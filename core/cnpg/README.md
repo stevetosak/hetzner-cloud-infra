@@ -70,7 +70,10 @@ kubectl apply -f core/cnpg/scheduled-backup.yaml
 ```
 
 🔴 **After a real recovery this order is not enough** — the `serverName`
-generation and its lock rule change first. The recovery runbook owns that.
+generation and its lock rule change first, and `pg-cluster.yaml` is replaced
+by a manifest rendered from it with the patches in `recovery/`. Follow
+[the PostgreSQL recovery runbook](../../docs/runbook/pg-recovery.md) instead
+of the last four lines.
 
 🔴 **`--server-side` is not optional for `operator.yaml`**, for the same reason
 as the Gateway API CRDs. The `clusters.postgresql.cnpg.io` CRD alone is about
