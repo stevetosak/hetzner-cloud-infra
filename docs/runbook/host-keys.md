@@ -2,6 +2,7 @@
 title: "Host keys: seeded at creation, rotated at the first login"
 description: "How kluster makes a new server's SSH host key known before the first login, verifies that login against it, and then replaces it, with the checks that prove each step."
 type: procedure
+verified: 2026-10-04
 topics: [provisioning, security]
 ---
 

@@ -31,6 +31,11 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, `{"actions":[{"id":7,"command":"set_firewall_rules","status":"success","progress":100}]}`)
 	case r.Method == http.MethodGet && r.URL.Path == "/primary_ips":
 		io.WriteString(w, `{"primary_ips":`+f.primaryIPs+`,"meta":{"pagination":{"page":1,"per_page":50,"total_entries":1}}}`)
+	case r.Method == http.MethodDelete && r.URL.Path == "/primary_ips/9":
+		w.WriteHeader(http.StatusNotFound)
+		io.WriteString(w, `{"error":{"code":"not_found","message":"primary ip not found"}}`)
+	case r.Method == http.MethodDelete && r.URL.Path == "/ssh_keys/3":
+		w.WriteHeader(http.StatusNoContent)
 	case r.Method == http.MethodGet && r.URL.Path == "/servers":
 		io.WriteString(w, `{"servers":[],"meta":{"pagination":{"page":1,"per_page":50,"total_entries":0}}}`)
 	default:
@@ -120,5 +125,23 @@ func TestIsSSHRule(t *testing.T) {
 		if got := IsSSHRule(tt.r); got != tt.want {
 			t.Errorf("IsSSHRule(%+v) = %v", tt.r, got)
 		}
+	}
+}
+
+// A server's auto-deleted primary IP is gone by the time down reaches it:
+// that is done, not an error.
+func TestDeleteAllTreatsNotFoundAsDeleted(t *testing.T) {
+	c := newFake(t, &fakeAPI{})
+	inv := &Inventory{
+		PrimaryIPs: []*hcloud.PrimaryIP{{ID: 9, Name: "primary_ip-9"}},
+		SSHKeys:    []*hcloud.SSHKey{{ID: 3, Name: "tosak-cluster"}},
+	}
+	var log strings.Builder
+	if err := c.DeleteAll(context.Background(), inv, &log); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(log.String(), "already gone: primary IP primary_ip-9") ||
+		!strings.Contains(log.String(), "deleted ssh key tosak-cluster") {
+		t.Fatalf("log:\n%s", log.String())
 	}
 }

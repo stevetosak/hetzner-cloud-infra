@@ -2,6 +2,7 @@
 title: "The rehearsal project: set up, run, clear away"
 description: "What the operator creates once so kluster can rehearse in a second Hetzner project, how a rehearsal run goes, and how to prove the project is empty again afterwards."
 type: procedure
+verified: 2026-10-04
 topics: [provisioning, security]
 ---
 

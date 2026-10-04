@@ -23,6 +23,12 @@ func (c *Client) DeleteAll(ctx context.Context, inv *Inventory, log io.Writer) e
 	wait := c.waiter(ctx)
 	var errs []error
 	step := func(what string, err error) {
+		// A server's own primary IPs (auto_delete) go with the server, so
+		// some items in inv are already gone when their turn comes.
+		if hcloud.IsError(err, hcloud.ErrorCodeNotFound) {
+			fmt.Fprintf(log, "  already gone: %s\n", what)
+			return
+		}
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", what, err))
 			return
