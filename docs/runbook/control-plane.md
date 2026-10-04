@@ -6,7 +6,8 @@ topics: [provisioning, kubernetes]
 ---
 
 Written verbatim as each command ran, on 2026-09-20 ([ADR 0004](../adr/0004-kluster-safety-model.md)). This file is
-the deliverable of Phase 2. Phase 6 ports it into `kluster cp init` stages.
+the deliverable of Phase 2. `kluster cp init` now carries it out as Stages; the
+next section says where kluster's commands differ from the ones below.
 
 Read [`docs/runbook/rebuild-2026-09-20.md`](./rebuild-2026-09-20.md) for the surrounding plan, and
 `docs/adr/0006` for why the network settings are what they are.
@@ -25,6 +26,78 @@ cd infra && source .envrc
 That exports `TF_VAR_HCLOUD_TOKEN`, `AWS_ACCESS_KEY_ID` and
 `AWS_SECRET_ACCESS_KEY`. The two R2 names must **not** carry a `TF_VAR_`
 prefix — a backend block cannot read Terraform variables.
+
+---
+
+## How kluster carries this out
+
+`kluster cp init` runs steps 1 to 9 in order, one Stage per step, each naming
+its section here ([ADR 0009](../adr/0009-kluster-builds-the-whole-cluster-and-proves-it-in-a-rehearsal-project.md)). Each Stage has a read-only Probe made of the
+checks under "Verified" in its step, and an Act. A Stage whose Probe passes is
+skipped, so a build that stopped resumes at the first step that is not done;
+a Stage that acted must then pass its own Probe. Run `kluster shared` first.
+
+```sh
+./kluster cp init                 # Plan Mode: the plans and every Stage's commands
+./kluster cp init --apply
+```
+
+**It builds only into an empty slot.** The server is created with a seeded
+host key ([host keys](./host-keys.md)) and a marker file, `/etc/kluster/cp-init`, which cloud-init
+writes as `running` at the first boot; the last Stage writes `complete`.
+When `k8s-cp` already exists, `cp init` goes on only if kluster pinned that
+server's key and the marker reads `running`. The live Control Plane has
+neither, and `cp init` against live stops at the API read with "the slot is
+not empty" (run in Plan Mode on 2026-10-04). The Terraform Intent is one
+create in `control-plane` and only the SSH rule in `shared`.
+
+The commands differ from the by-hand ones below in these places, and nowhere
+else:
+
+| Step | What kluster does differently |
+|---|---|
+| 1 | Passes `user_data` (host key and marker) and reads the new server back over the API: protection on, the one private address. |
+| 2 | First makes sure `enp7s0` holds the private address (the trap below). Waits for cloud-init (`cloud-init status --wait`) and gives `apt-get` a 300-second lock timeout. Runs as `root` over the public address until step 9. |
+| 3 | Keeps a hub key made by an earlier, stopped run. Proves the operator route with its own WireGuard peer, see below. |
+| 4 | Adds the `/etc/hosts` line only if it is missing. |
+| 5 | Checks the dry run's certificate names the Endpoint, the first service address and the private, VPN and public addresses, then runs `init` with its output in a root-only file that is removed afterwards, so the bootstrap token never reaches the terminal. |
+| 6 | Writes the kubeconfig after the route proof (see below). |
+| 7, 8 | Runs `kubectl` on the Control Plane with `/etc/kubernetes/admin.conf`, not on the workstation. The token for the `hcloud` Secret goes to a 0600 file on `/run` that is removed when the command ends. |
+| 9 | Closes through Terraform and reads both firewalls back over the API, at the end of every run, a failed one included. |
+
+🔴 **The private interface can come up empty.** The hcloud provider attaches
+a fixed private IP after it creates the server, and Hetzner gives cloud-init
+the private interface only if the attach landed before the first boot read
+its metadata. On 2026-10-04 the rehearsal Control Plane lost that race: its
+`network-config.json` held `eth0` alone, `enp7s0` stayed down, and `kubeadm
+init` failed its preflight with "Port 2379 is in use", which meant it could
+not bind `10.0.1.5`. The live one won it on 2026-09-20 (its netplan has
+`enp7s0`), and so did the next rehearsal server the same day. So the `private-network` Stage writes the netplan entry cloud-init
+would have written, `/etc/netplan/60-kluster-private.yaml`, matched by the
+MAC address the API reports, reconfigures that one interface and waits for
+the address. Its Probe is the address and the netplan entry.
+
+Every Act script stays on the host in `/var/lib/kluster/scripts/`, and the
+manifests it applied in `/var/lib/kluster/manifests/`, so the server records
+what built it.
+
+**The operator route is proven without root on the workstation.** kluster
+runs its own WireGuard peer inside its process (wireguard-go on a userspace
+network stack), adds it to the hub with `wg set` at `10.100.0.254`, logs in as
+`cp-dev` at `10.100.0.1` through it, requires that the hub saw the client as
+`10.100.0.254` and that `sudo` gives `root`, and asks
+`https://10.100.0.1:6443/readyz` with the new kubeconfig through the same
+tunnel. The peer is then removed; it was never in `wg0.conf`, so a restart of
+`wg0` drops it too.
+
+**Then the workstation.** On live, kluster edits `/etc/wireguard/wg0.conf`
+through `sudo` (the hub peer's `PublicKey`, and its `Endpoint` if the address
+changed; nothing else), keeps a `.bak-kluster-<time>` copy and restarts
+`wg-quick@wg0`. It merges the kubeconfig as `tosak-admin@tosak` after deleting
+any old entries under those names, backs the file up, and moves
+`current-context` only once the new context answers `/readyz`. A rehearsal
+hub has the live VPN addresses, so `--env rehearsal` writes both files under
+`~/.config/kluster/rehearsal/` instead and never touches the live setup.
 
 ---
 
