@@ -10,6 +10,9 @@ CLAUDE.md
 *.tfstate
 *.tfstate.*
 .terraform/
+# kluster --env rehearsal keeps its own Terraform data directory per Module, so
+# a rehearsal init never leaves a Module pointing at the rehearsal backend.
+.terraform-rehearsal/
 .terraform.tfstate.lock.info
 *.tfplan
 crash.log
@@ -27,8 +30,8 @@ crash.log
 # the index once already.
 .claude/
 
-# kluster is built from source (branch feat/kluster-cli); the 11 MB binary is
-# a build artefact, not infrastructure. kluster.yaml IS committed.
+# kluster is built from source (tools/kluster); the binary is a build
+# artefact, not infrastructure. kluster.yaml IS committed.
 tools/kluster/kluster
 tools/kluster/.idea/
 

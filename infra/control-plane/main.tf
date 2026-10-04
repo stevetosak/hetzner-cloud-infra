@@ -41,11 +41,19 @@ resource "hcloud_server" "control_plane" {
     ipv4 = data.hcloud_primary_ip.cp.id
   }
 
+  # The SSH host key, seeded through cloud-init so the first login can be
+  # verified (ADR 0009). kluster passes it only when it creates the server.
+  user_data = var.user_data
+
   labels = {
     role = "control-plane"
   }
 
   lifecycle {
     prevent_destroy = true
+
+    # user_data is ForceNew. Without this, adding it to the live server, or a
+    # new key on the next run, would plan a replacement.
+    ignore_changes = [user_data]
   }
 }

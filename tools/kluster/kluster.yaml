@@ -19,8 +19,6 @@ controlPlane:
   # The cluster's own name for its API server. Every node resolves it to
   # privateIP from its own /etc/hosts; the laptop deliberately does not resolve
   # it and uses vpnIP instead. See ADR 0006.
-  #
-  # kluster's config struct does not carry this field yet — Phase 3.
   endpoint: "k8s-cp.tosak.internal"
   sshUser: cp-dev
 
@@ -40,11 +38,42 @@ wireguard:
 versions:
   containerd: "2.2.0"
   runc: "1.4.0"
-  cniPlugins: "1.9.0"
   kubernetes: "v1.37"
 
 terraform:
-  # STALE. infra/ is now three root modules — shared/, control-plane/, workers/
-  # — and a single workDir cannot address them. kluster must take one path per
-  # module before it is used again. Phase 3 of the rebuild runbook.
-  workDir: ../../infra
+  # One path per root Module, relative to this file (ADR 0002: three Modules,
+  # each with its own state). kluster never plans more than one at a time.
+  modules:
+    shared: ../../infra/shared
+    control-plane: ../../infra/control-plane
+    workers: ../../infra/workers
+
+# Where kluster acts. `--env` picks one; live is the default (ADR 0009).
+#
+# Only the NAMES of environment variables are here. kluster reads the values
+# from its own environment and hands the terraform child process a clean one:
+# no TF_VAR_*, AWS_* or HCLOUD_* from the shell reaches it, so a rehearsal run
+# can never carry the live token.
+envs:
+  live:
+    hcloudTokenEnv: TF_VAR_HCLOUD_TOKEN
+    r2AccessKeyIDEnv: AWS_ACCESS_KEY_ID
+    r2SecretAccessKeyEnv: AWS_SECRET_ACCESS_KEY
+    # Empty: the bucket in each Module's backend.tf.
+    stateBucket: ""
+  rehearsal:
+    hcloudTokenEnv: KLUSTER_REHEARSAL_HCLOUD_TOKEN
+    r2AccessKeyIDEnv: KLUSTER_REHEARSAL_R2_ACCESS_KEY_ID
+    r2SecretAccessKeyEnv: KLUSTER_REHEARSAL_R2_SECRET_ACCESS_KEY
+    # Its own bucket and a token scoped to it alone, so a rehearsal run holds no
+    # credential that can write live state (ADR 0009, Amendments).
+    stateBucket: hetzner-cloud-infra-rehearsal
+    # The live Control Plane's public address. A rehearsal run refuses a
+    # project that holds it: that would be the live project under the wrong
+    # name.
+    refuseProjectWithIP: "46.62.209.249"
+
+ssh:
+  # The private half of the `tosak-cluster` key in shared/. Empty: use the
+  # running ssh-agent.
+  identityFile: ""

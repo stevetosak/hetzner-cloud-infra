@@ -34,6 +34,10 @@ resource "hcloud_server" "workers" {
     ipv6_enabled = false
   }
 
+  # The SSH host key, seeded through cloud-init so the first login can be
+  # verified (ADR 0009). kluster passes it only for a Worker it creates.
+  user_data = lookup(var.user_data, each.key, null)
+
   labels = each.value.labels
 
   # No create_before_destroy. Hetzner requires server names to be unique among
@@ -42,4 +46,10 @@ resource "hcloud_server" "workers" {
   # Because names are now reused, a recreated worker inherits nothing from its
   # predecessor in Hetzner but everything in Kubernetes: delete the old Node
   # object before the new server joins, or it picks up stale taints and labels.
+
+  lifecycle {
+    # user_data is ForceNew. Without this, adding it to a live Worker, or a new
+    # key on the next run, would plan a replacement.
+    ignore_changes = [user_data]
+  }
 }

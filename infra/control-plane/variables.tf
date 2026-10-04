@@ -31,3 +31,15 @@ variable "private_ip" {
     kubeconfig. Changing it means re-issuing the control-plane certificates.
   EOT
 }
+
+variable "user_data" {
+  type        = string
+  default     = null
+  sensitive   = true
+  description = <<-EOT
+    cloud-init user data that seeds the server's SSH host key. Set only by
+    kluster, only when it creates the server, and never written to disk outside
+    its temporary run directory. The provider stores a SHA1 of it in the state,
+    not the text. Ignored after creation (lifecycle.ignore_changes).
+  EOT
+}
