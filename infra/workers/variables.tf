@@ -72,3 +72,16 @@ variable "workers" {
     error_message = "10.100.0.1 is the control plane, the VPN hub. A worker cannot take it."
   }
 }
+
+variable "user_data" {
+  type        = map(string)
+  default     = {}
+  sensitive   = true
+  description = <<-EOT
+    cloud-init user data per Worker name, seeding each new server's SSH host
+    key. Set only by kluster, only for the Workers it creates, and never written
+    to disk outside its temporary run directory. The provider stores a SHA1 of
+    it in the state, not the text. Ignored after creation
+    (lifecycle.ignore_changes).
+  EOT
+}

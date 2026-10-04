@@ -7,6 +7,9 @@
 # body, a backup.info, a drill result or a credential — only counts, ids and
 # error codes. The decisions live in .github/scripts/watch.mjs, which is tested.
 #
+# The rehearsal-age check (ADR 0009) reads the rehearsal project with its own
+# read-only token.
+#
 # Known gap (ADR 0003): GitHub disables a scheduled workflow in a public
 # repository after 60 days without repository activity, silently.
 name: Recoverability watch
@@ -127,6 +130,26 @@ jobs:
             -H "Authorization: Bearer $HCLOUD_TOKEN" \
             'https://api.hetzner.cloud/v1/volumes?per_page=50' || echo 000)
           [ "$CODE" = 200 ] || echo "hetzner HTTP $CODE (second check)" > "$DATA/errors/volumes"
+
+      # A forgotten rehearsal costs the monthly caps and Hetzner has no spending
+      # cap (ADR 0009). A read-only token for the rehearsal project only; without
+      # it the check is reported as broken, never skipped.
+      - name: Rehearsal project
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_REHEARSAL_READONLY_TOKEN }}
+        run: |
+          if [ -z "$HCLOUD_TOKEN" ]; then
+            echo "secret HCLOUD_REHEARSAL_READONLY_TOKEN is not set" > "$DATA/errors/rehearsal"; exit 0
+          fi
+          mkdir -p "$DATA/rehearsal"
+          for kind in servers load_balancers volumes primary_ips floating_ips; do
+            CODE=$(curl -sS -o "$DATA/rehearsal/$kind.json" -w '%{http_code}' \
+              -H "Authorization: Bearer $HCLOUD_TOKEN" \
+              "https://api.hetzner.cloud/v1/$kind?per_page=50" || echo 000)
+            if [ "$CODE" != 200 ]; then
+              echo "hetzner HTTP $CODE on $kind" > "$DATA/errors/rehearsal"; break
+            fi
+          done
 
       - name: Evaluate and report
         id: report

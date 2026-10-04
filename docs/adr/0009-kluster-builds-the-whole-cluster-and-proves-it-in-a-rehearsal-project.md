@@ -145,3 +145,30 @@ Control Plane rebuild still needs editing by hand.
 Worth revisiting if a rehearsal run ever touches the live outside world, if
 the cost check fires more than once, or if the runbooks and Stages drift in a
 review: the last would mean the Stages should generate the procedure instead.
+
+## Amendments
+
+**2026-10-04 — the rehearsal state gets its own bucket, and the seeded host
+key is replaced at the first login.** Two details above changed while the
+safety core was built, both chosen by the operator.
+
+The decision said the rehearsal keeps its Terraform state under "its own R2
+state prefix". A prefix in the live bucket would have used the live bucket's
+token, so a fault in how kluster picks the state key could write rehearsal
+state over a live one, and only kluster's own code would stand in the way. The
+rehearsal state lives instead in the bucket `hetzner-cloud-infra-staging`,
+reached with an R2 token scoped to that bucket alone: a rehearsal run holds no
+credential that can write live state. kluster's configuration refuses a
+rehearsal environment that names the live bucket, token or keys, and refuses
+at run time a rehearsal value equal to the live one
+([rehearsal runbook](../runbook/rehearsal.md)).
+
+The decision also said kluster pins the seeded host key. Hetzner serves
+`user_data` on the metadata service to every process on the server for its
+whole life, pods included unless something blocks them (assumed, not tested),
+so the private half of a seeded key stays readable after boot. The seeded key
+now verifies the first login and nothing more: during that login kluster
+makes a new key on the host, reads its public half over the verified
+connection, and pins it alone ([host keys runbook](../runbook/host-keys.md)). The weighed
+alternative, keeping the seeded key, would have let anything that reads the
+metadata service pose as the host to an SSH client.
