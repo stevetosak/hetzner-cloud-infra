@@ -23,32 +23,72 @@ func TestLoadCommittedConfig(t *testing.T) {
 	}
 }
 
+// Each case changes one line of the committed file, so the refusal can only
+// come from that line.
 func TestValidateRefusesRehearsalSharingLive(t *testing.T) {
-	tests := map[string]string{
-		"shared token": `
-envs:
-  live: {hcloudTokenEnv: T, r2AccessKeyIDEnv: A, r2SecretAccessKeyEnv: S}
-  rehearsal: {hcloudTokenEnv: T, r2AccessKeyIDEnv: RA, r2SecretAccessKeyEnv: RS, stateBucket: b, refuseProjectWithIP: 1.2.3.4}`,
-		"no bucket": `
-envs:
-  live: {hcloudTokenEnv: T, r2AccessKeyIDEnv: A, r2SecretAccessKeyEnv: S}
-  rehearsal: {hcloudTokenEnv: RT, r2AccessKeyIDEnv: RA, r2SecretAccessKeyEnv: RS, refuseProjectWithIP: 1.2.3.4}`,
-		"no fingerprint": `
-envs:
-  live: {hcloudTokenEnv: T, r2AccessKeyIDEnv: A, r2SecretAccessKeyEnv: S}
-  rehearsal: {hcloudTokenEnv: RT, r2AccessKeyIDEnv: RA, r2SecretAccessKeyEnv: RS, stateBucket: b}`,
+	committed, err := os.ReadFile("../../kluster.yaml")
+	if err != nil {
+		t.Fatal(err)
 	}
-	modules := "terraform:\n  modules: {shared: s, control-plane: c, workers: w}\n"
-	for name, envs := range tests {
+	tests := map[string]struct{ old, new, want string }{
+		"shared token": {
+			"hcloudTokenEnv: KLUSTER_REHEARSAL_HCLOUD_TOKEN", "hcloudTokenEnv: TF_VAR_HCLOUD_TOKEN",
+			"its own token",
+		},
+		"no bucket": {
+			"stateBucket: hetzner-cloud-infra-staging", `stateBucket: ""`, "stateBucket is required",
+		},
+		"no fingerprint": {
+			`refuseProjectWithIP: "46.62.209.249"`, `refuseProjectWithIP: ""`, "refuseProjectWithIP is required",
+		},
+		"live wireguard config": {
+			"wireguardConf: ~/.config/kluster/rehearsal/wg0.conf", "wireguardConf: /etc/wireguard/wg0.conf",
+			"its own wireguardConf",
+		},
+		"live kubeconfig": {
+			"kubeconfig: ~/.config/kluster/rehearsal/kubeconfig", "kubeconfig: ~/.kube/config",
+			"its own wireguardConf, kubeconfig",
+		},
+		"sudo": {
+			"wireguardConf: ~/.config/kluster/rehearsal/wg0.conf",
+			"wireguardConf: ~/.config/kluster/rehearsal/wg0.conf\n      sudo: true",
+			"must not use sudo",
+		},
+	}
+	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
+			if !strings.Contains(string(committed), tc.old) {
+				t.Fatalf("the committed file no longer holds %q", tc.old)
+			}
+			body := strings.Replace(string(committed), tc.old, tc.new, 1)
 			path := filepath.Join(t.TempDir(), "kluster.yaml")
-			if err := os.WriteFile(path, []byte(modules+envs), 0o600); err != nil {
+			if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := Load(path); err == nil {
-				t.Fatal("Load accepted a rehearsal env that is not isolated")
+			_, err := Load(path)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("want a refusal naming %q, got %v", tc.want, err)
 			}
 		})
+	}
+}
+
+func TestPathResolvesHomeAndRelative(t *testing.T) {
+	cfg, err := Load("../../kluster.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	home, _ := os.UserHomeDir()
+	got, err := cfg.Path("~/.kube/config")
+	if err != nil || got != filepath.Join(home, ".kube/config") {
+		t.Errorf("~ path: got %q, %v", got, err)
+	}
+	flannel, err := cfg.Path(cfg.Manifests.Flannel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(flannel); err != nil {
+		t.Errorf("manifests.flannel does not resolve to a file: %v", err)
 	}
 }
 

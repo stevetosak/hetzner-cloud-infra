@@ -47,6 +47,9 @@ func NewRunDir() (*RunDir, error) {
 	return &RunDir{path: p}, nil
 }
 
+// Path is the run directory, for other files that must not reach a disk.
+func (r *RunDir) Path() string { return r.path }
+
 // Close removes the run directory and everything in it.
 func (r *RunDir) Close() error { return os.RemoveAll(r.path) }
 

@@ -18,6 +18,7 @@ type fakeAPI struct {
 	firewallRules string // JSON array of rules for firewall 1
 	setRulesBody  string
 	primaryIPs    string // JSON array
+	servers       string // JSON array; empty: none
 }
 
 func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -37,7 +38,10 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodDelete && r.URL.Path == "/ssh_keys/3":
 		w.WriteHeader(http.StatusNoContent)
 	case r.Method == http.MethodGet && r.URL.Path == "/servers":
-		io.WriteString(w, `{"servers":[],"meta":{"pagination":{"page":1,"per_page":50,"total_entries":0}}}`)
+		if f.servers == "" {
+			f.servers = "[]"
+		}
+		io.WriteString(w, `{"servers":`+f.servers+`,"meta":{"pagination":{"page":1,"per_page":50,"total_entries":1}}}`)
 	default:
 		http.Error(w, `{"error":{"code":"not_found","message":"`+r.URL.Path+`"}}`, http.StatusNotFound)
 	}

@@ -57,6 +57,16 @@ type Config struct {
 
 // Dial connects to addr (host or host:port) and verifies its host key.
 func Dial(ctx context.Context, addr string, cfg Config) (*Client, error) {
+	d := net.Dialer{Timeout: 10 * time.Second}
+	return DialVia(ctx, d.DialContext, addr, cfg)
+}
+
+// DialFunc opens a network connection, as net.Dialer.DialContext does.
+type DialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
+
+// DialVia connects to addr through dial and verifies its host key. kluster
+// uses it to reach a host through its own WireGuard tunnel.
+func DialVia(ctx context.Context, dial DialFunc, addr string, cfg Config) (*Client, error) {
 	if cfg.HostKeyCallback == nil {
 		return nil, errors.New("dialing without a host key callback")
 	}
@@ -65,8 +75,7 @@ func Dial(ctx context.Context, addr string, cfg Config) (*Client, error) {
 	}
 	host, _, _ := net.SplitHostPort(addr)
 
-	d := net.Dialer{Timeout: 10 * time.Second}
-	nc, err := d.DialContext(ctx, "tcp", addr)
+	nc, err := dial(ctx, "tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("dialing %s: %w", addr, err)
 	}
@@ -210,7 +219,9 @@ func (c *Client) WriteFile(ctx context.Context, path, content string, mode os.Fi
 		return fmt.Errorf("opening stdin pipe to %s: %w", c.host, err)
 	}
 
-	cmd := fmt.Sprintf("cat > %s && chmod %s %s", shellQuote(path), strconv.FormatInt(int64(mode.Perm()), 8), shellQuote(path))
+	// umask first, so the file is never readable by others, not even
+	// between the write and the chmod.
+	cmd := fmt.Sprintf("umask 077 && cat > %s && chmod %s %s", shellQuote(path), strconv.FormatInt(int64(mode.Perm()), 8), shellQuote(path))
 
 	done := make(chan error, 1)
 	go func() {

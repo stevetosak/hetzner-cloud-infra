@@ -88,6 +88,22 @@ func (p *Pins) rewrite(addr string, keys []ssh.PublicKey, replace bool) error {
 	return os.Rename(tmp, p.path)
 }
 
+// Has reports whether addr has a pin. kluster pins only servers it created,
+// so a server it has no pin for is not one of its own.
+func (p *Pins) Has(addr string) (bool, error) {
+	data, err := os.ReadFile(p.path)
+	if err != nil {
+		return false, err
+	}
+	host := knownhosts.Normalize(addr)
+	for _, line := range strings.Split(string(data), "\n") {
+		if lineHost(line) == host {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // Reset drops every pin. `kluster down` calls it once the project it pinned
 // is empty.
 func (p *Pins) Reset() error {
