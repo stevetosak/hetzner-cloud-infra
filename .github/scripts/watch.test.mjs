@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -11,6 +11,9 @@ import {
   checkBaseBackups,
   checkWal,
   checkDrill,
+  checkRehearsal,
+  rehearsalResources,
+  REHEARSAL_KINDS,
   composeMessage,
   evaluate,
 } from './watch.mjs'
@@ -126,8 +129,40 @@ test('an orphan message warns about data before it gives the delete command', ()
   assert.match(msg, /volumes\/9 \)/)
 })
 
+const listing = (kind, items = []) => ({ [kind]: items, meta: { pagination: { next_page: null } } })
+const emptyRehearsal = () => Object.fromEntries(REHEARSAL_KINDS.map((k) => [k, listing(k)]))
+
+test('an empty rehearsal project is silent', () => {
+  assert.equal(checkRehearsal(rehearsalResources(emptyRehearsal()), NOW), null)
+})
+
+test('a rehearsal younger than six hours is silent; older is reported', () => {
+  const r = emptyRehearsal()
+  r.servers = listing('servers', [{ id: 5, name: 'k8swk1', created: '2026-10-02T01:00:00Z' }])
+  r.primary_ips = listing('primary_ips', [{ id: 6, name: 'tosak-cp-ip', created: '2026-10-01T22:00:00Z' }])
+  const resources = rehearsalResources(r)
+  assert.equal(checkRehearsal(resources, new Date('2026-10-02T03:00:00Z')), null)
+  const msg = checkRehearsal(resources, NOW)
+  assert.match(msg, /2 billable resources/)
+  assert.match(msg, /8\.0 h old/)
+  assert.match(msg, /primary_ips 6 tosak-cp-ip/)
+  assert.match(msg, /kluster --env rehearsal down --apply/)
+})
+
+test('a missing or paged rehearsal listing breaks the check rather than pass it', () => {
+  const r = emptyRehearsal()
+  delete r.volumes
+  assert.throws(() => rehearsalResources(r), /no volumes listing/)
+  const p = emptyRehearsal()
+  p.servers.meta.pagination.next_page = 2
+  assert.throws(() => rehearsalResources(p), /more than one page of servers/)
+})
+
 function dataDir() {
   const dir = mkdtempSync(join(tmpdir(), 'watch-'))
+  mkdirSync(join(dir, 'rehearsal'))
+  for (const [k, v] of Object.entries(emptyRehearsal()))
+    writeFileSync(join(dir, 'rehearsal', `${k}.json`), JSON.stringify(v))
   writeFileSync(join(dir, 'volumes-1.json'), JSON.stringify(page([volume(1, 42)])))
   mkdirSync(join(dir, 'base', '20261002T030000'), { recursive: true })
   writeFileSync(
@@ -165,4 +200,10 @@ test('evaluate: a malformed input breaks only its own check', () => {
   const f = evaluate(dir, NOW)
   assert.match(f.broken[0], /^volumes: hetzner: more than one page/)
   assert.equal(f.backups, null)
+})
+
+test('evaluate: no rehearsal listing at all is a broken check, not a clean one', () => {
+  const dir = dataDir()
+  rmSync(join(dir, 'rehearsal'), { recursive: true })
+  assert.match(evaluate(dir, NOW).broken[0], /^rehearsal: hetzner: no servers listing/)
 })

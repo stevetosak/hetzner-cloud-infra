@@ -16,6 +16,7 @@ export const LIMITS = {
   baseBackupMaxAgeHours: 26,
   walMaxAgeMinutes: 60,
   drillMaxAgeDays: 35,
+  rehearsalMaxAgeHours: 6,
 }
 
 const HOUR = 3600 * 1000
@@ -129,6 +130,41 @@ export function checkDrill(results, now) {
   return null
 }
 
+// --- Rehearsal project ------------------------------------------------------
+
+// The billable kinds, each read as `GET /v1/<kind>`. A rehearsal run builds
+// and tears down in about an hour; a forgotten one costs the monthly caps,
+// about €32 a month, and Hetzner has no spending cap (ADR 0009).
+export const REHEARSAL_KINDS = ['servers', 'load_balancers', 'volumes', 'primary_ips', 'floating_ips']
+
+// `responses` maps each kind to its API response. Returns every resource as
+// { kind, id, name, created }.
+export function rehearsalResources(responses) {
+  const out = []
+  for (const kind of REHEARSAL_KINDS) {
+    const r = responses[kind]
+    if (!r) throw new Error(`hetzner: no ${kind} listing`)
+    if (r.meta?.pagination?.next_page) throw new Error(`hetzner: more than one page of ${kind}`)
+    for (const x of r[kind] ?? []) out.push({ kind, id: x.id, name: x.name, created: x.created })
+  }
+  return out
+}
+
+// The rehearsal project must be empty, or its oldest resource younger than
+// the limit. Returns what is wrong, or null.
+export function checkRehearsal(resources, now) {
+  if (resources.length === 0) return null
+  const oldest = [...resources].sort((a, b) => Date.parse(a.created) - Date.parse(b.created))[0]
+  const ageHours = (now - Date.parse(oldest.created)) / HOUR
+  if (!(ageHours > LIMITS.rehearsalMaxAgeHours)) return null
+  return (
+    `${resources.length} billable resources left in the rehearsal project, the oldest ` +
+    `${ageHours.toFixed(1)} h old (limit ${LIMITS.rehearsalMaxAgeHours} h): ` +
+    `${oldest.kind} ${oldest.id} ${oldest.name}. Clear it with ` +
+    '`kluster --env rehearsal down --apply`'
+  )
+}
+
 // --- The message ------------------------------------------------------------
 
 export function deleteCommand(id) {
@@ -147,6 +183,7 @@ export function composeMessage(findings) {
   if (findings.backups) lines.push(`🔴 Base backups: ${findings.backups}.`)
   if (findings.wal) lines.push(`🔴 WAL: ${findings.wal}.`)
   if (findings.drill) lines.push(`🔴 Restore Drill: ${findings.drill}.`)
+  if (findings.rehearsal) lines.push(`🟠 Rehearsal project: ${findings.rehearsal}.`)
   for (const v of findings.orphans ?? []) {
     lines.push(
       `🟠 Orphaned Volume ${v.id} (${v.name}, ${v.size} GB, ${v.location}, ` +
@@ -177,6 +214,7 @@ function readIf(path) {
 //   wal-newest                newest LastModified under wals/
 //   drill-armed               present once core/pg-drill/ exists
 //   drill/*.json              the drill results
+//   rehearsal/<kind>.json     GET /v1/<kind> in the rehearsal project
 export function evaluate(dir, now) {
   const errors = existsSync(join(dir, 'errors'))
     ? readdirSync(join(dir, 'errors')).map(
@@ -219,6 +257,15 @@ export function evaluate(dir, now) {
           .map((f) => readJson(join(d, f)))
       : []
     findings.drill = checkDrill(results, now)
+  })
+  guard('rehearsal', () => {
+    const d = join(dir, 'rehearsal')
+    const responses = {}
+    for (const kind of REHEARSAL_KINDS) {
+      const f = join(d, `${kind}.json`)
+      if (existsSync(f)) responses[kind] = readJson(f)
+    }
+    findings.rehearsal = checkRehearsal(rehearsalResources(responses), now)
   })
   guard('volumes', () => {
     const first = detachedVolumes(readJson(join(dir, 'volumes-1.json')))
