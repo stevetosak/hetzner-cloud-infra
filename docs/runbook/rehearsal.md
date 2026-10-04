@@ -27,7 +27,7 @@ transcript.
 1. In the Hetzner console, create a project named `tosak-rehearsal`. In it,
    create two API tokens: one **Read & Write** for kluster, one **Read** for
    the watcher.
-2. In Cloudflare R2, create the bucket `hetzner-cloud-infra-rehearsal` and an
+2. In Cloudflare R2, create the bucket `hetzner-cloud-infra-staging` and an
    R2 API token with Object Read & Write **on that bucket only**. Rehearsal
    state never shares the live bucket or its token.
 3. Keep the three kluster values in the password manager and in a file

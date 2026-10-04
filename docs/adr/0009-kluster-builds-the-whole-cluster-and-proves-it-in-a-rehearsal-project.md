@@ -156,7 +156,7 @@ The decision said the rehearsal keeps its Terraform state under "its own R2
 state prefix". A prefix in the live bucket would have used the live bucket's
 token, so a fault in how kluster picks the state key could write rehearsal
 state over a live one, and only kluster's own code would stand in the way. The
-rehearsal state lives instead in the bucket `hetzner-cloud-infra-rehearsal`,
+rehearsal state lives instead in the bucket `hetzner-cloud-infra-staging`,
 reached with an R2 token scoped to that bucket alone: a rehearsal run holds no
 credential that can write live state. kluster's configuration refuses a
 rehearsal environment that names the live bucket, token or keys, and refuses

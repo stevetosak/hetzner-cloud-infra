@@ -60,7 +60,7 @@ func TestRehearsalTerraformEnvCarriesNoLiveCredential(t *testing.T) {
 	if got["PATH"] != "/usr/bin" || got["TF_PLUGIN_CACHE_DIR"] != "/c" {
 		t.Error("harmless variables were dropped")
 	}
-	if b := e.BackendConfig(); len(b) != 1 || b[0] != "bucket=hetzner-cloud-infra-rehearsal" {
+	if b := e.BackendConfig(); len(b) != 1 || b[0] != "bucket=hetzner-cloud-infra-staging" {
 		t.Errorf("BackendConfig = %v", b)
 	}
 }

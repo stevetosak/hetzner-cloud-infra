@@ -67,7 +67,7 @@ envs:
     r2SecretAccessKeyEnv: KLUSTER_REHEARSAL_R2_SECRET_ACCESS_KEY
     # Its own bucket and a token scoped to it alone, so a rehearsal run holds no
     # credential that can write live state (ADR 0009, Amendments).
-    stateBucket: hetzner-cloud-infra-rehearsal
+    stateBucket: hetzner-cloud-infra-staging
     # The live Control Plane's public address. A rehearsal run refuses a
     # project that holds it: that would be the live project under the wrong
     # name.
