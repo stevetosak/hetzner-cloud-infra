@@ -30,11 +30,15 @@ func WithoutSSH(rules []hcloud.FirewallRule) []hcloud.FirewallRule {
 }
 
 // SSHOpen reads the named firewall from the API and reports whether it admits
-// port 22.
+// port 22. A firewall that does not exist yet, as in an empty rehearsal
+// project, admits nothing.
 func (c *Client) SSHOpen(ctx context.Context, name string) (bool, error) {
-	fw, err := c.firewall(ctx, name)
+	fw, _, err := c.h.Firewall.GetByName(ctx, name)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("reading firewall %s: %w", name, err)
+	}
+	if fw == nil {
+		return false, nil
 	}
 	for _, r := range fw.Rules {
 		if IsSSHRule(r) {
