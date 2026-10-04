@@ -176,15 +176,17 @@ func (a *app) buildControlPlane(ctx context.Context, srv *cloud.Server) error {
 	cp := a.cfg.ControlPlane
 	opts := stage.Options{Apply: true, Out: a.out}
 
-	cb, err := a.pins.Callback()
-	if err != nil {
-		return err
-	}
 	auth, err := remote.Auth(a.cfg.SSH.IdentityFile)
 	if err != nil {
 		return err
 	}
+	// The callback is made at each dial: knownhosts reads the pins file
+	// once, and the rotation changes it.
 	dialRoot := func(wait time.Duration) (*remote.Client, error) {
+		cb, err := a.pins.Callback()
+		if err != nil {
+			return nil, err
+		}
 		wctx, cancel := context.WithTimeout(ctx, wait)
 		defer cancel()
 		return remote.DialWait(wctx, srv.PublicIP, remote.Config{User: "root", Auth: auth, HostKeyCallback: cb}, 5*time.Second)
@@ -193,8 +195,12 @@ func (a *app) buildControlPlane(ctx context.Context, srv *cloud.Server) error {
 	if err != nil {
 		return fmt.Errorf("first login to %s: %w", cp.Name, err)
 	}
-	defer func() { _ = c.Close() }()
 	h := &stage.Host{Name: cp.Name, Addr: srv.PublicIP, Exec: c}
+	defer func() {
+		if c, ok := h.Exec.(*remote.Client); ok && c != nil {
+			_ = c.Close()
+		}
+	}()
 	fmt.Fprintf(a.out, "[%s] login as root verified against the pinned host key\n", cp.Name)
 
 	switch m, err := stages.ReadMarker(ctx, h); {
@@ -213,6 +219,7 @@ func (a *app) buildControlPlane(ctx context.Context, srv *cloud.Server) error {
 		return err
 	}
 	_ = c.Close()
+	h.Exec = nil
 	if c, err = dialRoot(time.Minute); err != nil {
 		return fmt.Errorf("login after the host key rotation: %w", err)
 	}
@@ -282,6 +289,7 @@ func (a *app) cpStages(srv *cloud.Server) ([]stage.Stage, error) {
 		return nil, err
 	}
 	return []stage.Stage{
+		stages.PrivateNetwork{Interface: c.Node.NetworkInterface, MAC: srv.PrivateMAC, IP: cp.PrivateIP},
 		stages.BaseHost{User: cp.SSHUser, Containerd: c.Versions.Containerd, Runc: c.Versions.Runc, CNIPlugins: c.Versions.CNIPlugins},
 		stages.WireGuardHub{Address: cp.VpnIP + "/" + strconv.Itoa(subnet.Bits()), Port: c.WireGuard.Port, Peers: c.WireGuard.Peers},
 		stages.KubePrep{Minor: c.Versions.Kubernetes, Endpoint: cp.Endpoint, PrivateIP: cp.PrivateIP},

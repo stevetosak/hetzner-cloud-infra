@@ -44,9 +44,20 @@ func OpenPins(path string) (*Pins, error) {
 }
 
 // Callback verifies a server's host key against the pins. An address with no
-// pin is refused, never learned.
+// pin is refused, never learned. It reads the file at each check, not once:
+// knownhosts.New alone keeps the keys of the moment it was made, and a
+// callback made before a rotation then refuses the rotated key.
 func (p *Pins) Callback() (ssh.HostKeyCallback, error) {
-	return knownhosts.New(p.path)
+	if _, err := knownhosts.New(p.path); err != nil {
+		return nil, err
+	}
+	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		cb, err := knownhosts.New(p.path)
+		if err != nil {
+			return err
+		}
+		return cb(hostname, remote, key)
+	}, nil
 }
 
 // Set pins exactly keys for addr, dropping every earlier pin for it.

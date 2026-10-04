@@ -47,6 +47,35 @@ func TestUserDataInstallsExactlyTheKey(t *testing.T) {
 	}
 }
 
+// The 2026-10-04 rehearsal: a callback made before the rotation refused the
+// rotated key, and the login after the rotation failed.
+func TestCallbackSeesPinsSetAfterItWasMade(t *testing.T) {
+	pins, err := OpenPins(filepath.Join(t.TempDir(), "known_hosts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	seeded, _ := Generate()
+	rotated, _ := Generate()
+	addr := "203.0.113.9"
+	if err := pins.Set(addr, seeded.Public); err != nil {
+		t.Fatal(err)
+	}
+	cb, err := pins.Callback()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pins.Set(addr, rotated.Public); err != nil {
+		t.Fatal(err)
+	}
+	remote := &net.TCPAddr{IP: net.ParseIP(addr), Port: 22}
+	if err := cb(HostPort(addr), remote, rotated.Public); err != nil {
+		t.Fatalf("the rotated key was refused by an earlier callback: %v", err)
+	}
+	if err := cb(HostPort(addr), remote, seeded.Public); err == nil {
+		t.Fatal("the replaced seeded key is still accepted")
+	}
+}
+
 func TestUserDataWritesFiles(t *testing.T) {
 	kp, _ := Generate()
 	ud, err := UserData(kp, File{Path: "/etc/kluster/cp-init", Content: "running\n", Permissions: "0644"})

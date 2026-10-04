@@ -114,6 +114,19 @@ func TestOpenRefusesAPlanThatTouchesTheOtherFirewall(t *testing.T) {
 	}
 }
 
+// A resume after a run that stopped before its close, or after `ssh open`.
+func TestOpenAcceptsAnAlreadyOpenFirewallOnlyIfTheAPIAgrees(t *testing.T) {
+	api := &fakeAPI{open: map[string]bool{"tosak-cp-firewall": true}}
+	g := &Gate{Shared: &fakeShared{}, API: api, Mode: tf.Mode{Apply: true}, Out: io.Discard}
+	if err := g.Open(context.Background(), ControlPlane); err != nil {
+		t.Fatalf("an already open firewall was refused: %v", err)
+	}
+	api.open["tosak-cp-firewall"] = false
+	if err := g.Open(context.Background(), ControlPlane); err == nil {
+		t.Fatal("a clean plan with no rule in the API passed as open")
+	}
+}
+
 func TestOpenReadsBack(t *testing.T) {
 	shared := &fakeShared{plans: [][]intent.Change{closeWorker}}
 	api := &fakeAPI{open: map[string]bool{}}

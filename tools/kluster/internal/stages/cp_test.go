@@ -55,7 +55,7 @@ func TestProbeReportsFailedChecksByName(t *testing.T) {
 func TestProbeWritesNothing(t *testing.T) {
 	sh := &scriptHost{}
 	h := &stage.Host{Name: "cp", Exec: sh}
-	for _, s := range []stage.Stage{BaseHost{}, WireGuardHub{}, KubePrep{}, KubeadmInit{ServiceCIDR: "10.96.0.0/16"},
+	for _, s := range []stage.Stage{PrivateNetwork{}, BaseHost{}, WireGuardHub{}, KubePrep{}, KubeadmInit{ServiceCIDR: "10.96.0.0/16"},
 		Flannel{}, CloudController{}, CSI{}} {
 		if _, err := s.Probe(context.Background(), h); err != nil {
 			t.Fatalf("%s: %v", s.Name(), err)
@@ -91,9 +91,10 @@ func TestKubeadmSANCheck(t *testing.T) {
 
 func TestKubeadmInitNeverShowsTheJoinToken(t *testing.T) {
 	k := KubeadmInit{Endpoint: "e", PrivateIP: "p", VpnIP: "v", PublicIP: "x", PodCIDR: "a", ServiceCIDR: "10.96.0.0/16"}
-	s := k.init()
-	if !strings.Contains(s, "> "+initLog) || !strings.Contains(s, "grep -v -e 'kubeadm join' -e 'discovery-token'") {
-		t.Fatalf("init output is not kept from the terminal:\n%s", s)
+	for log, s := range map[string]string{initLog: k.init(), dryRunLog: k.dryRun()} {
+		if !strings.Contains(s, "> "+log+" 2>&1") || !strings.Contains(s, noToken(log)) || strings.Contains(s, "| grep 'apiserver") {
+			t.Fatalf("kubeadm output is not kept from the terminal, or a pipe hides its error:\n%s", s)
+		}
 	}
 }
 
@@ -134,7 +135,7 @@ func TestCompleteBuildReadsTheMarker(t *testing.T) {
 
 func TestPlanNewPreviewsEveryStageWithoutAHost(t *testing.T) {
 	var b strings.Builder
-	all := []stage.Stage{RotateHostKey{}, BaseHost{User: "cp-dev"}, WireGuardHub{}, KubePrep{}, KubeadmInit{ServiceCIDR: "10.96.0.0/16"},
+	all := []stage.Stage{RotateHostKey{}, PrivateNetwork{}, BaseHost{User: "cp-dev"}, WireGuardHub{}, KubePrep{}, KubeadmInit{ServiceCIDR: "10.96.0.0/16"},
 		Flannel{}, CloudController{}, CSI{}, CompleteBuild{}}
 	if err := stage.PlanNew(context.Background(), all, "k8s-cp", &b); err != nil {
 		t.Fatal(err)

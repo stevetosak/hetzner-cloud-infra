@@ -23,7 +23,7 @@ import (
 )
 
 func init() {
-	sshCmd.AddCommand(sshCloseCmd)
+	sshCmd.AddCommand(sshCloseCmd, sshOpenCmd)
 	rehearseCmd.AddCommand(rehearseCoreCmd)
 	rootCmd.AddCommand(sharedCmd, sshCmd, downCmd, rehearseCmd, versionCmd)
 }
@@ -71,6 +71,26 @@ var sshCloseCmd = &cobra.Command{
 				return err
 			}
 			return g.Close(ctx)
+		})
+	},
+}
+
+var sshOpenCmd = &cobra.Command{
+	Use:   "open",
+	Short: "Open bootstrap SSH on the Control Plane firewall, to inspect a rehearsal host (refused for live)",
+	Long: "For looking at a rehearsal server by hand after a failed run. The open is read back over the " +
+		"API; close it with `kluster --env rehearsal ssh close`, and every cp init closes it at its end anyway.",
+	Args: cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		return run(cmd, func(ctx context.Context, a *app) error {
+			if err := a.requireRehearsal("kluster ssh open"); err != nil {
+				return err
+			}
+			g, err := a.gate(ctx)
+			if err != nil {
+				return err
+			}
+			return g.Open(ctx, sshgate.ControlPlane)
 		})
 	},
 }

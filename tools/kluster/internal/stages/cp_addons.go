@@ -99,14 +99,16 @@ done
 }
 
 func (c CloudController) checks() []check {
-	node := adminKubectl + "kubectl get node " + c.Node + " -o jsonpath="
+	// adminKubectl is a line of its own, so it leads each check: a `!`
+	// before it would negate the export, not the check.
+	node := "kubectl get node " + c.Node + " -o jsonpath="
 	return []check{
 		{"secret-network", adminKubectl + `[ "$(kubectl -n kube-system get secret hcloud -o jsonpath='{.data.network}' | base64 -d)" = ` + c.Network + ` ]`},
 		{"secret-token", adminKubectl + `[ -n "$(kubectl -n kube-system get secret hcloud -o jsonpath='{.data.token}')" ]`},
 		{"ccm", adminKubectl + "kubectl -n kube-system rollout status deploy/hcloud-cloud-controller-manager --timeout=5s"},
-		{"provider-id", `[ "$(` + node + `'{.spec.providerID}')" = hcloud://` + c.ServerID + ` ]`},
-		{"initialized", `! ` + node + `'{.spec.taints[*].key}' | grep -q uninitialized`},
-		{"internal-ip", `[ "$(` + node + `'{.status.addresses[?(@.type=="InternalIP")].address}')" = ` + c.PrivateIP + ` ]`},
+		{"provider-id", adminKubectl + `[ "$(` + node + `'{.spec.providerID}')" = hcloud://` + c.ServerID + ` ]`},
+		{"initialized", adminKubectl + `! ` + node + `'{.spec.taints[*].key}' | grep -q uninitialized`},
+		{"internal-ip", adminKubectl + `[ "$(` + node + `'{.status.addresses[?(@.type=="InternalIP")].address}')" = ` + c.PrivateIP + ` ]`},
 	}
 }
 

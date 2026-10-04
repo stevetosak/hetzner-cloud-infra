@@ -17,6 +17,7 @@ type Server struct {
 	Status           string
 	PublicIP         string
 	PrivateIPs       []string
+	PrivateMAC       string // the NIC on the private network
 	DeleteProtected  bool
 	RebuildProtected bool
 }
@@ -43,6 +44,9 @@ func (c *Client) Server(ctx context.Context, name string) (*Server, error) {
 	for _, n := range s.PrivateNet {
 		if n.IP != nil {
 			out.PrivateIPs = append(out.PrivateIPs, n.IP.String())
+		}
+		if out.PrivateMAC == "" {
+			out.PrivateMAC = n.MACAddress
 		}
 	}
 	return out, nil

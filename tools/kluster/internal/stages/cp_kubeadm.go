@@ -33,15 +33,34 @@ func (k KubeadmInit) flags() string {
 		k.Endpoint, k.PrivateIP, k.PodCIDR, k.ServiceCIDR, k.VpnIP, k.PublicIP)
 }
 
+// dryRunLog holds the dry run's output, which prints a join command too.
+const dryRunLog = "/root/kluster-kubeadm-dry-run.log"
+
+// noToken shows the end of a kubeadm log without its join command.
+func noToken(log string) string {
+	return "grep -v -e 'kubeadm join' -e 'discovery-token' -e '--token' " + log + " | tail -n 30"
+}
+
 func (k KubeadmInit) dryRun() string {
-	return "kubeadm init --dry-run " + k.flags() + " 2>&1 | grep 'apiserver serving cert is signed for'\n"
+	return `umask 077
+if ! kubeadm init --dry-run ` + k.flags() + ` > ` + dryRunLog + ` 2>&1; then
+  ` + noToken(dryRunLog) + `
+  exit 1
+fi
+if ! grep 'apiserver serving cert is signed for' ` + dryRunLog + `; then
+  echo 'the dry run printed no serving certificate line'
+  ` + noToken(dryRunLog) + `
+  exit 1
+fi
+rm -f ` + dryRunLog + `
+`
 }
 
 func (k KubeadmInit) init() string {
 	return `rm -rf /etc/kubernetes/tmp
 umask 077
 if ! kubeadm init ` + k.flags() + ` > ` + initLog + ` 2>&1; then
-  grep -v -e 'kubeadm join' -e 'discovery-token' ` + initLog + ` | tail -n 30
+  ` + noToken(initLog) + `
   exit 1
 fi
 rm -f ` + initLog + `
