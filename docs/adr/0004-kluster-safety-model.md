@@ -15,6 +15,10 @@ names at all. Worker names are now stable and the suffix machinery is deleted.
 Everything else here — plan mode, intent assertion, the `--apply` abort, and
 closing `allow_public_ssh` — stands.
 
+**Widened by [ADR 0009](./0009-kluster-builds-the-whole-cluster-and-proves-it-in-a-rehearsal-project.md) (2026-10-04).** kluster now builds the Control Plane too, but
+only into an empty slot, and never lifts its guards. The line below that says
+kluster never touches the Control Plane no longer holds; see the Amendments.
+
 ## Context
 
 kluster replaced a set of bash bootstrap scripts. Its first real use destroyed
@@ -92,3 +96,14 @@ bootstrapping finishes.
   matching their current live names, or the first apply renames and therefore
   destroys them. This migration is the exact failure the ADR exists to prevent
   and must be done by reading live names, not by guessing.
+
+## Amendments
+
+**2026-10-04 — kluster reaches the Control Plane, inside limits.** The
+decision above says kluster "never touches the Control Plane". That was
+already only nearly true: `node add` appends a peer to the hub's `wg0.conf`.
+[ADR 0009](./0009-kluster-builds-the-whole-cluster-and-proves-it-in-a-rehearsal-project.md) makes it untrue on purpose: `kluster cp init` creates and bootstraps
+the Control Plane when none exists. It never lifts `prevent_destroy`,
+`delete_protection` or `rebuild_protection`, and never destroys, so the
+[ADR 0002](./0002-control-plane-isolation.md) guards keep their full weight. Plan Mode also grows from the Terraform
+plan to the hosts: read-only probes and diffs of every file it would edit.

@@ -173,14 +173,54 @@ _Avoid_: ingress, ingress rule.
 
 ## Reset
 
-Destroying and recreating **every Worker**, then re-bootstrapping them. A
-routine, expected operation. Does not touch the Control Plane.
+Replacing **every Worker**, one at a time: each is drained, destroyed,
+recreated under the same name and bootstrapped, and the next one starts only
+when the cluster and its database are healthy again. There is never a moment
+with no Worker. A routine, expected operation. Does not touch the Control
+Plane.
+
+## Replace
+
+Destroying one Worker and creating it again under the same name, then
+bootstrapping it. A Reset is a Replace of each Worker in turn.
 
 ## Bootstrap
 
 Bringing a freshly created server from bare Ubuntu to cluster membership.
 Worker bootstrap and Control Plane bootstrap are different procedures with
-different stages; only Worker bootstrap is currently automated.
+different Stages. Each procedure is written as a runbook first; kluster
+follows the runbook, never the other way round.
+
+## Stage
+
+One named step of a Bootstrap, run on one server — base host setup, the
+container runtime, WireGuard, the join. Each Stage carries out one section of
+its runbook and names that section.
+
+A Stage can say, without changing anything, whether it is already done on a
+server — the same readback its runbook section uses as proof. So a Bootstrap
+that stopped halfway continues from the first Stage not yet done.
+
+## Generated Secret
+
+A secret value nobody issues — a random password for Redis, the database
+owner, a drill. Anything can make one, so a Bootstrap may create it when it is
+missing. Stored encrypted in the repository.
+
+## Issued Secret
+
+A secret value an outside provider makes — a Hetzner, Cloudflare, R2 or
+Telegram token, an OAuth client secret. Only the operator can obtain one, from
+that provider's console. Stored encrypted in the repository, except the few a
+Bootstrap needs before any cluster exists, which live in the password manager.
+
+## Derived Credential
+
+A credential the cluster makes for itself while it is built — certificates, a
+join token, the administrator's kubeconfig. Made fresh by each Bootstrap and
+never stored as a secret.
+
+_Avoid_: calling these secrets; they have no value to keep.
 
 ## Deploy Catalog
 
@@ -201,6 +241,11 @@ that a Worker operation cannot express the Control Plane.
 kluster's default behaviour: compute a Terraform plan, print it, check it
 against the command's declared intent, and change nothing. Acting requires an
 explicit `--apply`.
+
+The plan covers the hosts as well as Terraform. For a host that already
+exists, it shows each file edit as a diff against what the host holds now,
+read without changing it. For a host that does not exist yet, it shows the
+commands each Stage would run.
 
 kluster is a convenience over Terraform and the runbook — never the authority
 on how the cluster is built.
