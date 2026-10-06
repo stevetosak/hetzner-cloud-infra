@@ -48,7 +48,7 @@ func TestWorkerSetsPerEnv(t *testing.T) {
 
 // Each case changes one line of the committed file, so the refusal can only
 // come from that line.
-func TestValidateRefusesRehearsalSharingLive(t *testing.T) {
+func TestValidateRefusesUnsafeConfig(t *testing.T) {
 	committed, err := os.ReadFile("../../kluster.yaml")
 	if err != nil {
 		t.Fatal(err)
@@ -79,6 +79,12 @@ func TestValidateRefusesRehearsalSharingLive(t *testing.T) {
 		"no worker set": {
 			"workerSet: ../../infra/workers/rehearsal.tfvars", `workerSet: ""`,
 			"envs.rehearsal.workerSet is required",
+		},
+		"floating kubernetes patch": {
+			`kubernetes: "v1.37.0"`, `kubernetes: "v1.37"`, "exact release with its patch",
+		},
+		"pre-release kubernetes": {
+			`kubernetes: "v1.37.0"`, `kubernetes: "v1.37.0-rc.1"`, "exact release with its patch",
 		},
 		"sudo": {
 			"wireguardConf: ~/.config/kluster/rehearsal/wg0.conf",

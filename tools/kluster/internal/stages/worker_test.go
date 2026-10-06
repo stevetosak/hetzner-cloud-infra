@@ -120,21 +120,25 @@ func TestJoinKeepsTheTokenOffCommandLines(t *testing.T) {
 }
 
 func TestWorkerKubePrepHoldsCNIAndResolvesTheControlPlane(t *testing.T) {
-	k := KubePrep{Minor: "v1.37", Endpoint: "k8s-cp.tosak.internal", EndpointIP: "10.0.1.5", PrivateIP: "10.0.2.9", HoldCNI: true}
+	k := KubePrep{Version: "v1.37.0", Endpoint: "k8s-cp.tosak.internal", EndpointIP: "10.0.1.5", PrivateIP: "10.0.2.9", HoldCNI: true}
 	s := k.script()
-	for _, want := range []string{"apt-mark hold kubelet kubeadm kubectl kubernetes-cni\n", "'10.0.1.5  k8s-cp.tosak.internal'", "--node-ip=10.0.2.9 "} {
+	for _, want := range []string{"apt-mark hold kubelet kubeadm kubectl kubernetes-cni\n",
+		"/core:/stable:/v1.37/deb/", "kubelet='1.37.0-*' kubeadm='1.37.0-*' kubectl='1.37.0-*'", "'10.0.1.5  k8s-cp.tosak.internal'", "--node-ip=10.0.2.9 "} {
 		if !strings.Contains(s, want) {
 			t.Errorf("script lacks %q", want)
 		}
 	}
-	var held string
+	cmds := map[string]string{}
 	for _, c := range k.checks() {
-		if c.name == "held" {
-			held = c.cmd
-		}
+		cmds[c.name] = c.cmd
 	}
+	held := cmds["held"]
 	if !strings.Contains(held, "'kubelet|kubeadm|kubectl|kubernetes-cni')\" = 4") {
 		t.Fatalf("held check: %s", held)
+	}
+	// A host on another patch must not pass the probe: v1.37.1 is not v1.37.0.
+	if !strings.Contains(cmds["kubelet"], `grep -qx 'Kubernetes v1\.37\.0'`) {
+		t.Fatalf("kubelet check does not match the exact patch: %s", cmds["kubelet"])
 	}
 }
 

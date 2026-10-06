@@ -353,7 +353,7 @@ func (a *app) preJoinStages(h workerHost) []stage.Stage {
 			"docs/runbook/workers.md#3-base-host-setup"),
 		stages.At(stages.BaseHost{User: c.Node.User, Containerd: c.Versions.Containerd, Runc: c.Versions.Runc},
 			"docs/runbook/workers.md#3-base-host-setup"),
-		stages.At(stages.KubePrep{Minor: c.Versions.Kubernetes, Endpoint: c.ControlPlane.Endpoint,
+		stages.At(stages.KubePrep{Version: c.Versions.Kubernetes, Endpoint: c.ControlPlane.Endpoint,
 			EndpointIP: c.ControlPlane.PrivateIP, PrivateIP: h.Worker.PrivateIP, HoldCNI: true},
 			"docs/runbook/workers.md#5-kubernetes-packages-and-pre-join-configuration"),
 		stages.WireGuardSpoke{

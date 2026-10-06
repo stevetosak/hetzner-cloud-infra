@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"golang.org/x/mod/semver"
 	"gopkg.in/yaml.v3"
 )
 
@@ -100,6 +101,9 @@ type Versions struct {
 	Containerd string `yaml:"containerd"`
 	Runc       string `yaml:"runc"`
 	CNIPlugins string `yaml:"cniPlugins"`
+	// Kubernetes is an exact release, patch included (v1.37.0). The packages
+	// are pinned to it, so a Worker never gets a newer kubelet than the
+	// Control Plane it joins.
 	Kubernetes string `yaml:"kubernetes"`
 }
 
@@ -258,6 +262,9 @@ func (c *Config) validate() error {
 		if r.v == "" {
 			errs = append(errs, fmt.Errorf("%s is required", r.field))
 		}
+	}
+	if k := c.Versions.Kubernetes; semver.Canonical(k) != k || semver.Prerelease(k) != "" {
+		errs = append(errs, fmt.Errorf("versions.kubernetes %q must be an exact release with its patch, such as v1.37.0: a minor alone floats the patch", k))
 	}
 	if c.Cluster.PodMTU <= 0 || c.WireGuard.Port <= 0 {
 		errs = append(errs, errors.New("cluster.podMTU and wireguard.port are required"))

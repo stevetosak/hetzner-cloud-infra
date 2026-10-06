@@ -64,7 +64,9 @@ versions:
   containerd: "2.2.0"
   runc: "1.4.0"
   cniPlugins: "1.9.0"
-  kubernetes: "v1.37"
+  # The exact release of the live Control Plane. Every Worker installs this
+  # patch; an upgrade changes this line on purpose.
+  kubernetes: "v1.37.0"
 
 # Applied on the Control Plane by `kluster cp init`, relative to this file.
 manifests:
