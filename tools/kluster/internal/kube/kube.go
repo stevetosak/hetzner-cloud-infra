@@ -164,3 +164,63 @@ func ParsePods(b []byte) ([]Pod, error) {
 	}
 	return pods, nil
 }
+
+// Database is a CloudNativePG Cluster as the database gate reads it.
+type Database struct {
+	Namespace string
+	Name      string
+	Instances int
+	Ready     int
+	Phase     string
+}
+
+// Healthy reports whether every instance the Cluster asks for is ready.
+func (d Database) Healthy() bool { return d.Instances > 0 && d.Ready >= d.Instances }
+
+// cnpgClusters is the CloudNativePG Cluster resource.
+const cnpgClusters = "clusters.postgresql.cnpg.io"
+
+// Databases reads every CloudNativePG Cluster. A cluster without the CNPG
+// CRD has none: nil and no error.
+func (k Kubectl) Databases(ctx context.Context) ([]Database, error) {
+	crd, err := k.Run(ctx, "get", "crd", cnpgClusters, "--ignore-not-found", "-o", "name")
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(crd) == "" {
+		return nil, nil
+	}
+	out, err := k.Run(ctx, "get", cnpgClusters, "--all-namespaces", "-o", "json")
+	if err != nil {
+		return nil, err
+	}
+	return ParseDatabases([]byte(out))
+}
+
+// ParseDatabases reads `kubectl get clusters.postgresql.cnpg.io -o json`.
+func ParseDatabases(b []byte) ([]Database, error) {
+	var list struct {
+		Items []struct {
+			Metadata struct {
+				Namespace string `json:"namespace"`
+				Name      string `json:"name"`
+			} `json:"metadata"`
+			Spec struct {
+				Instances int `json:"instances"`
+			} `json:"spec"`
+			Status struct {
+				ReadyInstances int    `json:"readyInstances"`
+				Phase          string `json:"phase"`
+			} `json:"status"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(b, &list); err != nil {
+		return nil, fmt.Errorf("reading the CNPG Cluster list: %w", err)
+	}
+	dbs := make([]Database, 0, len(list.Items))
+	for _, it := range list.Items {
+		dbs = append(dbs, Database{Namespace: it.Metadata.Namespace, Name: it.Metadata.Name,
+			Instances: it.Spec.Instances, Ready: it.Status.ReadyInstances, Phase: it.Status.Phase})
+	}
+	return dbs, nil
+}

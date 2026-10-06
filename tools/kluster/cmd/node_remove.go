@@ -14,6 +14,7 @@ import (
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/filediff"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/intent"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/kube"
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/provision"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/sshgate"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/stage"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/stages"
@@ -128,17 +129,23 @@ func (a *app) retireOnControlPlane(ctx context.Context, w workerset.Worker) erro
 		fmt.Fprintf(a.out, "the project has no %s: no Node and no hub peer of %s to remove\n", cpName, w.Name)
 		return nil
 	}
-	retire := []stage.Stage{
-		stages.Drain{Node: w.Name, Timeout: drainTimeout},
-		stages.DeleteNode{Node: w.Name},
-		stages.HubPeerRemove{AllowedIPs: w.VpnIP + "/32", Now: time.Now},
-	}
+	retire := retireStages(w)
 	return a.onControlPlane(ctx, func(cp *stage.Host) error {
 		if cp == nil {
 			return stage.PlanNew(ctx, retire, cpName, a.out)
 		}
 		return stage.Run(ctx, retire, cp, stage.Options{Apply: a.mode.Apply, Out: a.out})
 	})
+}
+
+// retireStages take a Worker out of the cluster and the hub, on the
+// Control Plane.
+func retireStages(w workerset.Worker) []stage.Stage {
+	return []stage.Stage{
+		stages.Drain{Node: w.Name, Timeout: drainTimeout},
+		stages.DeleteNode{Node: w.Name},
+		stages.HubPeerRemove{AllowedIPs: w.VpnIP + "/32", Now: time.Now},
+	}
 }
 
 // deleteWorkerServer is run 2: the server of a Worker the set no longer
@@ -193,7 +200,7 @@ func deleteIntent(name string) intent.Intent {
 	return intent.Intent{
 		Description: "delete Worker " + name,
 		Expectations: []intent.Expectation{{
-			Address: fmt.Sprintf(`hcloud_server.workers[%q]`, name), Actions: []intent.Action{intent.Delete}, Required: true,
+			Address: provision.WorkerAddress(name), Actions: []intent.Action{intent.Delete}, Required: true,
 		}},
 	}
 }

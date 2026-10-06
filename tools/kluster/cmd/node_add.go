@@ -22,6 +22,7 @@ import (
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/sshgate"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/stage"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/stages"
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/tf"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/wgconf"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/workerset"
 )
@@ -63,7 +64,7 @@ func checkWorkerName(name, controlPlane string) error {
 	return nil
 }
 
-func nodeAdd(ctx context.Context, a *app, name string) (err error) {
+func nodeAdd(ctx context.Context, a *app, name string) error {
 	if err := checkWorkerName(name, a.cfg.ControlPlane.Name); err != nil {
 		return err
 	}
@@ -111,6 +112,24 @@ func nodeAdd(ctx context.Context, a *app, name string) (err error) {
 		fmt.Fprintf(a.out, "%s exists at %s and kluster created it: resuming its build\n", name, srv.PublicIP)
 	}
 
+	return a.withBootstrapSSH(ctx, func() error {
+		if srv != nil && !a.mode.Apply {
+			fmt.Fprintln(a.out, "Plan Mode: --apply opens SSH, logs in and runs every Stage whose Probe says it is not done")
+			return nil
+		}
+		cp, closeCP, err := a.reachControlPlane(ctx)
+		if err != nil {
+			return err
+		}
+		defer closeCP()
+		return a.createAndBuild(ctx, workers, w, srv, cpSrv, cp)
+	})
+}
+
+// withBootstrapSSH opens bootstrap SSH on the Worker firewall, and in a
+// rehearsal on the Control Plane's too (it reaches its Control Plane that
+// way), in one plan. It closes both at the end, failed runs included.
+func (a *app) withBootstrapSSH(ctx context.Context, fn func() error) (err error) {
 	g, err := a.gate(ctx)
 	if err != nil {
 		return err
@@ -124,7 +143,6 @@ func nodeAdd(ctx context.Context, a *app, name string) (err error) {
 			err = errors.Join(err, cerr)
 		}
 	}()
-	// A rehearsal reaches its Control Plane through bootstrap SSH too.
 	fws := []sshgate.Firewall{sshgate.Worker}
 	if !a.env.IsLive() {
 		fws = append(fws, sshgate.ControlPlane)
@@ -132,33 +150,28 @@ func nodeAdd(ctx context.Context, a *app, name string) (err error) {
 	if err := g.Open(ctx, fws...); err != nil {
 		return err
 	}
-	if srv != nil && !a.mode.Apply {
-		fmt.Fprintln(a.out, "Plan Mode: --apply opens SSH, logs in and runs every Stage whose Probe says it is not done")
-		return nil
-	}
+	return fn()
+}
 
-	cp, closeCP, err := a.reachControlPlane(ctx)
-	if err != nil {
-		return err
-	}
-	defer closeCP()
-
+// createAndBuild creates a declared Worker's server if it has none, and
+// builds it.
+func (a *app) createAndBuild(ctx context.Context, workers *tf.Module, w workerset.Worker, srv, cpSrv *cloud.Server, cp *stage.Host) error {
 	if srv == nil {
-		if err := a.checkNoNode(ctx, cp, name); err != nil {
+		if err := a.checkNoNode(ctx, cp, w.Name); err != nil {
 			return err
 		}
-		created, err := provision.CreateWorkers(ctx, workers, []string{name}, a.pins, a.mode, a.out)
+		created, err := provision.CreateWorkers(ctx, workers, []string{w.Name}, a.pins, a.mode, a.out)
 		if err != nil {
 			return err
 		}
 		if len(created) == 0 {
 			return a.planNewWorker(ctx, w, cpSrv, cp)
 		}
-		if srv, err = a.api.Server(ctx, name); err != nil {
+		if srv, err = a.api.Server(ctx, w.Name); err != nil {
 			return err
 		}
 		if srv == nil {
-			return fmt.Errorf("terraform created %s, but the API has no such server", name)
+			return fmt.Errorf("terraform created %s, but the API has no such server", w.Name)
 		}
 	}
 	if err := checkNewWorker(srv, w); err != nil {

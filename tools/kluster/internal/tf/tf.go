@@ -106,6 +106,12 @@ type Plan struct {
 // Plan plans the Module with vars and saves the plan in the run directory.
 // The Hetzner token is added to vars here, so no caller handles it.
 func (m *Module) Plan(ctx context.Context, vars map[string]any) (*Plan, error) {
+	return m.PlanReplace(ctx, vars)
+}
+
+// PlanReplace is Plan with -replace for each address: Terraform plans each
+// of those resources to be destroyed and created again.
+func (m *Module) PlanReplace(ctx context.Context, vars map[string]any, replace ...string) (*Plan, error) {
 	all := map[string]any{"HCLOUD_TOKEN": m.env.HcloudToken()}
 	for k, v := range vars {
 		all[k] = v
@@ -123,6 +129,9 @@ func (m *Module) Plan(ctx context.Context, vars map[string]any) (*Plan, error) {
 	var opts []tfexec.PlanOption
 	for _, f := range append(slices.Clone(m.varFiles), varFile) {
 		opts = append(opts, tfexec.VarFile(f))
+	}
+	for _, r := range replace {
+		opts = append(opts, tfexec.Replace(r))
 	}
 	if _, err := m.tf.Plan(ctx, append(opts, tfexec.Out(planFile))...); err != nil {
 		return nil, fmt.Errorf("terraform plan %s: %w", m.Name, err)
