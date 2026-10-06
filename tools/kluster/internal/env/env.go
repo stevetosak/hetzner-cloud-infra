@@ -162,10 +162,14 @@ func (e *Environment) HcloudClusterToken() (string, error) {
 // backend kluster uses. Every other environment has its own, so its init
 // never repoints the live one.
 func (e *Environment) DataDir(moduleDir string) string {
+	return filepath.Join(moduleDir, e.dataDirName())
+}
+
+func (e *Environment) dataDirName() string {
 	if e.IsLive() {
-		return filepath.Join(moduleDir, ".terraform")
+		return ".terraform"
 	}
-	return filepath.Join(moduleDir, ".terraform-"+e.Name)
+	return ".terraform-" + e.Name
 }
 
 // BackendConfig returns the -backend-config overrides for this environment.
@@ -178,17 +182,50 @@ func (e *Environment) BackendConfig() []string {
 }
 
 // strippedPrefixes are the shell variables that could carry another
-// environment's credentials or change what terraform does.
-var strippedPrefixes = []string{"TF_", "AWS_", "HCLOUD_"}
+// environment's credentials, change what terraform does, or open the vault
+// (BW_SESSION): no child process reads the password manager.
+var strippedPrefixes = []string{"TF_", "AWS_", "HCLOUD_", "BW_"}
 
 // keptTF are the TF_* variables that change only where providers are cached.
 var keptTF = map[string]bool{"TF_PLUGIN_CACHE_DIR": true}
 
 // TerraformEnv builds the environment of a terraform child process from base
-// (normally os.Environ()). Every TF_*, AWS_* and HCLOUD_* variable is dropped,
-// then this environment's R2 keys and data directory are set. The Hetzner
-// token is not here: it goes in the run's var file.
+// (normally os.Environ()): the clean base, this environment's R2 keys and
+// data directory. The Hetzner token is not here: it goes in the run's var
+// file.
 func (e *Environment) TerraformEnv(base []string, moduleDir string) map[string]string {
+	out := clean(base)
+	e.setR2(out)
+	out["TF_DATA_DIR"] = e.DataDir(moduleDir)
+	return out
+}
+
+// ExecEnv builds the environment of a command the operator runs with
+// `kluster exec`, in place of sourcing infra/.envrc: the clean base, the R2
+// keys and the Hetzner token as TF_VAR_HCLOUD_TOKEN. Outside live it also
+// points terraform at this environment's data directory and state bucket;
+// both are relative to the Module, so `terraform -chdir=<module>` works.
+// The cluster token is not here: only a Control Plane build hands it on.
+func (e *Environment) ExecEnv(base []string) map[string]string {
+	out := clean(base)
+	e.setR2(out)
+	out["TF_VAR_HCLOUD_TOKEN"] = e.creds.hcloudToken
+	if e.IsLive() {
+		return out
+	}
+	out["TF_DATA_DIR"] = e.dataDirName()
+	var args []string
+	for _, b := range e.BackendConfig() {
+		args = append(args, "-backend-config="+b)
+	}
+	if len(args) > 0 {
+		out["TF_CLI_ARGS_init"] = strings.Join(args, " ")
+	}
+	return out
+}
+
+// clean copies base without the stripped variables.
+func clean(base []string) map[string]string {
 	out := make(map[string]string, len(base))
 	for _, kv := range base {
 		k, v, _ := strings.Cut(kv, "=")
@@ -197,10 +234,12 @@ func (e *Environment) TerraformEnv(base []string, moduleDir string) map[string]s
 		}
 		out[k] = v
 	}
-	out["AWS_ACCESS_KEY_ID"] = e.creds.r2KeyID
-	out["AWS_SECRET_ACCESS_KEY"] = e.creds.r2Secret
-	out["TF_DATA_DIR"] = e.DataDir(moduleDir)
 	return out
+}
+
+func (e *Environment) setR2(env map[string]string) {
+	env["AWS_ACCESS_KEY_ID"] = e.creds.r2KeyID
+	env["AWS_SECRET_ACCESS_KEY"] = e.creds.r2Secret
 }
 
 func hasAnyPrefix(s string, prefixes []string) bool {

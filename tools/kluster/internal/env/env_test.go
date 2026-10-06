@@ -96,3 +96,61 @@ func TestResolveNamesMissingVariables(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+// `kluster exec` replaces sourcing infra/.envrc: the child gets this
+// environment's token and keys, and nothing the shell held.
+func TestExecEnv(t *testing.T) {
+	base := []string{"PATH=/usr/bin", "TF_PLUGIN_CACHE_DIR=/c", "TF_DATA_DIR=/elsewhere",
+		"HCLOUD_TOKEN=live-token", "BW_SESSION=open-vault", "TF_CLI_ARGS_init=-upgrade"}
+	for k, v := range shell {
+		base = append(base, k+"="+v)
+	}
+
+	t.Run("rehearsal", func(t *testing.T) {
+		e, err := Resolve(context.Background(), testConfig(t), config.EnvRehearsal, lookup(shell), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := e.ExecEnv(base)
+		for k, v := range got {
+			if strings.HasPrefix(v, "live-") {
+				t.Errorf("%s carries a live credential", k)
+			}
+		}
+		want := map[string]string{
+			"TF_VAR_HCLOUD_TOKEN":   "rehearsal-token",
+			"AWS_ACCESS_KEY_ID":     "rehearsal-key",
+			"AWS_SECRET_ACCESS_KEY": "rehearsal-secret",
+			"TF_DATA_DIR":           ".terraform-rehearsal",
+			"TF_CLI_ARGS_init":      "-backend-config=bucket=hetzner-cloud-infra-staging",
+			"PATH":                  "/usr/bin",
+			"TF_PLUGIN_CACHE_DIR":   "/c",
+		}
+		for k, v := range want {
+			if got[k] != v {
+				t.Errorf("%s = %q, want %q", k, got[k], v)
+			}
+		}
+		for _, k := range []string{"HCLOUD_TOKEN", "BW_SESSION"} {
+			if _, ok := got[k]; ok {
+				t.Errorf("%s reached the child", k)
+			}
+		}
+	})
+
+	t.Run("live", func(t *testing.T) {
+		e, err := Resolve(context.Background(), testConfig(t), config.EnvLive, lookup(shell), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := e.ExecEnv(base)
+		if got["TF_VAR_HCLOUD_TOKEN"] != "live-token" || got["AWS_ACCESS_KEY_ID"] != "live-key" {
+			t.Error("live credentials are not set")
+		}
+		for _, k := range []string{"TF_DATA_DIR", "TF_CLI_ARGS_init", "BW_SESSION"} {
+			if _, ok := got[k]; ok {
+				t.Errorf("%s is set for live; the Module's own .terraform and backend.tf apply", k)
+			}
+		}
+	})
+}
