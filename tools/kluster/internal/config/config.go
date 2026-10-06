@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"golang.org/x/mod/semver"
 	"gopkg.in/yaml.v3"
 )
 
@@ -32,6 +33,7 @@ type Config struct {
 	ControlPlane ControlPlane   `yaml:"controlPlane"`
 	Cluster      Cluster        `yaml:"cluster"`
 	Node         Node           `yaml:"node"`
+	Workers      Workers        `yaml:"workers"`
 	WireGuard    WireGuard      `yaml:"wireguard"`
 	Versions     Versions       `yaml:"versions"`
 	Manifests    Manifests      `yaml:"manifests"`
@@ -71,6 +73,15 @@ type Node struct {
 	NetworkInterface string `yaml:"networkInterface"`
 }
 
+// Workers is how `node add` fills a new Worker's entry in the Worker set. A
+// new Worker takes the lowest free address of each pool.
+type Workers struct {
+	ServerType string `yaml:"serverType"`
+	// PrivateIPs and VpnIPs are inclusive ranges, "first-last".
+	PrivateIPs string `yaml:"privateIPs"`
+	VpnIPs     string `yaml:"vpnIPs"`
+}
+
 type WireGuard struct {
 	Subnet string `yaml:"subnet"`
 	Port   int    `yaml:"port"`
@@ -90,6 +101,9 @@ type Versions struct {
 	Containerd string `yaml:"containerd"`
 	Runc       string `yaml:"runc"`
 	CNIPlugins string `yaml:"cniPlugins"`
+	// Kubernetes is an exact release, patch included (v1.37.0). The packages
+	// are pinned to it, so a Worker never gets a newer kubelet than the
+	// Control Plane it joins.
 	Kubernetes string `yaml:"kubernetes"`
 }
 
@@ -113,7 +127,12 @@ type Env struct {
 	R2SecretAccessKeyEnv string `yaml:"r2SecretAccessKeyEnv"`
 	StateBucket          string `yaml:"stateBucket"`
 	RefuseProjectWithIP  string `yaml:"refuseProjectWithIP"`
-	Laptop               Laptop `yaml:"laptop"`
+	// WorkerSet is the tfvars file that declares this environment's
+	// Workers, relative to kluster.yaml. kluster passes it to the workers
+	// Module with -var-file, so it wins over terraform.tfvars, which
+	// Terraform loads in every environment.
+	WorkerSet string `yaml:"workerSet"`
+	Laptop    Laptop `yaml:"laptop"`
 }
 
 // Laptop is what kluster edits on the operator's own machine after a
@@ -235,11 +254,17 @@ func (c *Config) validate() error {
 		{"manifests.flannel", c.Manifests.Flannel},
 		{"manifests.ccm", c.Manifests.CCM},
 		{"manifests.csi", c.Manifests.CSI},
+		{"workers.serverType", c.Workers.ServerType},
+		{"workers.privateIPs", c.Workers.PrivateIPs},
+		{"workers.vpnIPs", c.Workers.VpnIPs},
 	}
 	for _, r := range required {
 		if r.v == "" {
 			errs = append(errs, fmt.Errorf("%s is required", r.field))
 		}
+	}
+	if k := c.Versions.Kubernetes; semver.Canonical(k) != k || semver.Prerelease(k) != "" {
+		errs = append(errs, fmt.Errorf("versions.kubernetes %q must be an exact release with its patch, such as v1.37.0: a minor alone floats the patch", k))
 	}
 	if c.Cluster.PodMTU <= 0 || c.WireGuard.Port <= 0 {
 		errs = append(errs, errors.New("cluster.podMTU and wireguard.port are required"))
@@ -252,6 +277,9 @@ func (c *Config) validate() error {
 		}
 		if e.HcloudTokenEnv == "" || e.R2AccessKeyIDEnv == "" || e.R2SecretAccessKeyEnv == "" {
 			errs = append(errs, fmt.Errorf("envs.%s must name hcloudTokenEnv, r2AccessKeyIDEnv and r2SecretAccessKeyEnv", name))
+		}
+		if e.WorkerSet == "" {
+			errs = append(errs, fmt.Errorf("envs.%s.workerSet is required", name))
 		}
 		if e.Laptop.WireGuardConf == "" || e.Laptop.Kubeconfig == "" || e.Laptop.ClusterName == "" {
 			errs = append(errs, fmt.Errorf("envs.%s.laptop must name wireguardConf, kubeconfig and clusterName", name))
@@ -270,6 +298,11 @@ func (c *Config) validate() error {
 			if r.HcloudTokenEnv == l.HcloudTokenEnv || r.R2AccessKeyIDEnv == l.R2AccessKeyIDEnv ||
 				r.R2SecretAccessKeyEnv == l.R2SecretAccessKeyEnv || r.StateBucket == l.StateBucket {
 				errs = append(errs, errors.New("envs.rehearsal must name its own token, R2 keys and bucket, not the live ones"))
+			}
+			// The same file would make `node add --env rehearsal` write the
+			// live Worker set.
+			if r.WorkerSet == l.WorkerSet {
+				errs = append(errs, errors.New("envs.rehearsal.workerSet must name its own file, not the live Worker set"))
 			}
 			// A rehearsal Control Plane has the live VPN addresses. Writing
 			// it into the operator's live WireGuard config or kubeconfig

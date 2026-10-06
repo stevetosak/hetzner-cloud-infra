@@ -45,6 +45,7 @@ func (s *syncBuffer) String() string {
 type Client struct {
 	conn *ssh.Client
 	host string
+	sudo bool
 }
 
 // Config is how to reach a host. HostKeyCallback is required: there is no
@@ -53,6 +54,9 @@ type Config struct {
 	User            string
 	Auth            ssh.AuthMethod
 	HostKeyCallback ssh.HostKeyCallback
+	// Sudo runs every command through `sudo -n`, for a login that is not
+	// root. -n fails instead of asking for a password nobody can type.
+	Sudo bool
 }
 
 // Dial connects to addr (host or host:port) and verifies its host key.
@@ -86,14 +90,18 @@ func DialVia(ctx context.Context, dial DialFunc, addr string, cfg Config) (*Clie
 		User:            cfg.User,
 		Auth:            []ssh.AuthMethod{cfg.Auth},
 		HostKeyCallback: cfg.HostKeyCallback,
-		Timeout:         10 * time.Second,
+		// kluster pins only ed25519 keys. The library asks for ECDSA and
+		// RSA first, so a host that also has those keys, such as the
+		// hand-built live Control Plane, would show one kluster never pinned.
+		HostKeyAlgorithms: []string{ssh.KeyAlgoED25519},
+		Timeout:           10 * time.Second,
 	})
 	if err != nil {
 		_ = nc.Close()
 		return nil, fmt.Errorf("ssh handshake with %s: %w", addr, err)
 	}
 	_ = nc.SetDeadline(time.Time{})
-	return &Client{conn: ssh.NewClient(conn, chans, reqs), host: host}, nil
+	return &Client{conn: ssh.NewClient(conn, chans, reqs), host: host, sudo: cfg.Sudo}, nil
 }
 
 // DialWait dials until the host answers or ctx ends, for a server that is
@@ -181,7 +189,7 @@ func (c *Client) Run(ctx context.Context, cmd string) (string, error) {
 	session.Stderr = &out
 
 	go func() {
-		runErr = session.Run(cmd)
+		runErr = session.Run(c.wrap(cmd))
 		close(done)
 	}()
 
@@ -225,7 +233,7 @@ func (c *Client) WriteFile(ctx context.Context, path, content string, mode os.Fi
 
 	done := make(chan error, 1)
 	go func() {
-		done <- session.Run(cmd)
+		done <- session.Run(c.wrap(cmd))
 	}()
 
 	if _, err := stdin.Write([]byte(content)); err != nil {
@@ -255,6 +263,15 @@ func (c *Client) ReadFile(ctx context.Context, path string) (string, error) {
 // Close closes the underlying SSH connection.
 func (c *Client) Close() error {
 	return c.conn.Close()
+}
+
+// wrap runs cmd as root through sudo when the login is not root. The
+// command keeps its own shell, so pipes and && stay inside sudo.
+func (c *Client) wrap(cmd string) string {
+	if !c.sudo {
+		return cmd
+	}
+	return "sudo -n sh -c " + shellQuote(cmd)
 }
 
 func shellQuote(s string) string {

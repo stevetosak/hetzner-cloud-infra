@@ -7,13 +7,16 @@ import (
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/stage"
 )
 
-// BaseHost is the Control Plane's base setup: the operator user, kernel
-// modules and sysctl, no swap, time sync, containerd, runc and the CNI
-// plugins. It runs as root, the only user a fresh Hetzner image has.
+// BaseHost is a host's base setup: the operator user, kernel modules and
+// sysctl, no swap, time sync, containerd, runc and the CNI plugins. It runs
+// as root, the only user a fresh Hetzner image has.
 type BaseHost struct {
-	User       string // cp-dev
+	User       string // cp-dev, or tosak on a Worker
 	Containerd string // 2.2.0
 	Runc       string // 1.4.0
+	// CNIPlugins is the plugin tarball's version. Empty: no tarball. The
+	// Workers drop it: kubernetes-cni installs into the same directory and
+	// owns every file there (docs/runbook/workers.md, step 4).
 	CNIPlugins string // 1.9.0
 }
 
@@ -60,21 +63,30 @@ sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.to
 systemctl daemon-reload
 systemctl enable --now containerd
 
-# runc %[3]s and CNI plugins %[4]s
+# runc %[3]s
 cd /tmp
 wget -q https://github.com/opencontainers/runc/releases/download/v%[3]s/runc.amd64
 install -m 755 runc.amd64 /usr/local/sbin/runc
-mkdir -p /opt/cni/bin
-wget -q https://github.com/containernetworking/plugins/releases/download/v%[4]s/cni-plugins-linux-amd64-v%[4]s.tgz
-tar -C /opt/cni/bin -xzf cni-plugins-linux-amd64-v%[4]s.tgz
-`, u, b.Containerd, b.Runc, b.CNIPlugins, heredoc("/etc/sysctl.d/k8s.conf", `net.bridge.bridge-nf-call-iptables  = 1
+%[4]s`, u, b.Containerd, b.Runc, b.cniScript(), heredoc("/etc/sysctl.d/k8s.conf", `net.bridge.bridge-nf-call-iptables  = 1
 net.bridge.bridge-nf-call-ip6tables = 1
 net.ipv4.ip_forward                 = 1`))
 }
 
+func (b BaseHost) cniScript() string {
+	if b.CNIPlugins == "" {
+		return ""
+	}
+	return fmt.Sprintf(`
+# CNI plugins %[1]s
+mkdir -p /opt/cni/bin
+wget -q https://github.com/containernetworking/plugins/releases/download/v%[1]s/cni-plugins-linux-amd64-v%[1]s.tgz
+tar -C /opt/cni/bin -xzf cni-plugins-linux-amd64-v%[1]s.tgz
+`, b.CNIPlugins)
+}
+
 func (b BaseHost) checks() []check {
 	u := b.User
-	return []check{
+	c := []check{
 		{"user", "id -u " + u},
 		{"sudo", "sudo -u " + u + " sudo -n true"},
 		{"authorized-keys", "cmp -s /root/.ssh/authorized_keys /home/" + u + "/.ssh/authorized_keys"},
@@ -85,8 +97,11 @@ func (b BaseHost) checks() []check {
 		{"containerd", "containerd --version | grep -qw v" + b.Containerd + " && systemctl is-active --quiet containerd && systemctl is-enabled --quiet containerd"},
 		{"systemd-cgroup", "grep -q 'SystemdCgroup = true' /etc/containerd/config.toml"},
 		{"runc", "runc --version | head -1 | grep -qw " + b.Runc},
-		{"cni-plugins", "[ -x /opt/cni/bin/bridge ]"},
 	}
+	if b.CNIPlugins != "" {
+		c = append(c, check{"cni-plugins", "[ -x /opt/cni/bin/bridge ]"})
+	}
+	return c
 }
 
 func (b BaseHost) Probe(ctx context.Context, h *stage.Host) (stage.Status, error) {

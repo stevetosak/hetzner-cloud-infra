@@ -21,8 +21,8 @@ type WireGuardHub struct {
 func (WireGuardHub) Name() string    { return "wireguard-hub" }
 func (WireGuardHub) Runbook() string { return "docs/runbook/control-plane.md#3-wireguard-hub" }
 
-// hubPublicKey is where the hub's public key is kept.
-const hubPublicKey = "/etc/wireguard/public.key"
+// wgPublicKey is where a host's WireGuard public key is kept.
+const wgPublicKey = "/etc/wireguard/public.key"
 
 func (w WireGuardHub) conf() string {
 	var b strings.Builder
@@ -41,7 +41,7 @@ func (w WireGuardHub) script() string {
 mkdir -p /etc/wireguard
 umask 077
 [ -s /etc/wireguard/private.key ] || wg genkey > /etc/wireguard/private.key
-wg pubkey < /etc/wireguard/private.key > ` + hubPublicKey + `
+wg pubkey < /etc/wireguard/private.key > ` + wgPublicKey + `
 chmod 600 /etc/wireguard/private.key
 
 cat > /etc/wireguard/wg0.conf <<EOF
@@ -80,7 +80,7 @@ func (w WireGuardHub) Act(ctx context.Context, h *stage.Host) error {
 
 // HubPublicKey reads the hub's public key from the host.
 func HubPublicKey(ctx context.Context, h *stage.Host) (string, error) {
-	out, err := h.Exec.Run(ctx, "cat "+hubPublicKey)
+	out, err := h.Exec.Run(ctx, "cat "+wgPublicKey)
 	if err != nil {
 		return "", err
 	}

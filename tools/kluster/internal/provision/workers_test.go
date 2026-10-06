@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"golang.org/x/crypto/ssh"
@@ -24,11 +25,17 @@ type fakeWorkers struct {
 	lastVars map[string]any
 	applied  map[string]any
 	ips      map[string]string
+	replaced []string
 }
 
 func (f *fakeWorkers) Plan(_ context.Context, vars map[string]any) (*tf.Plan, error) {
 	f.lastVars = vars
 	return &tf.Plan{Module: "workers", Changes: f.changes}, nil
+}
+
+func (f *fakeWorkers) PlanReplace(ctx context.Context, vars map[string]any, replace ...string) (*tf.Plan, error) {
+	f.replaced = replace
+	return f.Plan(ctx, vars)
 }
 
 func (f *fakeWorkers) Apply(context.Context, *tf.Plan) error { f.applied = f.lastVars; return nil }
@@ -59,7 +66,7 @@ func TestCreateWorkersSeedsAndPinsEachNewServer(t *testing.T) {
 		ips: map[string]string{"k8swk1": "203.0.113.1", "k8swk2": "203.0.113.2"},
 	}
 	pins := newPins(t)
-	got, err := CreateWorkers(context.Background(), m, pins, tf.Mode{Apply: true}, io.Discard)
+	got, err := CreateWorkers(context.Background(), m, nil, pins, tf.Mode{Apply: true}, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,11 +104,76 @@ func TestCreateWorkersRefusesAnyOtherChange(t *testing.T) {
 		{Address: `hcloud_server.workers["k8swk4"]`, Action: intent.Create},
 		{Address: `hcloud_server.workers["k8swk1"]`, Action: intent.Replace},
 	}}
-	_, err := CreateWorkers(context.Background(), m, newPins(t), tf.Mode{Apply: true}, io.Discard)
+	_, err := CreateWorkers(context.Background(), m, nil, newPins(t), tf.Mode{Apply: true}, io.Discard)
 	if !errors.Is(err, tf.ErrIntent) {
 		t.Fatalf("got %v", err)
 	}
 	if m.applied != nil {
 		t.Fatal("applied")
+	}
+}
+
+// node add names its one Worker: a plan that would also create another
+// declared Worker is refused before any key is made or anything applied.
+func TestCreateWorkersRefusesCreatesBeyondWant(t *testing.T) {
+	m := &fakeWorkers{changes: []intent.Change{
+		{Address: `hcloud_server.workers["k8swk4"]`, Action: intent.Create},
+		{Address: `hcloud_server.workers["k8swk5"]`, Action: intent.Create},
+	}}
+	_, err := CreateWorkers(context.Background(), m, []string{"k8swk4"}, newPins(t), tf.Mode{Apply: true}, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "k8swk5") {
+		t.Fatalf("got %v", err)
+	}
+	if m.applied != nil || m.lastVars != nil {
+		t.Fatal("planned with keys or applied")
+	}
+}
+
+// A replacement plans -replace of that one server with a new seeded key,
+// and pins that key at the new server's address.
+func TestReplaceWorkerSeedsAndPinsTheNewServer(t *testing.T) {
+	addr := `hcloud_server.workers["k8swk2"]`
+	m := &fakeWorkers{
+		changes: []intent.Change{{Address: addr, Action: intent.Replace}},
+		ips:     map[string]string{"k8swk1": "203.0.113.1", "k8swk2": "203.0.113.9"},
+	}
+	pins := newPins(t)
+	ip, err := ReplaceWorker(context.Background(), m, "k8swk2", pins, tf.Mode{Apply: true}, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ip != "203.0.113.9" || len(m.replaced) != 1 || m.replaced[0] != addr {
+		t.Fatalf("ip %q, -replace %v", ip, m.replaced)
+	}
+	ud := m.applied["user_data"].(map[string]string)
+	if len(ud) != 1 || ud["k8swk2"] == "" {
+		t.Fatalf("user_data for %v, want k8swk2 only", ud)
+	}
+	if ok, _ := pins.Has("203.0.113.9"); !ok {
+		t.Fatal("the new server's key is not pinned")
+	}
+	if ok, _ := pins.Has("203.0.113.1"); ok {
+		t.Fatal("pinned another Worker")
+	}
+}
+
+// Anything but one replace of that server aborts before anything is
+// applied or pinned: a delete alone, an update in place, a second Worker.
+func TestReplaceWorkerRefusesAnyOtherPlan(t *testing.T) {
+	addr := `hcloud_server.workers["k8swk2"]`
+	for name, changes := range map[string][]intent.Change{
+		"no-op":          nil,
+		"delete only":    {{Address: addr, Action: intent.Delete}},
+		"update":         {{Address: addr, Action: intent.Update}},
+		"another Worker": {{Address: addr, Action: intent.Replace}, {Address: `hcloud_server.workers["k8swk1"]`, Action: intent.Replace}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := &fakeWorkers{changes: changes, ips: map[string]string{"k8swk2": "203.0.113.9"}}
+			pins := newPins(t)
+			_, err := ReplaceWorker(context.Background(), m, "k8swk2", pins, tf.Mode{Apply: true}, io.Discard)
+			if !errors.Is(err, tf.ErrIntent) || m.applied != nil {
+				t.Fatalf("want ErrIntent and nothing applied, got %v", err)
+			}
+		})
 	}
 }

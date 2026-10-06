@@ -16,6 +16,7 @@ import (
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/env"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/hostkey"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/tf"
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/workerset"
 )
 
 var flags struct {
@@ -113,12 +114,30 @@ func (a *app) module(ctx context.Context, name string) (*tf.Module, error) {
 	if err != nil {
 		return nil, err
 	}
-	m, err := tf.Open(ctx, name, dir, a.env, a.run)
+	var varFiles []string
+	if name == config.ModuleWorkers {
+		// The environment's Worker set, committed, wins over the
+		// terraform.tfvars Terraform loads in every environment.
+		set, err := a.workerSetPath()
+		if err != nil {
+			return nil, err
+		}
+		if err := workerset.CheckCommitted(ctx, set); err != nil {
+			return nil, err
+		}
+		varFiles = append(varFiles, set)
+	}
+	m, err := tf.Open(ctx, name, dir, a.env, a.run, varFiles...)
 	if err != nil {
 		return nil, err
 	}
 	a.modules[name] = m
 	return m, nil
+}
+
+// workerSetPath is the file that declares this environment's Workers.
+func (a *app) workerSetPath() (string, error) {
+	return a.cfg.Path(a.cfg.Envs[a.env.Name].WorkerSet)
 }
 
 // requireRehearsal refuses a command that exists only for the rehearsal

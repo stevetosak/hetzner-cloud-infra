@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 
 	"github.com/hashicorp/terraform-exec/tfexec"
 
@@ -65,10 +66,14 @@ type Module struct {
 	env  *env.Environment
 	run  *RunDir
 	tf   *tfexec.Terraform
+	// varFiles are passed to every plan, in order, before the run's own
+	// var file, so the run's values win over theirs.
+	varFiles []string
 }
 
-// Open initialises the Module in dir for the environment e.
-func Open(ctx context.Context, name, dir string, e *env.Environment, run *RunDir) (*Module, error) {
+// Open initialises the Module in dir for the environment e. Every plan
+// passes varFiles with -var-file.
+func Open(ctx context.Context, name, dir string, e *env.Environment, run *RunDir, varFiles ...string) (*Module, error) {
 	bin, err := exec.LookPath("terraform")
 	if err != nil {
 		return nil, fmt.Errorf("terraform not found on PATH: %w", err)
@@ -87,7 +92,7 @@ func Open(ctx context.Context, name, dir string, e *env.Environment, run *RunDir
 	if err := t.Init(ctx, opts...); err != nil {
 		return nil, fmt.Errorf("terraform init %s (env %s): %w", name, e.Name, err)
 	}
-	return &Module{Name: name, Dir: dir, env: e, run: run, tf: t}, nil
+	return &Module{Name: name, Dir: dir, env: e, run: run, tf: t, varFiles: varFiles}, nil
 }
 
 // Plan is a saved plan and the changes it holds.
@@ -101,6 +106,12 @@ type Plan struct {
 // Plan plans the Module with vars and saves the plan in the run directory.
 // The Hetzner token is added to vars here, so no caller handles it.
 func (m *Module) Plan(ctx context.Context, vars map[string]any) (*Plan, error) {
+	return m.PlanReplace(ctx, vars)
+}
+
+// PlanReplace is Plan with -replace for each address: Terraform plans each
+// of those resources to be destroyed and created again.
+func (m *Module) PlanReplace(ctx context.Context, vars map[string]any, replace ...string) (*Plan, error) {
 	all := map[string]any{"HCLOUD_TOKEN": m.env.HcloudToken()}
 	for k, v := range vars {
 		all[k] = v
@@ -115,7 +126,14 @@ func (m *Module) Plan(ctx context.Context, vars map[string]any) (*Plan, error) {
 	}
 
 	planFile := m.run.next(m.Name, ".tfplan")
-	if _, err := m.tf.Plan(ctx, tfexec.VarFile(varFile), tfexec.Out(planFile)); err != nil {
+	var opts []tfexec.PlanOption
+	for _, f := range append(slices.Clone(m.varFiles), varFile) {
+		opts = append(opts, tfexec.VarFile(f))
+	}
+	for _, r := range replace {
+		opts = append(opts, tfexec.Replace(r))
+	}
+	if _, err := m.tf.Plan(ctx, append(opts, tfexec.Out(planFile))...); err != nil {
 		return nil, fmt.Errorf("terraform plan %s: %w", m.Name, err)
 	}
 	p, err := m.tf.ShowPlanFile(ctx, planFile)

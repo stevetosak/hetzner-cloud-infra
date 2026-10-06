@@ -180,17 +180,7 @@ func (a *app) buildControlPlane(ctx context.Context, srv *cloud.Server) error {
 	if err != nil {
 		return err
 	}
-	// The callback is made at each dial: knownhosts reads the pins file
-	// once, and the rotation changes it.
-	dialRoot := func(wait time.Duration) (*remote.Client, error) {
-		cb, err := a.pins.Callback()
-		if err != nil {
-			return nil, err
-		}
-		wctx, cancel := context.WithTimeout(ctx, wait)
-		defer cancel()
-		return remote.DialWait(wctx, srv.PublicIP, remote.Config{User: "root", Auth: auth, HostKeyCallback: cb}, 5*time.Second)
-	}
+	dialRoot := func(wait time.Duration) (*remote.Client, error) { return a.dialRoot(ctx, srv.PublicIP, wait) }
 	c, err := dialRoot(5 * time.Minute)
 	if err != nil {
 		return fmt.Errorf("first login to %s: %w", cp.Name, err)
@@ -234,7 +224,7 @@ func (a *app) buildControlPlane(ctx context.Context, srv *cloud.Server) error {
 	}
 
 	// The same host answers on its VPN address (control-plane.md, appendix).
-	if err := a.pinVPNAddress(ctx, h); err != nil {
+	if err := a.pinVPNAddress(ctx, h, cp.VpnIP); err != nil {
 		return err
 	}
 	hubKey, err := stages.HubPublicKey(ctx, h)
@@ -258,6 +248,23 @@ func (a *app) buildControlPlane(ctx context.Context, srv *cloud.Server) error {
 		return err
 	}
 	return stage.Run(ctx, []stage.Stage{stages.CompleteBuild{}}, h, opts)
+}
+
+// dialRoot logs in as root at addr, verified only by kluster's pins, and
+// waits up to wait for sshd. The callback is made at each dial: knownhosts
+// reads the pins file once, and a host key rotation changes it.
+func (a *app) dialRoot(ctx context.Context, addr string, wait time.Duration) (*remote.Client, error) {
+	auth, err := remote.Auth(a.cfg.SSH.IdentityFile)
+	if err != nil {
+		return nil, err
+	}
+	cb, err := a.pins.Callback()
+	if err != nil {
+		return nil, err
+	}
+	wctx, cancel := context.WithTimeout(ctx, wait)
+	defer cancel()
+	return remote.DialWait(wctx, addr, remote.Config{User: "root", Auth: auth, HostKeyCallback: cb}, 5*time.Second)
 }
 
 // cpStages are the Control Plane's runbook steps 2 to 8, in order.
@@ -292,7 +299,7 @@ func (a *app) cpStages(srv *cloud.Server) ([]stage.Stage, error) {
 		stages.PrivateNetwork{Interface: c.Node.NetworkInterface, MAC: srv.PrivateMAC, IP: cp.PrivateIP},
 		stages.BaseHost{User: cp.SSHUser, Containerd: c.Versions.Containerd, Runc: c.Versions.Runc, CNIPlugins: c.Versions.CNIPlugins},
 		stages.WireGuardHub{Address: cp.VpnIP + "/" + strconv.Itoa(subnet.Bits()), Port: c.WireGuard.Port, Peers: c.WireGuard.Peers},
-		stages.KubePrep{Minor: c.Versions.Kubernetes, Endpoint: cp.Endpoint, PrivateIP: cp.PrivateIP},
+		stages.KubePrep{Version: c.Versions.Kubernetes, Endpoint: cp.Endpoint, EndpointIP: cp.PrivateIP, PrivateIP: cp.PrivateIP},
 		stages.KubeadmInit{Endpoint: cp.Endpoint, PrivateIP: cp.PrivateIP, VpnIP: cp.VpnIP, PublicIP: srv.PublicIP,
 			PodCIDR: c.Cluster.PodCIDR, ServiceCIDR: c.Cluster.ServiceCIDR},
 		stages.Flannel{Manifest: flannel, Node: cp.Name, PrivateIP: cp.PrivateIP, Interface: c.Node.NetworkInterface, PodMTU: c.Cluster.PodMTU},
@@ -303,8 +310,8 @@ func (a *app) cpStages(srv *cloud.Server) ([]stage.Stage, error) {
 }
 
 // pinVPNAddress pins the host key, read over the verified session, at the
-// Control Plane's VPN address.
-func (a *app) pinVPNAddress(ctx context.Context, h *stage.Host) error {
+// host's VPN address.
+func (a *app) pinVPNAddress(ctx context.Context, h *stage.Host, vpnIP string) error {
 	out, err := h.Exec.Run(ctx, "cat /etc/ssh/ssh_host_ed25519_key.pub")
 	if err != nil {
 		return err
@@ -313,7 +320,11 @@ func (a *app) pinVPNAddress(ctx context.Context, h *stage.Host) error {
 	if err != nil {
 		return fmt.Errorf("reading the host key: %w", err)
 	}
-	return a.pins.Set(a.cfg.ControlPlane.VpnIP, key)
+	if err := a.pins.Set(vpnIP, key); err != nil {
+		return err
+	}
+	fmt.Fprintf(a.out, "[%s] pinned its host key at its VPN address %s\n", h.Name, vpnIP)
+	return nil
 }
 
 func (a *app) proveRoute(ctx context.Context, h *stage.Host, srv *cloud.Server, hubKey string, auth ssh.AuthMethod, laptopConf []byte) error {

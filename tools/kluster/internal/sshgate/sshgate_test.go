@@ -136,3 +136,27 @@ func TestOpenReadsBack(t *testing.T) {
 		t.Fatal("an open the API does not show passed")
 	}
 }
+
+// node add reaches the Control Plane and a new Worker in one run: both
+// switches go in one plan, so neither open closes the other.
+func TestOpenBothInOnePlan(t *testing.T) {
+	both := []intent.Change{
+		{Address: "hcloud_firewall.cp", Action: intent.Update},
+		{Address: "hcloud_firewall.worker", Action: intent.Update},
+	}
+	shared := &fakeShared{plans: [][]intent.Change{both}}
+	api := &fakeAPI{open: map[string]bool{ControlPlane.Name: true, Worker.Name: true}}
+	g := &Gate{Shared: shared, API: api, Mode: tf.Mode{Apply: true}, Out: io.Discard}
+
+	if err := g.Open(context.Background(), ControlPlane, Worker); err != nil {
+		t.Fatal(err)
+	}
+	if shared.applied != 1 {
+		t.Fatalf("applied %d plans, want 1", shared.applied)
+	}
+	api.open[Worker.Name] = false
+	shared.plans = [][]intent.Change{both}
+	if err := g.Open(context.Background(), ControlPlane, Worker); err == nil {
+		t.Fatal("an open the API does not show for one firewall passed")
+	}
+}
