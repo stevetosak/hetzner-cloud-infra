@@ -37,7 +37,15 @@ type Node struct {
 	InternalIP   string
 	Kubelet      string
 	ControlPlane bool
+	ProviderID   string
+	// Uninitialized is the cloud provider's taint, there until the cloud
+	// controller has seen the Node.
+	Uninitialized bool
 }
+
+// UninitializedTaint is set on a Node of a kubelet run with
+// --cloud-provider=external.
+const UninitializedTaint = "node.cloudprovider.kubernetes.io/uninitialized"
 
 // Nodes reads every Node.
 func (k Kubectl) Nodes(ctx context.Context) ([]Node, error) {
@@ -56,6 +64,10 @@ func ParseNodes(b []byte) ([]Node, error) {
 				Name   string            `json:"name"`
 				Labels map[string]string `json:"labels"`
 			} `json:"metadata"`
+			Spec struct {
+				ProviderID string                 `json:"providerID"`
+				Taints     []struct{ Key string } `json:"taints"`
+			} `json:"spec"`
 			Status struct {
 				Conditions []struct{ Type, Status string }  `json:"conditions"`
 				Addresses  []struct{ Type, Address string } `json:"addresses"`
@@ -70,7 +82,10 @@ func ParseNodes(b []byte) ([]Node, error) {
 	}
 	nodes := make([]Node, 0, len(list.Items))
 	for _, it := range list.Items {
-		n := Node{Name: it.Metadata.Name, Kubelet: it.Status.NodeInfo.KubeletVersion}
+		n := Node{Name: it.Metadata.Name, Kubelet: it.Status.NodeInfo.KubeletVersion, ProviderID: it.Spec.ProviderID}
+		for _, t := range it.Spec.Taints {
+			n.Uninitialized = n.Uninitialized || t.Key == UninitializedTaint
+		}
 		_, n.ControlPlane = it.Metadata.Labels["node-role.kubernetes.io/control-plane"]
 		for _, c := range it.Status.Conditions {
 			if c.Type == "Ready" {

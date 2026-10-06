@@ -56,7 +56,7 @@ func TestProbeWritesNothing(t *testing.T) {
 	sh := &scriptHost{}
 	h := &stage.Host{Name: "cp", Exec: sh}
 	for _, s := range []stage.Stage{PrivateNetwork{}, BaseHost{}, WireGuardHub{}, KubePrep{}, KubeadmInit{ServiceCIDR: "10.96.0.0/16"},
-		Flannel{}, CloudController{}, CSI{}} {
+		Flannel{}, CloudController{}, CSI{}, WireGuardSpoke{}, HubPeer{}, Join{}} {
 		if _, err := s.Probe(context.Background(), h); err != nil {
 			t.Fatalf("%s: %v", s.Name(), err)
 		}

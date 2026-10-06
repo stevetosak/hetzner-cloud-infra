@@ -292,7 +292,7 @@ func (a *app) cpStages(srv *cloud.Server) ([]stage.Stage, error) {
 		stages.PrivateNetwork{Interface: c.Node.NetworkInterface, MAC: srv.PrivateMAC, IP: cp.PrivateIP},
 		stages.BaseHost{User: cp.SSHUser, Containerd: c.Versions.Containerd, Runc: c.Versions.Runc, CNIPlugins: c.Versions.CNIPlugins},
 		stages.WireGuardHub{Address: cp.VpnIP + "/" + strconv.Itoa(subnet.Bits()), Port: c.WireGuard.Port, Peers: c.WireGuard.Peers},
-		stages.KubePrep{Minor: c.Versions.Kubernetes, Endpoint: cp.Endpoint, PrivateIP: cp.PrivateIP},
+		stages.KubePrep{Minor: c.Versions.Kubernetes, Endpoint: cp.Endpoint, EndpointIP: cp.PrivateIP, PrivateIP: cp.PrivateIP},
 		stages.KubeadmInit{Endpoint: cp.Endpoint, PrivateIP: cp.PrivateIP, VpnIP: cp.VpnIP, PublicIP: srv.PublicIP,
 			PodCIDR: c.Cluster.PodCIDR, ServiceCIDR: c.Cluster.ServiceCIDR},
 		stages.Flannel{Manifest: flannel, Node: cp.Name, PrivateIP: cp.PrivateIP, Interface: c.Node.NetworkInterface, PodMTU: c.Cluster.PodMTU},

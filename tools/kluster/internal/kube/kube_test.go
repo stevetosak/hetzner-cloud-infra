@@ -51,3 +51,14 @@ func TestRunUsesTheAdminKubeconfigAndQuotes(t *testing.T) {
 		t.Errorf("ran %q, want %q", r.cmd, want)
 	}
 }
+
+func TestParseNodesReadsProviderIDAndTheCloudTaint(t *testing.T) {
+	nodes, err := ParseNodes([]byte(`{"items":[{"metadata":{"name":"k8swk4"},"spec":{"providerID":"hcloud://42",
+		"taints":[{"key":"node.cloudprovider.kubernetes.io/uninitialized","effect":"NoSchedule"}]}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nodes[0].ProviderID != "hcloud://42" || !nodes[0].Uninitialized {
+		t.Fatalf("got %+v", nodes[0])
+	}
+}
