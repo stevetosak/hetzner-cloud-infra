@@ -6,5 +6,4 @@
 #
 # `kluster node add` and `node remove` edit it; commit each edit before the
 # next run, or kluster refuses to plan. Empty between rehearsals.
-workers = {
-}
+workers = {}
