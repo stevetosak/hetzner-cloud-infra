@@ -79,10 +79,17 @@ list`. The same day `node list --env live` read the three live Workers Ready
 with no drift, and a `terraform plan` of `infra/workers` on live showed no
 changes.
 
-🔴 `versions.kubernetes` in `kluster.yaml` pins the minor version only. The
-rehearsal Nodes came up as v1.37.1 while live runs v1.37.0, so a live `node
-add` today installs a newer patch than the Control Plane's. kubeadm refuses a
-newer minor only (assumed from its preflight, not tested).
+`versions.kubernetes` in `kluster.yaml` names the exact release the live
+Control Plane runs, v1.37.0, and kluster refuses a value without its patch.
+It once named the minor alone, and the rehearsal Nodes came up as v1.37.1
+beside a v1.37.0 Control Plane. Now the apt channel comes from the minor and
+the three packages are installed as `1.37.0-*`; the probe passes only on that
+exact patch. A host that already holds another version fails the Stage
+instead of being changed, because moving a Node to another release is an
+upgrade, not a re-run. The checks were run read-only against the live Control
+Plane, and a simulated install there resolved `1.37.0-*` to `1.37.0-1.1`; no
+Worker has been built with the pin yet. An upgrade starts by changing that
+line.
 
 ## Remove a Worker
 

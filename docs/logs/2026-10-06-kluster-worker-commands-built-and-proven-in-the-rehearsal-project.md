@@ -43,7 +43,7 @@ With the operator's yes, `kluster pin import 10.100.0.1 --apply` pinned the live
 
 ## Open items
 
-- `versions.kubernetes: "v1.37"` pins the minor only. The rehearsal built v1.37.1 Nodes while live runs v1.37.0, so a live `node add` today would put kubelet 1.37.1 beside a 1.37.0 Control Plane. kubeadm refuses only a newer minor (assumed from its preflight, not tested). Pin the patch before any live `node add`.
+- `versions.kubernetes: "v1.37"` pinned the minor only, and the rehearsal built v1.37.1 Nodes while live runs v1.37.0. After the PR opened, the operator chose to pin the live Control Plane's exact patch: `versions.kubernetes: "v1.37.0"`, validated as a full release, with the packages installed as `1.37.0-*` and probed for that exact patch (`3c49dad`). The checks passed read-only on the live Control Plane and a simulated `apt-get -s install` there resolved the glob to `1.37.0-1.1`; no Worker has been built with the pin yet.
 - The database gate's CNPG branch and a drain that holds a CNPG primary are unit-tested only (assumed to work: the primary PDB holds the drain and CNPG switches over); task 5 (`kluster up`) proves them.
 - The opt-in `KLUSTER_TF_TEST=1` test did not run; its fixture likely fails config validation (assumed).
 - `node list --env rehearsal` on an empty project says bootstrap SSH is closed, which misleads (assumed cosmetic).
