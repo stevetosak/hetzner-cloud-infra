@@ -7,12 +7,4 @@
 # `kluster node add` and `node remove` edit it; commit each edit before the
 # next run, or kluster refuses to plan. Empty between rehearsals.
 workers = {
-  k8swk1 = {
-    labels = {
-      role = "worker"
-    }
-    private_ip  = "10.0.2.6"
-    server_type = "cx23"
-    vpn_ip      = "10.100.0.2"
-  }
 }
