@@ -1,6 +1,7 @@
 package env
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -32,7 +33,7 @@ var shell = map[string]string{
 // A rehearsal terraform must never see a live credential, whatever the shell
 // holds.
 func TestRehearsalTerraformEnvCarriesNoLiveCredential(t *testing.T) {
-	e, err := Resolve(testConfig(t), config.EnvRehearsal, lookup(shell))
+	e, err := Resolve(context.Background(), testConfig(t), config.EnvRehearsal, lookup(shell), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +67,7 @@ func TestRehearsalTerraformEnvCarriesNoLiveCredential(t *testing.T) {
 }
 
 func TestLiveUsesBackendAsWritten(t *testing.T) {
-	e, err := Resolve(testConfig(t), config.EnvLive, lookup(shell))
+	e, err := Resolve(context.Background(), testConfig(t), config.EnvLive, lookup(shell), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,13 +85,13 @@ func TestRehearsalRefusesTheLiveToken(t *testing.T) {
 		s[k] = v
 	}
 	s["KLUSTER_REHEARSAL_HCLOUD_TOKEN"] = s["TF_VAR_HCLOUD_TOKEN"]
-	if _, err := Resolve(testConfig(t), config.EnvRehearsal, lookup(s)); err == nil {
+	if _, err := Resolve(context.Background(), testConfig(t), config.EnvRehearsal, lookup(s), nil); err == nil {
 		t.Fatal("a rehearsal env holding the live token was accepted")
 	}
 }
 
 func TestResolveNamesMissingVariables(t *testing.T) {
-	_, err := Resolve(testConfig(t), config.EnvRehearsal, lookup(nil))
+	_, err := Resolve(context.Background(), testConfig(t), config.EnvRehearsal, lookup(nil), nil)
 	if err == nil || !strings.Contains(err.Error(), "KLUSTER_REHEARSAL_HCLOUD_TOKEN") {
 		t.Fatalf("got %v", err)
 	}
