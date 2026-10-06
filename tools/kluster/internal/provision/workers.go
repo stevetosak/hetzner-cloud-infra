@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"sort"
 
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/hostkey"
@@ -26,10 +27,12 @@ var workerAddress = regexp.MustCompile(`^hcloud_server\.workers\["([^"]+)"\]$`)
 // CreateWorkers creates the Workers the workers Module would create, and only
 // those. It plans once to learn which servers are new, makes a host key for
 // each, plans again with the keys in user_data, and requires exactly those
-// creates. Under --apply it applies that saved plan and pins each seeded key
+// creates. A non-nil want names the Workers the caller means to create: a
+// first plan that would create any other set is refused before anything is
+// applied. Under --apply it applies that saved plan and pins each seeded key
 // at the server's public address. It returns the created Workers' public
 // addresses by name.
-func CreateWorkers(ctx context.Context, m Module, pins *hostkey.Pins, mode tf.Mode, out io.Writer) (map[string]string, error) {
+func CreateWorkers(ctx context.Context, m Module, want []string, pins *hostkey.Pins, mode tf.Mode, out io.Writer) (map[string]string, error) {
 	first, err := m.Plan(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -41,6 +44,9 @@ func CreateWorkers(ctx context.Context, m Module, pins *hostkey.Pins, mode tf.Mo
 		}
 	}
 	sort.Strings(names)
+	if want != nil && !slices.Equal(names, slices.Sorted(slices.Values(want))) {
+		return nil, fmt.Errorf("the workers plan would create %v, not %v: the Worker set declares another Worker with no server", names, want)
+	}
 
 	keys := map[string]*hostkey.KeyPair{}
 	userData := map[string]string{}

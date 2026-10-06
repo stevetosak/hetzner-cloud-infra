@@ -185,7 +185,7 @@ func rehearseCore(ctx context.Context, a *app) (err error) {
 	if err != nil {
 		return err
 	}
-	created, err := provision.CreateWorkers(ctx, workers, a.pins, a.mode, a.out)
+	created, err := provision.CreateWorkers(ctx, workers, nil, a.pins, a.mode, a.out)
 	if err != nil || len(created) == 0 {
 		if err == nil && a.mode.Apply {
 			fmt.Fprintln(a.out, "no Worker was created, so there is no first login to prove")

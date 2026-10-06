@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"golang.org/x/crypto/ssh"
@@ -59,7 +60,7 @@ func TestCreateWorkersSeedsAndPinsEachNewServer(t *testing.T) {
 		ips: map[string]string{"k8swk1": "203.0.113.1", "k8swk2": "203.0.113.2"},
 	}
 	pins := newPins(t)
-	got, err := CreateWorkers(context.Background(), m, pins, tf.Mode{Apply: true}, io.Discard)
+	got, err := CreateWorkers(context.Background(), m, nil, pins, tf.Mode{Apply: true}, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,11 +98,27 @@ func TestCreateWorkersRefusesAnyOtherChange(t *testing.T) {
 		{Address: `hcloud_server.workers["k8swk4"]`, Action: intent.Create},
 		{Address: `hcloud_server.workers["k8swk1"]`, Action: intent.Replace},
 	}}
-	_, err := CreateWorkers(context.Background(), m, newPins(t), tf.Mode{Apply: true}, io.Discard)
+	_, err := CreateWorkers(context.Background(), m, nil, newPins(t), tf.Mode{Apply: true}, io.Discard)
 	if !errors.Is(err, tf.ErrIntent) {
 		t.Fatalf("got %v", err)
 	}
 	if m.applied != nil {
 		t.Fatal("applied")
+	}
+}
+
+// node add names its one Worker: a plan that would also create another
+// declared Worker is refused before any key is made or anything applied.
+func TestCreateWorkersRefusesCreatesBeyondWant(t *testing.T) {
+	m := &fakeWorkers{changes: []intent.Change{
+		{Address: `hcloud_server.workers["k8swk4"]`, Action: intent.Create},
+		{Address: `hcloud_server.workers["k8swk5"]`, Action: intent.Create},
+	}}
+	_, err := CreateWorkers(context.Background(), m, []string{"k8swk4"}, newPins(t), tf.Mode{Apply: true}, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "k8swk5") {
+		t.Fatalf("got %v", err)
+	}
+	if m.applied != nil || m.lastVars != nil {
+		t.Fatal("planned with keys or applied")
 	}
 }
