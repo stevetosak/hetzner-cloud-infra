@@ -71,6 +71,12 @@ func (p *Pins) Add(addr string, key ssh.PublicKey) error {
 	return p.rewrite(addr, []ssh.PublicKey{key}, false)
 }
 
+// Remove drops every pin for addr. A removed server's addresses go back to
+// the pool, and a later server there must not be trusted with the old key.
+func (p *Pins) Remove(addr string) error {
+	return p.rewrite(addr, nil, true)
+}
+
 func (p *Pins) rewrite(addr string, keys []ssh.PublicKey, replace bool) error {
 	host := knownhosts.Normalize(addr)
 	old, err := os.ReadFile(p.path)

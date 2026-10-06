@@ -189,22 +189,34 @@ func (a *app) declareWorker(ctx context.Context, set *workerset.Set, name string
 		fmt.Fprintln(a.out, "Plan Mode: --apply writes the entry")
 		return nil
 	}
-	info, err := os.Stat(set.Path)
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(set.Path, updated, info.Mode().Perm()); err != nil {
-		return err
-	}
-	back, err := workerset.Load(set.Path)
-	if err != nil {
-		return err
-	}
-	if got, ok := back.Get(name); !ok || !reflect.DeepEqual(got, w) {
-		return fmt.Errorf("read back: %s does not hold the entry written for %s", set.Path, name)
+	if err := writeSet(set.Path, updated, func(back *workerset.Set) bool {
+		got, ok := back.Get(name)
+		return ok && reflect.DeepEqual(got, w)
+	}); err != nil {
+		return fmt.Errorf("%w: it does not hold the entry written for %s", err, name)
 	}
 	fmt.Fprintf(a.out, "read back: %s declares %s\n", set.Path, name)
 	fmt.Fprintf(a.out, "commit %s, then run kluster node add %s again: kluster runs no Terraform on an uncommitted Worker set\n", set.Path, name)
+	return nil
+}
+
+// writeSet writes an edited Worker set over the file, keeping its mode, and
+// reads it back: ok must hold for what the file now declares.
+func writeSet(path string, updated []byte, ok func(*workerset.Set) bool) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, updated, info.Mode().Perm()); err != nil {
+		return err
+	}
+	back, err := workerset.Load(path)
+	if err != nil {
+		return err
+	}
+	if !ok(back) {
+		return fmt.Errorf("read back: %s is not the edit kluster wrote", path)
+	}
 	return nil
 }
 

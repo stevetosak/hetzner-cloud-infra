@@ -62,3 +62,24 @@ func TestParseNodesReadsProviderIDAndTheCloudTaint(t *testing.T) {
 		t.Fatalf("got %+v", nodes[0])
 	}
 }
+
+func TestParsePodsMarksWhatADrainLeaves(t *testing.T) {
+	pods, err := ParsePods([]byte(`{"items":[
+ {"metadata":{"namespace":"kube-flannel","name":"kube-flannel-ds-x","ownerReferences":[{"kind":"DaemonSet"}]},"status":{"phase":"Running"}},
+ {"metadata":{"namespace":"kube-system","name":"static","annotations":{"kubernetes.io/config.mirror":"abc"}},"status":{"phase":"Running"}},
+ {"metadata":{"namespace":"pg-drill","name":"job-x","ownerReferences":[{"kind":"Job"}]},"status":{"phase":"Succeeded"}},
+ {"metadata":{"namespace":"doma","name":"web-x","ownerReferences":[{"kind":"ReplicaSet"}]},"status":{"phase":"Running"}}
+]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var remain []string
+	for _, p := range pods {
+		if p.Remains() {
+			remain = append(remain, p.Namespace+"/"+p.Name)
+		}
+	}
+	if len(pods) != 4 || len(remain) != 1 || remain[0] != "doma/web-x" {
+		t.Fatalf("remain %v of %+v", remain, pods)
+	}
+}

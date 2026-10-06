@@ -147,3 +147,30 @@ func TestPinsVerifyAndReplace(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPinsRemoveDropsOnlyThatAddress(t *testing.T) {
+	pins, err := OpenPins(filepath.Join(t.TempDir(), "known_hosts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _ := Generate()
+	b, _ := Generate()
+	if err := pins.Set("10.100.0.5", a.Public, b.Public); err != nil {
+		t.Fatal(err)
+	}
+	if err := pins.Set("10.100.0.50", b.Public); err != nil {
+		t.Fatal(err)
+	}
+	if err := pins.Remove("10.100.0.5"); err != nil {
+		t.Fatal(err)
+	}
+	if has, _ := pins.Has("10.100.0.5"); has {
+		t.Fatal("a removed address still has a pin")
+	}
+	if has, _ := pins.Has("10.100.0.50"); !has {
+		t.Fatal("Remove dropped another address")
+	}
+	if err := pins.Remove("10.100.0.5"); err != nil {
+		t.Fatalf("removing an address with no pin: %v", err)
+	}
+}
