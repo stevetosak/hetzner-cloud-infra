@@ -356,7 +356,8 @@ store; nothing above changes. What was decided:
   kubeconfig — is made fresh by each build and never stored.
 - **The password manager is the root, and only the root.** It holds the age
   key and the few Issued Secrets needed before any cluster exists: the Hetzner
-  token and the R2 keys for the Terraform state. kluster reads them through
+  token and the R2 keys for the Terraform state. (*2026-10-06: it now holds
+  every Issued Secret, and git keeps an encrypted copy — see below.*) kluster reads them through
   the Bitwarden CLI (`bw`, unlocked once per shell), keeps them in memory and
   passes them to Terraform and SOPS as the child process's environment. The
   recovery path above is unchanged; it is now followed by a program instead
@@ -368,3 +369,68 @@ store; nothing above changes. What was decided:
 - Bitwarden Secrets Manager with the External Secrets Operator was weighed and
   lost: the cluster would depend on an outside service to start, and ESO
   needs a machine token living in the cluster.
+
+**2026-10-06 — the Secret Catalog, and kluster replaces `scripts/secrets.sh`.**
+Building the run-time root showed that the hand workflow was the weak part:
+a new value was a long `kubectl create secret … | scripts/secrets.sh encrypt`
+pipe, nothing recorded which values were random and which came from a
+provider, the copies of the Redis and database passwords in `authos` were kept
+in step by a comment, and every Secret had a blank template that could drift
+from its encrypted file. Decided in a design grill with the operator:
+
+- **One Secret Catalog, `secrets.yaml` at the repository root** (term in
+  `CONTEXT.md`). Each entry is keyed `<namespace>/<name>`, names its
+  `*.enc.yaml`, and gives each key a kind — generated, issued, or copy (a
+  *Copied Secret*, from `<namespace>/<name>.<key>`) — and a note. It replaces
+  the blank templates. A non-secret value has no kind: `DB_USER` leaves the
+  `authos` Secret for a ConfigMap. One file, not one per project, because
+  rotation and the copy check must see every Secret at once.
+- **`kluster secrets` replaces `scripts/secrets.sh`**: `list` (kinds and state,
+  never a value), `generate` (every missing generated value, every copy),
+  `set` (an issued value from the terminal, no echo), `pull` (an issued value
+  from the password manager), `rotate` (a new value and every copy of it in
+  one write), `apply`, `diff`, `edit`, and `check --staged`. Writes are shown
+  in Plan Mode first, as in the rest of kluster. kluster runs the pinned
+  `sops` binary and refuses any other version; the SOPS Go module exposes
+  decryption only, and its encryption lives in internal packages that change
+  between releases.
+- **The password manager holds every Issued Secret, and git keeps an encrypted
+  copy.** The operator stores a new token in Bitwarden first anyway; an issued
+  key in the catalog names its item and field (or attachment), and `pull`
+  copies the value into the `*.enc.yaml`. `list` reports a copy that differs
+  from Bitwarden. Rejected: assembling Secrets from Bitwarden at apply time
+  with nothing in git — one copy and no drift, but the offline backup age key
+  would then recover no token, and the 2026-10-01 design kept two independent
+  paths on purpose.
+- **The age key leaves the laptop disk.** kluster reads it from Bitwarden and
+  passes it to `sops` as `SOPS_AGE_KEY`, in the child process only;
+  `~/.config/sops/age/keys.txt` is deleted. Bitwarden is laid out as one item
+  per environment (`kluster/live`, `kluster/rehearsal`, the same hidden field
+  names in both) and `kluster/age-key`, found by name, so a duplicate name
+  stops the run. kluster needs an unlocked vault (`BW_SESSION`), never asks
+  for the master password, and syncs once per run, falling back to the cache
+  with a warning.
+- **`kluster exec [--env] -- <command>` replaces `source infra/.envrc`** for
+  hand-run Terraform, `infra/shared/import.sh` and the watcher's delete
+  command. It gives the command the same clean environment kluster gives
+  Terraform, so the live/rehearsal separation holds for hand runs too. During
+  the build an `env` source stays beside the Bitwarden one; it is deleted in
+  the same change once the rehearsal and a read-only live run pass, with
+  `infra/.envrc` and the rehearsal env file.
+- **The cluster gets its own Hetzner token per environment**, stored in the
+  environment's Bitwarden item and read by `kluster cp init` for
+  `kube-system/hcloud`. A Hetzner token is project-wide, so the gain is
+  separation, not scope: a token leaked from the cluster is revoked without
+  breaking Terraform, and the reverse.
+- **Every value is made new — no import.** Until the rebuild ends, live holds
+  no sensitive application and no data worth keeping, and several values have
+  reached a session transcript. So every generated value is generated again,
+  every issued value is issued again by its provider, the Authos keystore
+  included (an issued pair: the `.p12` as an attachment and its password, in
+  one Bitwarden item). This closes the Phase 5 rotation list.
+- **Reloader restarts the readers of a changed Secret**, for every change path
+  — kluster, a hand apply, a later ArgoCD sync. Rejected: kluster finding and
+  restarting the readers itself, which covers only its own applies.
+- **The encryption check runs twice**: the pre-commit hook calls `kluster
+  secrets check --staged`, and a pull-request check runs it again, because the
+  hook is enabled per clone and can be skipped.
