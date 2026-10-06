@@ -31,6 +31,23 @@ func (c *Client) Server(ctx context.Context, name string) (*Server, error) {
 	if s == nil {
 		return nil, nil
 	}
+	return toServer(s), nil
+}
+
+// Servers reads every server in the project.
+func (c *Client) Servers(ctx context.Context) ([]*Server, error) {
+	all, err := c.h.Server.All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("listing servers: %w", err)
+	}
+	out := make([]*Server, 0, len(all))
+	for _, s := range all {
+		out = append(out, toServer(s))
+	}
+	return out, nil
+}
+
+func toServer(s *hcloud.Server) *Server {
 	out := &Server{
 		ID:               strconv.FormatInt(s.ID, 10),
 		Name:             s.Name,
@@ -49,7 +66,7 @@ func (c *Client) Server(ctx context.Context, name string) (*Server, error) {
 			out.PrivateMAC = n.MACAddress
 		}
 	}
-	return out, nil
+	return out
 }
 
 // Running reports whether the server is running.

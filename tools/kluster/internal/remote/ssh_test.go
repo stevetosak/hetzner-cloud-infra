@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -259,5 +260,43 @@ func TestTrimTrailingNewline(t *testing.T) {
 	}
 	if got := trimTrailingNewline("no-newline"); got != "no-newline" {
 		t.Errorf("trimTrailingNewline no-op = %q, want %q", got, "no-newline")
+	}
+}
+
+// The live Control Plane login is cp-dev, not root. A stand-in sudo on PATH
+// records its arguments and runs the command, so the test proves the whole
+// command, pipes and the WriteFile stdin included, goes through `sudo -n`.
+func TestSudoRunsEveryCommandThroughSudo(t *testing.T) {
+	bin := t.TempDir()
+	log := filepath.Join(bin, "sudo.log")
+	stub := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> " + log + "\n[ \"$1\" = -n ] || exit 9\nshift\nexec \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(bin, "sudo"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	addr, key := testServer(t)
+	c, err := Dial(context.Background(), addr, Config{
+		User: "test", Auth: ssh.Password("anything"), HostKeyCallback: FixedHostKey(key), Sudo: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	out, err := c.Run(context.Background(), "echo a | tr a b && echo 'it''s'")
+	if err != nil || out != "b\nits" {
+		t.Fatalf("Run = %q, %v", out, err)
+	}
+	path := filepath.Join(t.TempDir(), "wg0.conf")
+	if err := c.WriteFile(context.Background(), path, "x\n", 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != "x\n" {
+		t.Fatalf("written %q", b)
+	}
+	calls, _ := os.ReadFile(log)
+	if n := strings.Count(string(calls), "-n sh -c"); n != 2 {
+		t.Errorf("sudo ran %d commands, want 2:\n%s", n, calls)
 	}
 }

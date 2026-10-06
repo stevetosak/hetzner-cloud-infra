@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/intent"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/tf"
@@ -57,47 +58,48 @@ type Gate struct {
 	Out    io.Writer
 }
 
-// Open opens port 22 on fw to the operator's address. Its Intent is one
-// update of that firewall and nothing else; the other firewall stays as it
-// is, closed.
-func (g *Gate) Open(ctx context.Context, fw Firewall) error {
-	in := intent.Intent{
-		Description: "open bootstrap SSH on " + fw.Name,
-		Expectations: []intent.Expectation{
-			{Address: fw.Address, Actions: []intent.Action{intent.Update}, Required: true},
-		},
+// Open opens port 22 on each of fws to the operator's address, in one plan.
+// Its Intent is an update of those firewalls and nothing else; a firewall
+// not named stays as it is, closed. One plan for all of them, because the
+// shared Module sets both switches: an open of one alone would close the
+// other.
+func (g *Gate) Open(ctx context.Context, fws ...Firewall) error {
+	vars := map[string]any{}
+	names := make([]string, 0, len(fws))
+	in := intent.Intent{}
+	for _, fw := range fws {
+		vars[fw.Var] = true
+		names = append(names, fw.Name)
+		in.Expectations = append(in.Expectations,
+			intent.Expectation{Address: fw.Address, Actions: []intent.Action{intent.Update}})
 	}
-	p, err := g.Shared.Plan(ctx, map[string]any{fw.Var: true})
+	in.Description = "open bootstrap SSH on " + strings.Join(names, " and ")
+	p, err := g.Shared.Plan(ctx, vars)
 	if err != nil {
 		return err
 	}
-	// Already open — a run that stopped before its close, or `ssh open`:
-	// nothing to apply, and the API must agree.
-	if len(p.Changes) == 0 {
+	// No change: already open — a run that stopped before its close, or
+	// `ssh open`. Nothing to apply, and the API must agree.
+	did := "plans no change"
+	if len(p.Changes) > 0 {
+		applied, err := tf.Decide(ctx, g.Shared, p, in, g.Mode, g.Out)
+		if err != nil || !applied {
+			return err
+		}
+		did = "applied the open"
+	}
+	// Zero rules to one is the direction the provider performs correctly,
+	// and it is still read back.
+	for _, fw := range fws {
 		open, err := g.API.SSHOpen(ctx, fw.Name)
 		if err != nil {
 			return err
 		}
 		if !open {
-			return fmt.Errorf("%s: terraform plans no change, but the API shows no port 22 rule", fw.Name)
+			return fmt.Errorf("%s: terraform %s, but the API shows no port 22 rule", fw.Name, did)
 		}
-		fmt.Fprintf(g.Out, "read back: %s already admits port 22\n", fw.Name)
-		return nil
+		fmt.Fprintf(g.Out, "read back: %s admits port 22\n", fw.Name)
 	}
-	applied, err := tf.Decide(ctx, g.Shared, p, in, g.Mode, g.Out)
-	if err != nil || !applied {
-		return err
-	}
-	// Zero rules to one is the direction the provider performs correctly,
-	// and it is still read back.
-	open, err := g.API.SSHOpen(ctx, fw.Name)
-	if err != nil {
-		return err
-	}
-	if !open {
-		return fmt.Errorf("%s: terraform applied the open, but the API shows no port 22 rule", fw.Name)
-	}
-	fmt.Fprintf(g.Out, "read back: %s admits port 22\n", fw.Name)
 	return nil
 }
 
