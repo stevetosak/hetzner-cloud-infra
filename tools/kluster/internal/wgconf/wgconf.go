@@ -155,3 +155,77 @@ AllowedIPs = ` + subnet + `
 PersistentKeepalive = 25
 `
 }
+
+// Peer is one spoke as the hub's config holds it. Name is the comment line
+// kluster writes under the [Peer] header.
+type Peer struct {
+	Name       string
+	PublicKey  string
+	AllowedIPs string
+}
+
+// Peers reads every [Peer] section of conf. Name is the first comment line
+// inside the section, if any.
+func Peers(conf string) []Peer {
+	lines := strings.Split(conf, "\n")
+	var out []Peer
+	for _, s := range sections(lines) {
+		if s.name != "peer" {
+			continue
+		}
+		var p Peer
+		for _, l := range lines[s.start+1 : s.end] {
+			if t := strings.TrimSpace(l); p.Name == "" && strings.HasPrefix(t, "#") {
+				p.Name = strings.TrimSpace(strings.TrimPrefix(t, "#"))
+				continue
+			}
+			switch k, v, _ := keyValue(l); k {
+			case "publickey":
+				p.PublicKey = v
+			case "allowedips":
+				p.AllowedIPs = v
+			}
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// AddPeer returns conf with p appended as a new [Peer] section. Nothing
+// already in conf changes: the hub's config is appended to, never
+// regenerated (docs/runbook/workers.md, step 6). It refuses a peer whose key
+// or AllowedIPs another peer already holds, since that peer would lose its
+// route.
+func AddPeer(conf string, p Peer) (string, error) {
+	for _, q := range Peers(conf) {
+		if q.PublicKey == p.PublicKey {
+			return "", fmt.Errorf("a [Peer] with key %s exists already (%s)", p.PublicKey, q.Name)
+		}
+		if q.AllowedIPs == p.AllowedIPs {
+			return "", fmt.Errorf("[Peer] %q holds AllowedIPs %s already", q.Name, p.AllowedIPs)
+		}
+	}
+	return strings.TrimRight(conf, "\n") + fmt.Sprintf("\n\n[Peer]\n# %s\nPublicKey  = %s\nAllowedIPs = %s\n",
+		p.Name, p.PublicKey, p.AllowedIPs), nil
+}
+
+// RemovePeer returns conf without the [Peer] section whose key is publicKey,
+// and the blank lines before it. Every other line stays.
+func RemovePeer(conf, publicKey string) (string, error) {
+	lines := strings.Split(conf, "\n")
+	for _, s := range sections(lines) {
+		if s.name != "peer" {
+			continue
+		}
+		for _, l := range lines[s.start:s.end] {
+			if k, v, _ := keyValue(l); k == "publickey" && v == publicKey {
+				start := s.start
+				for start > 0 && strings.TrimSpace(lines[start-1]) == "" {
+					start--
+				}
+				return strings.Join(append(lines[:start:start], lines[s.end:]...), "\n"), nil
+			}
+		}
+	}
+	return "", fmt.Errorf("no [Peer] has key %s", publicKey)
+}
