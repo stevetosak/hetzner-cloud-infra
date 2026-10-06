@@ -49,7 +49,8 @@ type Stage interface {
 	// never writes.
 	Probe(ctx context.Context, h *Host) (Status, error)
 	// Preview describes what Act would do: the commands for a new host, or
-	// a diff of each file it would edit. It never writes.
+	// a diff of each file it would edit. It never writes. For a host that
+	// does not exist yet, h.Exec is nil.
 	Preview(ctx context.Context, h *Host) (string, error)
 	Act(ctx context.Context, h *Host) error
 }
@@ -91,6 +92,20 @@ func Run(ctx context.Context, stages []Stage, h *Host, o Options) error {
 			return fmt.Errorf("%s: %s acted but its probe still says not done (%s)", h.Name, s.Name(), st.Detail)
 		}
 		fmt.Fprintf(o.Out, "[%s] %s: done (%s)\n", h.Name, s.Name(), st.Detail)
+	}
+	return nil
+}
+
+// PlanNew prints what each stage would run on a host that does not exist
+// yet, so Plan Mode shows a new server's commands before it is created.
+func PlanNew(ctx context.Context, stages []Stage, name string, out io.Writer) error {
+	h := &Host{Name: name}
+	for _, s := range stages {
+		preview, err := s.Preview(ctx, h)
+		if err != nil {
+			return fmt.Errorf("%s: preview %s: %w", name, s.Name(), err)
+		}
+		fmt.Fprintf(out, "[%s] %s: would run — %s\n%s", name, s.Name(), s.Runbook(), indent(preview))
 	}
 	return nil
 }

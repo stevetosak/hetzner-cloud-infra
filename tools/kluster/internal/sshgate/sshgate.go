@@ -67,7 +67,24 @@ func (g *Gate) Open(ctx context.Context, fw Firewall) error {
 			{Address: fw.Address, Actions: []intent.Action{intent.Update}, Required: true},
 		},
 	}
-	applied, err := g.converge(ctx, map[string]any{fw.Var: true}, in)
+	p, err := g.Shared.Plan(ctx, map[string]any{fw.Var: true})
+	if err != nil {
+		return err
+	}
+	// Already open — a run that stopped before its close, or `ssh open`:
+	// nothing to apply, and the API must agree.
+	if len(p.Changes) == 0 {
+		open, err := g.API.SSHOpen(ctx, fw.Name)
+		if err != nil {
+			return err
+		}
+		if !open {
+			return fmt.Errorf("%s: terraform plans no change, but the API shows no port 22 rule", fw.Name)
+		}
+		fmt.Fprintf(g.Out, "read back: %s already admits port 22\n", fw.Name)
+		return nil
+	}
+	applied, err := tf.Decide(ctx, g.Shared, p, in, g.Mode, g.Out)
 	if err != nil || !applied {
 		return err
 	}

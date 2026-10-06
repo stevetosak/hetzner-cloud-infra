@@ -172,3 +172,25 @@ makes a new key on the host, reads its public half over the verified
 connection, and pins it alone ([host keys runbook](../runbook/host-keys.md)). The weighed
 alternative, keeping the seeded key, would have let anything that reads the
 metadata service pose as the host to an SSH client.
+
+**2026-10-04 — a rehearsal never touches the operator's own WireGuard or
+kubeconfig, and kluster proves the hub with a peer of its own.** Both came up
+while `kluster cp init` was built, and both were chosen by the operator.
+
+A rehearsal Control Plane has the live VPN addresses, `10.100.0.1` and the
+rest. Pointing the operator's `wg0.conf` at it, or merging its kubeconfig
+under the live names, would cut the operator off from the live cluster for as
+long as the rehearsal runs, and the workstation's `sudo` asks for a password
+that an unattended run does not have. So kluster proves the operator route
+with a WireGuard peer inside its own process, on a userspace network stack: it
+needs no root, adds no interface or route to the workstation, and reaches a
+rehearsal hub while the operator's `wg0` stays up. It is added to the hub with
+`wg set` for one check — SSH as the operator user and `/readyz` with the new
+kubeconfig, both through the tunnel — and removed again. The edit of the
+operator's own files is a separate Stage: on live it writes
+`/etc/wireguard/wg0.conf` through `sudo` with the operator at the terminal;
+in a rehearsal it writes stand-in files under `~/.config/kluster/rehearsal/`,
+so the edit itself is still exercised. The weighed alternatives were a second
+rehearsal interface on its own subnet, which still needs root and a sudoers
+rule an agent could use, and no VPN proof at all, which would close port 22
+on a hub nobody had reached ([control-plane runbook](../runbook/control-plane.md#how-kluster-carries-this-out)).

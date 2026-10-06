@@ -57,6 +57,21 @@ go build -o kluster .
 ./kluster --env rehearsal rehearse core --apply
 ```
 
+A Control Plane build rehearses the same way, after `shared`:
+
+```sh
+./kluster --env rehearsal shared --apply
+./kluster --env rehearsal cp init                # Plan Mode
+./kluster --env rehearsal cp init --apply
+```
+
+The rehearsal Control Plane has the live VPN addresses, so its WireGuard and
+kubeconfig edits go to stand-in files under `~/.config/kluster/rehearsal/`,
+and kluster proves the route with its own in-process peer
+([control-plane runbook](./control-plane.md#how-kluster-carries-this-out)). To reach the rehearsal cluster by hand while it runs, use
+`ssh root@<its public address>` during the run or reopen port 22 with
+`shared`; the operator's `wg0` keeps pointing at the live hub.
+
 `rehearse core` proves the safety core: it builds `shared` from empty, opens
 bootstrap SSH on the Worker firewall, creates the Workers with seeded host
 keys, logs in to each and rotates its key ([host keys](./host-keys.md)), and closes SSH with the

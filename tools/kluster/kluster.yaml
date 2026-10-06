@@ -14,6 +14,9 @@
 # infra/workers/terraform.tfvars.
 
 controlPlane:
+  # The Hetzner server. `kluster cp init` creates it only into an empty slot
+  # (ADR 0009).
+  name: k8s-cp
   privateIP: "10.0.1.5"
   vpnIP: "10.100.0.1"
   # The cluster's own name for its API server. Every node resolves it to
@@ -21,6 +24,17 @@ controlPlane:
   # it and uses vpnIP instead. See ADR 0006.
   endpoint: "k8s-cp.tosak.internal"
   sshUser: cp-dev
+
+# What kubeadm and the cloud controller are told (docs/runbook/control-plane.md,
+# steps 5 and 8). The service range is narrowed from the /12 default, which
+# holds the VPN range (ADR 0001).
+cluster:
+  podCIDR: "10.244.0.0/16"
+  serviceCIDR: "10.96.0.0/16"
+  hcloudNetwork: tosak-net
+  # What pods and flannel.1 get; core/cni/flannel.yaml carries the underlay
+  # MTU, 1450, and flannel subtracts its own 50 bytes.
+  podMTU: 1400
 
 node:
   sshUser: root
@@ -30,6 +44,9 @@ node:
 wireguard:
   subnet: "10.100.0.0/24"
   port: 51820
+  # kluster's own peer, added to the hub for one check and removed again. It
+  # proves the operator route with no root on the laptop.
+  probeIP: "10.100.0.254"
   peers:
     - name: admin-laptop
       publicKey: "7v0/KwZNn08j5rtN8IQ2C8f9kOeuEqKEIlWwr4Qhq00="
@@ -38,7 +55,14 @@ wireguard:
 versions:
   containerd: "2.2.0"
   runc: "1.4.0"
+  cniPlugins: "1.9.0"
   kubernetes: "v1.37"
+
+# Applied on the Control Plane by `kluster cp init`, relative to this file.
+manifests:
+  flannel: ../../core/cni/flannel.yaml
+  ccm: ../../core/hcloud/ccm.yaml
+  csi: ../../core/hcloud/csi.yaml
 
 terraform:
   # One path per root Module, relative to this file (ADR 0002: three Modules,
@@ -61,6 +85,15 @@ envs:
     r2SecretAccessKeyEnv: AWS_SECRET_ACCESS_KEY
     # Empty: the bucket in each Module's backend.tf.
     stateBucket: ""
+    # After a Control Plane build the hub has a new key: kluster edits the
+    # operator's WireGuard config (with sudo) and merges the new kubeconfig.
+    laptop:
+      wireguardConf: /etc/wireguard/wg0.conf
+      wireguardUnit: wg-quick@wg0
+      sudo: true
+      kubeconfig: ~/.kube/config
+      mergeKubeconfig: true
+      clusterName: tosak
   rehearsal:
     hcloudTokenEnv: KLUSTER_REHEARSAL_HCLOUD_TOKEN
     r2AccessKeyIDEnv: KLUSTER_REHEARSAL_R2_ACCESS_KEY_ID
@@ -72,6 +105,13 @@ envs:
     # project that holds it: that would be the live project under the wrong
     # name.
     refuseProjectWithIP: "46.62.209.249"
+    # A rehearsal hub has the live VPN addresses, so its configs go to files
+    # of their own and the operator's live setup is never touched. kluster
+    # proves the rehearsal VPN with its own peer instead.
+    laptop:
+      wireguardConf: ~/.config/kluster/rehearsal/wg0.conf
+      kubeconfig: ~/.config/kluster/rehearsal/kubeconfig
+      clusterName: tosak-rehearsal
 
 ssh:
   # The private half of the `tosak-cluster` key in shared/. Empty: use the

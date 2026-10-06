@@ -39,17 +39,27 @@ func Generate() (*KeyPair, error) {
 	return &KeyPair{PrivatePEM: string(pem.EncodeToMemory(block)), Public: signer.PublicKey()}, nil
 }
 
-// cloudConfig is the part of cloud-init's cc_ssh module kluster sets.
+// cloudConfig is the part of cloud-init kluster sets: the cc_ssh module, and
+// cc_write_files for markers a Stage reads.
 type cloudConfig struct {
 	SSHDeleteKeys  bool              `yaml:"ssh_deletekeys"`
 	SSHGenKeyTypes []string          `yaml:"ssh_genkeytypes"`
 	SSHKeys        map[string]string `yaml:"ssh_keys"`
+	WriteFiles     []File            `yaml:"write_files,omitempty"`
+}
+
+// File is one file cloud-init writes at first boot. It must hold nothing
+// secret: Hetzner serves user_data to every process on the server.
+type File struct {
+	Path        string `yaml:"path"`
+	Content     string `yaml:"content"`
+	Permissions string `yaml:"permissions"`
 }
 
 // UserData renders the cloud-init user data that installs kp as the server's
 // only host key: cloud-init deletes the image's keys, generates none, and
-// writes this pair.
-func UserData(kp *KeyPair) (string, error) {
+// writes this pair. It also writes files, if any.
+func UserData(kp *KeyPair, files ...File) (string, error) {
 	cc := cloudConfig{
 		SSHDeleteKeys:  true,
 		SSHGenKeyTypes: []string{},
@@ -57,6 +67,7 @@ func UserData(kp *KeyPair) (string, error) {
 			"ed25519_private": kp.PrivatePEM,
 			"ed25519_public":  AuthorizedKey(kp.Public),
 		},
+		WriteFiles: files,
 	}
 	body, err := yaml.Marshal(cc)
 	if err != nil {
