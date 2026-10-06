@@ -21,19 +21,23 @@ func lookup(m map[string]string) func(string) string {
 	return func(k string) string { return m[k] }
 }
 
+// shell is the operator's shell: the live credentials, which the committed
+// config still reads from environment variables.
 var shell = map[string]string{
-	"TF_VAR_HCLOUD_TOKEN":                    "live-token",
-	"AWS_ACCESS_KEY_ID":                      "live-key",
-	"AWS_SECRET_ACCESS_KEY":                  "live-secret",
-	"KLUSTER_REHEARSAL_HCLOUD_TOKEN":         "rehearsal-token",
-	"KLUSTER_REHEARSAL_R2_ACCESS_KEY_ID":     "rehearsal-key",
-	"KLUSTER_REHEARSAL_R2_SECRET_ACCESS_KEY": "rehearsal-secret",
+	"TF_VAR_HCLOUD_TOKEN":   "live-token",
+	"AWS_ACCESS_KEY_ID":     "live-key",
+	"AWS_SECRET_ACCESS_KEY": "live-secret",
+}
+
+// rehearsalVault holds the rehearsal item the committed config names.
+func rehearsalVault() Vault {
+	return vaultOf(map[string][]string{"kluster/rehearsal": rehearsalFields})
 }
 
 // A rehearsal terraform must never see a live credential, whatever the shell
 // holds.
 func TestRehearsalTerraformEnvCarriesNoLiveCredential(t *testing.T) {
-	e, err := Resolve(context.Background(), testConfig(t), config.EnvRehearsal, lookup(shell), nil)
+	e, err := Resolve(context.Background(), testConfig(t), config.EnvRehearsal, lookup(shell), rehearsalVault())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +56,7 @@ func TestRehearsalTerraformEnvCarriesNoLiveCredential(t *testing.T) {
 			t.Errorf("%s reached the terraform environment", k)
 		}
 	}
-	if got["AWS_ACCESS_KEY_ID"] != "rehearsal-key" || got["AWS_SECRET_ACCESS_KEY"] != "rehearsal-secret" {
+	if got["AWS_ACCESS_KEY_ID"] != "reh-key" || got["AWS_SECRET_ACCESS_KEY"] != "reh-secret" {
 		t.Error("rehearsal R2 keys are not set")
 	}
 	if got["TF_DATA_DIR"] != "/repo/infra/shared/.terraform-rehearsal" {
@@ -79,20 +83,19 @@ func TestLiveUsesBackendAsWritten(t *testing.T) {
 	}
 }
 
+// The rehearsal item is checked against the live values wherever they come
+// from, here the shell.
 func TestRehearsalRefusesTheLiveToken(t *testing.T) {
-	s := map[string]string{}
-	for k, v := range shell {
-		s[k] = v
-	}
-	s["KLUSTER_REHEARSAL_HCLOUD_TOKEN"] = s["TF_VAR_HCLOUD_TOKEN"]
-	if _, err := Resolve(context.Background(), testConfig(t), config.EnvRehearsal, lookup(s), nil); err == nil {
-		t.Fatal("a rehearsal env holding the live token was accepted")
+	v := vaultOf(map[string][]string{"kluster/rehearsal": {"hcloud_token=live-token",
+		"r2_access_key_id=reh-key", "r2_secret_access_key=reh-secret"}})
+	if _, err := Resolve(context.Background(), testConfig(t), config.EnvRehearsal, lookup(shell), v); err == nil {
+		t.Fatal("a rehearsal item holding the live token was accepted")
 	}
 }
 
 func TestResolveNamesMissingVariables(t *testing.T) {
-	_, err := Resolve(context.Background(), testConfig(t), config.EnvRehearsal, lookup(nil), nil)
-	if err == nil || !strings.Contains(err.Error(), "KLUSTER_REHEARSAL_HCLOUD_TOKEN") {
+	_, err := Resolve(context.Background(), testConfig(t), config.EnvLive, lookup(nil), nil)
+	if err == nil || !strings.Contains(err.Error(), "TF_VAR_HCLOUD_TOKEN") {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -107,7 +110,7 @@ func TestExecEnv(t *testing.T) {
 	}
 
 	t.Run("rehearsal", func(t *testing.T) {
-		e, err := Resolve(context.Background(), testConfig(t), config.EnvRehearsal, lookup(shell), nil)
+		e, err := Resolve(context.Background(), testConfig(t), config.EnvRehearsal, lookup(shell), rehearsalVault())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -118,9 +121,9 @@ func TestExecEnv(t *testing.T) {
 			}
 		}
 		want := map[string]string{
-			"TF_VAR_HCLOUD_TOKEN":   "rehearsal-token",
-			"AWS_ACCESS_KEY_ID":     "rehearsal-key",
-			"AWS_SECRET_ACCESS_KEY": "rehearsal-secret",
+			"TF_VAR_HCLOUD_TOKEN":   "reh-tf",
+			"AWS_ACCESS_KEY_ID":     "reh-key",
+			"AWS_SECRET_ACCESS_KEY": "reh-secret",
 			"TF_DATA_DIR":           ".terraform-rehearsal",
 			"TF_CLI_ARGS_init":      "-backend-config=bucket=hetzner-cloud-infra-staging",
 			"PATH":                  "/usr/bin",

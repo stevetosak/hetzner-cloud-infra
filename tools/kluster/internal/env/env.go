@@ -100,6 +100,9 @@ func read(ctx context.Context, e config.Env, name string, getenv func(string) st
 // fromVault reads an item. The cluster token is optional here: only a
 // Control Plane build needs it, and it says so when it is missing.
 func fromVault(ctx context.Context, vault Vault, item string) (credentials, error) {
+	if vault == nil {
+		return credentials{}, fmt.Errorf("item %s: no password manager to read it from", item)
+	}
 	it, err := vault.Item(ctx, item)
 	if err != nil {
 		return credentials{}, err
