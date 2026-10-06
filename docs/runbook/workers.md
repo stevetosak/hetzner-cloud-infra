@@ -1,12 +1,15 @@
 ---
 title: "Workers — build runbook"
-description: "Every command that built and joined the three Workers on 2026-09-20, in order, with the checks that proved each step."
+description: "How kluster adds, removes and replaces a Worker, and every command that built and joined the first three by hand on 2026-09-20, with the checks that proved each step."
 type: procedure
 topics: [provisioning, kubernetes, networking]
+verified: 2026-10-06
 ---
 
-Written verbatim as each command ran, on 2026-09-20 ([ADR 0004](../adr/0004-kluster-safety-model.md)). This file is
-the deliverable of Phase 3. Phase 6 ports it into `kluster`.
+The numbered steps below were written verbatim as each command ran, on
+2026-09-20 ([ADR 0004](../adr/0004-kluster-safety-model.md)), and were the deliverable of Phase 3. kluster now
+carries them out: the first sections say how, and each kluster Stage names the
+numbered step it ports.
 
 Read [`docs/runbook/rebuild-2026-09-20.md`](./rebuild-2026-09-20.md) for the surrounding plan,
 [`docs/runbook/control-plane.md`](./control-plane.md) for the Control Plane this joins to, and
@@ -22,6 +25,139 @@ Environment for every Terraform command:
 ```
 cd infra && source .envrc
 ```
+
+## How kluster carries this out
+
+`kluster node add <name>` builds one Worker, and it runs twice
+([ADR 0009](../adr/0009-kluster-builds-the-whole-cluster-and-proves-it-in-a-rehearsal-project.md)). The first run finds the name missing from the environment's
+Worker set — `infra/workers/terraform.tfvars` for live,
+`infra/workers/rehearsal.tfvars` for a rehearsal — and writes its entry with
+the lowest free private and VPN address (the VPN pool skips the hub, the probe
+and every peer in `kluster.yaml`). Then it stops. kluster runs no Terraform on a
+Worker set git does not hold, because the state in R2 is shared by every clone
+and an uncommitted Worker would read as a planned destroy from any other
+checkout. Commit that file alone, then run again:
+
+```sh
+cd tools/kluster
+./kluster node add k8swk4 --apply          # run 1: the entry, then stop
+git add ../../infra/workers/terraform.tfvars && git commit -m "…"
+./kluster node add k8swk4                  # Plan Mode: the plan and every Stage
+./kluster node add k8swk4 --apply          # run 2: create, build, join
+```
+
+The second run opens bootstrap SSH (on live the Worker firewall only, in a
+rehearsal the Control Plane one too), creates exactly that server with a
+seeded host key ([host keys](./host-keys.md)), reads it back over the API, rotates the key at
+the first login and runs steps 3 to 8 as Stages, one per step. A Stage whose
+Probe passes is skipped, so a run that stopped resumes where it stopped; a
+server is resumed only if kluster holds a pin for it. Step 9 runs at the end of
+every run, a failed one included, and reads both firewalls back over the API.
+On live kluster reaches the Control Plane as the operator through WireGuard
+with `sudo`; its pin comes from a one-time `kluster pin import`
+([host keys](./host-keys.md#a-server-kluster-did-not-build)).
+
+The commands differ from the by-hand ones below in these places:
+
+| Step | What kluster does differently |
+|---|---|
+| 2 | Creates one server, not three, with `user_data` (the seeded key); a first plan that creates anything else is refused. Refuses a stale Node of the same name. |
+| 3 | First makes sure `enp7s0` holds the private address, as on the Control Plane ([control-plane runbook](./control-plane.md#how-kluster-carries-this-out)). |
+| 4 | Never fetches the CNI plugin tarball, as decided below. |
+| 6 | Makes the Worker's key on the Worker and reads the hub key with `wg show wg0 public-key`. On the hub it backs up `wg0.conf` to `wg0.conf.bak-kluster-<UTC time>`, appends the peer and adds it with `wg set`; it never restarts the hub, and a resumed run that finds the exact peer writes nothing. |
+| 7 | Mints a join token with `--ttl 15m`, writes it to `/run/kluster/join` (tmpfs, 0700) and removes it when the join ends; the token never reaches the terminal. |
+| 8 | Waits up to five minutes for the Node: `Ready`, InternalIP the private address, `providerID` `hcloud://<id>`, no `uninitialized` taint. |
+
+`kluster node list` shows the Worker set, the servers and the Nodes side by
+side and marks any disagreement. In a rehearsal it needs `kluster ssh open
+--apply` first and `kluster ssh close --apply` after; with SSH closed the Node
+column shows `?`.
+
+Proven on the rehearsal on 2026-10-06: `node add k8swk1` and `k8swk2`, both
+runs under `--apply`, ended with both Nodes Ready and "no drift" in `node
+list`. The same day `node list --env live` read the three live Workers Ready
+with no drift, and a `terraform plan` of `infra/workers` on live showed no
+changes.
+
+🔴 `versions.kubernetes` in `kluster.yaml` pins the minor version only. The
+rehearsal Nodes came up as v1.37.1 while live runs v1.37.0, so a live `node
+add` today installs a newer patch than the Control Plane's. kubeadm refuses a
+newer minor only (assumed from its preflight, not tested).
+
+## Remove a Worker
+
+`kluster node remove <name>` also runs twice, the other way round. The first
+run takes the Worker out of the cluster, out of the hub and out of the set, and
+leaves the server; the second deletes the server. It refuses a VPN address that
+`kluster.yaml` reserves (the hub, the probe, the operator's peer).
+
+```sh
+./kluster node remove k8swk4 --apply      # run 1
+git add ../../infra/workers/terraform.tfvars && git commit -m "…"
+./kluster node remove k8swk4 --apply      # run 2
+```
+
+Run 1 runs three Stages on the Control Plane, each with a Probe:
+
+1. **drain** — `kubectl drain <name> --ignore-daemonsets --delete-emptydir-data
+   --timeout=5m0s`. Done when the Node is gone, or cordoned with only
+   DaemonSet, static or finished pods left.
+2. **delete-node** — `kubectl delete node <name>`. It refuses a Node that is not
+   cordoned.
+3. **hub-peer-remove** — finds the hub peer by its `AllowedIPs`,
+   `<vpn address>/32`, never by the name in its comment. It refuses a peer that
+   routes more than that address, two such peers, or a file and a live `wg
+   show` that give the address to different keys. It backs up `wg0.conf`,
+   writes it without the peer, then runs `wg set wg0 peer <key> remove`. The
+   hub is never restarted.
+
+Then kluster drops its pin at the VPN address and writes the set without the
+entry. Run 2 finds the name gone from the set and its server still there. It
+refuses while a Node of that name exists, plans exactly one delete of
+`hcloud_server.workers["<name>"]`, reads back over the API that the server is
+gone, and drops the pin at the public address.
+
+A kubelet registers its Node again when it restarts (assumed, not tested), so
+a Worker rebooted between the two runs brings its Node back and run 2 refuses;
+drain and delete it again, or run 1 again.
+
+Proven on the rehearsal on 2026-10-06: `k8swk2` and then `k8swk1`, the last
+Worker, both runs under `--apply`; the drain of the last Worker passed too.
+
+## Replace a Worker, or all of them
+
+`kluster node replace <name>` makes a Worker new in one run. The set keeps its
+entry, so there is no commit between runs. It refuses a name the set does not
+declare, and a declared Worker with no server (`node add` builds that).
+
+Before the Worker leaves, two gates must pass. **The database gate:** every
+CloudNativePG Cluster has `status.readyInstances` at least `spec.instances`;
+with no CloudNativePG CRD or no Cluster it passes and says so. **The last
+Worker:** it refuses to replace the only Ready Worker Node. Then it runs the
+three Stages of "Remove a Worker", drops both pins, and plans exactly one
+replacement, `terraform plan -replace=hcloud_server.workers["<name>"]`, with a
+new seeded key in that Worker's `user_data`. The new server is built as in
+`node add`, steps 3 to 8. If the build stops after the replacement, `kluster
+node add <name> --apply` resumes it, because the new server's key is pinned.
+
+```sh
+./kluster node replace k8swk1             # Plan Mode
+./kluster node replace k8swk1 --apply
+./kluster reset --apply                   # every Worker, in name order
+```
+
+`kluster reset` replaces every Worker the set declares, one at a time, in name
+order. It refuses if any declared Worker has no server. Before each Worker
+after the first it waits up to fifteen minutes for the database gate, then
+checks both gates again. A stop names the Workers replaced and those not
+touched; there is no resume flag, so replace the rest with `node replace`.
+
+Proven on the rehearsal on 2026-10-06, with no CloudNativePG Cluster: `node
+replace k8swk1`, then `reset` over two Workers, each new server Ready before
+the next began. The first login to each new server verified against the new
+seeded key, which proves that `-replace` creates the server with the new
+`user_data` although the Module ignores changes to it. The database gate's
+CloudNativePG path is not proven yet.
 
 ## Why this was done by hand
 

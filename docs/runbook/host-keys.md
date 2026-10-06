@@ -2,7 +2,7 @@
 title: "Host keys: seeded at creation, rotated at the first login"
 description: "How kluster makes a new server's SSH host key known before the first login, verifies that login against it, and then replaces it, with the checks that prove each step."
 type: procedure
-verified: 2026-10-04
+verified: 2026-10-06
 topics: [provisioning, security]
 ---
 
@@ -100,6 +100,33 @@ Over the connection the seeded key verified, as `root`:
 
 5. Only when that dial succeeds, pin the new key alone. The seeded key is
    then refused everywhere.
+
+## A server kluster did not build
+
+The live Control Plane was built by hand on 2026-09-20, so kluster never
+seeded or pinned its key, and kluster trusts only its own pins file: it does
+not fall back to `~/.ssh/known_hosts`. The key enters the pins file once, from
+the entry the operator's own SSH client already holds:
+
+```sh
+cd tools/kluster
+./kluster pin import 10.100.0.1            # Plan Mode: the key, its SHA256, the check to run on the host
+ssh cp-dev@10.100.0.1 'ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub'
+./kluster pin import 10.100.0.1 --apply    # only when both fingerprints match
+```
+
+It reads the one ed25519 key that `known_hosts` holds for the address, hashed
+entries included, and refuses none, two, a host name or a revoked key. It
+accepts only addresses inside the WireGuard subnet: `cp init` reads a pin at a
+public address as "kluster created this server", so an imported public pin
+would let it resume a server it never built. kluster's SSH client asks for
+ed25519 host keys only, because the hand-built host also serves ECDSA and RSA
+keys and the client would otherwise be offered one of those first.
+
+Run on live on 2026-10-06 with the operator's approval: `10.100.0.1` pinned as
+`SHA256:58iiV54MDXGf5wKb8m1uP8tqwltJoyhE3gBQ8SEuwjM`, read back with
+`ssh-keygen -lf ~/.config/kluster/live/known_hosts`, and `kluster node list
+--env live` then logged in as `cp-dev` verified against it.
 
 ## How to know it worked
 

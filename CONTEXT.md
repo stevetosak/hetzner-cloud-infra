@@ -77,6 +77,11 @@ lives on volumes that are not part of a Worker's lifetime.
 
 Always say which you mean.
 
+The Worker set is written down per environment: `infra/workers/terraform.tfvars`
+for live, `infra/workers/rehearsal.tfvars` for a rehearsal. `kluster node add`
+and `node remove` edit the file, and kluster plans nothing on it until it is
+committed.
+
 ## Private Network
 
 The Hetzner network `tosak-net`, `10.0.0.0/16`, reached on each server's second

@@ -194,3 +194,14 @@ so the edit itself is still exercised. The weighed alternatives were a second
 rehearsal interface on its own subnet, which still needs root and a sudoers
 rule an agent could use, and no VPN proof at all, which would close port 22
 on a hub nobody had reached ([control-plane runbook](../runbook/control-plane.md#how-kluster-carries-this-out)).
+
+**2026-10-06 — each environment has its own Worker set file.** The decision
+names `infra/workers/terraform.tfvars` as the file `node add` writes. Terraform
+loads that file in every environment, so a rehearsal `node add` would have
+written the live Worker set. A rehearsal now has its own committed file,
+`infra/workers/rehearsal.tfvars`, empty between rehearsals. kluster passes each
+environment's own file to the workers Module with `-var-file`, which wins over
+the auto-loaded `terraform.tfvars`, so the rehearsal file is never read under
+live. kluster's configuration refuses a rehearsal Worker set equal to the
+live one, and the commit gate applies to both files
+([workers runbook](../runbook/workers.md#how-kluster-carries-this-out)). Chosen by the operator.
