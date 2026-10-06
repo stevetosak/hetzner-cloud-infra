@@ -10,8 +10,8 @@
 #
 # kluster is a convenience over Terraform and the runbook, never the authority
 # (ADR 0004). Per-worker addresses are NOT here: a worker's identity — its
-# name, its private address, its VPN address — is declared once, in
-# infra/workers/terraform.tfvars.
+# name, its private address, its VPN address — is declared once, in the
+# environment's Worker set (envs.<env>.workerSet).
 
 controlPlane:
   # The Hetzner server. `kluster cp init` creates it only into an empty slot
@@ -40,6 +40,14 @@ node:
   sshUser: root
   user: tosak
   networkInterface: enp7s0
+
+# How `kluster node add` fills a new entry in the Worker set. A new Worker
+# takes the lowest free address of each pool; the VPN pool skips every
+# address a peer above holds.
+workers:
+  serverType: cx23
+  privateIPs: "10.0.2.6-10.0.2.254"
+  vpnIPs: "10.100.0.2-10.100.0.253"
 
 wireguard:
   subnet: "10.100.0.0/24"
@@ -85,6 +93,9 @@ envs:
     r2SecretAccessKeyEnv: AWS_SECRET_ACCESS_KEY
     # Empty: the bucket in each Module's backend.tf.
     stateBucket: ""
+    # The Worker set. kluster writes it for `node add` and `node remove`
+    # and runs no Terraform until the edit is committed.
+    workerSet: ../../infra/workers/terraform.tfvars
     # After a Control Plane build the hub has a new key: kluster edits the
     # operator's WireGuard config (with sudo) and merges the new kubeconfig.
     laptop:
@@ -105,6 +116,9 @@ envs:
     # project that holds it: that would be the live project under the wrong
     # name.
     refuseProjectWithIP: "46.62.209.249"
+    # Its own Worker set. terraform.tfvars loads in every environment, so
+    # without this file a rehearsal `node add` would write the live set.
+    workerSet: ../../infra/workers/rehearsal.tfvars
     # A rehearsal hub has the live VPN addresses, so its configs go to files
     # of their own and the operator's live setup is never touched. kluster
     # proves the rehearsal VPN with its own peer instead.

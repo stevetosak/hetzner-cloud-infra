@@ -23,6 +23,29 @@ func TestLoadCommittedConfig(t *testing.T) {
 	}
 }
 
+// The rehearsal Worker set must be its own file, beside the live one in the
+// workers Module, or a rehearsal `node add` writes the live set.
+func TestWorkerSetsPerEnv(t *testing.T) {
+	cfg, err := Load("../../kluster.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mod, err := cfg.ModuleDir(ModuleWorkers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{EnvLive: "terraform.tfvars", EnvRehearsal: "rehearsal.tfvars"}
+	for env, file := range want {
+		got, err := cfg.Path(cfg.Envs[env].WorkerSet)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != filepath.Join(mod, file) {
+			t.Errorf("%s worker set = %s, want %s", env, got, filepath.Join(mod, file))
+		}
+	}
+}
+
 // Each case changes one line of the committed file, so the refusal can only
 // come from that line.
 func TestValidateRefusesRehearsalSharingLive(t *testing.T) {
@@ -48,6 +71,14 @@ func TestValidateRefusesRehearsalSharingLive(t *testing.T) {
 		"live kubeconfig": {
 			"kubeconfig: ~/.config/kluster/rehearsal/kubeconfig", "kubeconfig: ~/.kube/config",
 			"its own wireguardConf, kubeconfig",
+		},
+		"live worker set": {
+			"workerSet: ../../infra/workers/rehearsal.tfvars", "workerSet: ../../infra/workers/terraform.tfvars",
+			"must name its own file",
+		},
+		"no worker set": {
+			"workerSet: ../../infra/workers/rehearsal.tfvars", `workerSet: ""`,
+			"envs.rehearsal.workerSet is required",
 		},
 		"sudo": {
 			"wireguardConf: ~/.config/kluster/rehearsal/wg0.conf",
