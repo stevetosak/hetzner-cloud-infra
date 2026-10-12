@@ -67,6 +67,14 @@ versions:
   # The exact release of the live Control Plane. Every Worker installs this
   # patch; an upgrade changes this line on purpose.
   kubernetes: "v1.37.0"
+  # The sops release `kluster secrets` runs; it refuses any other.
+  sops: "3.13.3"
+
+# The Secret Catalog and the sops rules, relative to this file. Every
+# *.enc.yaml file is listed in the catalog (ADR 0003, Amendment 2026-10-06).
+secrets:
+  catalog: ../../secrets.yaml
+  sopsConfig: ../../.sops.yaml
 
 # Applied on the Control Plane by `kluster cp init`, relative to this file.
 manifests:

@@ -116,3 +116,36 @@ func firstLine(b []byte) string {
 	s, _, _ := strings.Cut(string(b), "\n")
 	return s
 }
+
+// Edit opens file in sops edit on the operator's terminal. The editor gets
+// TERM, HOME, EDITOR and VISUAL from the shell, and sops the age key; no
+// other variable reaches the child. It reports whether the file changed.
+func (b *Binary) Edit(ctx context.Context, file, ageKey string) (changed bool, err error) {
+	if ageKey == "" {
+		return false, errors.New("sops edit: no age key")
+	}
+	bin, err := exec.LookPath("sops")
+	if err != nil {
+		return false, errors.New("`sops` is not installed (docs/runbook/secrets.md)")
+	}
+	c := exec.CommandContext(ctx, bin, "--disable-version-check", "--config", b.config, "edit", file)
+	c.Env = append(baseEnv(), "SOPS_AGE_KEY="+ageKey)
+	for _, v := range []string{"TERM", "HOME", "EDITOR", "VISUAL"} {
+		if s, ok := os.LookupEnv(v); ok {
+			c.Env = append(c.Env, v+"="+s)
+		}
+	}
+	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+	err = c.Run()
+	var exit *exec.ExitError
+	switch {
+	case errors.As(err, &exit) && exit.ExitCode() == exitFileNotModified:
+		return false, nil
+	case err != nil:
+		return false, fmt.Errorf("sops edit %s: %w", file, err)
+	}
+	return true, nil
+}
+
+// exitFileNotModified is the sops exit code of an edit that changed nothing.
+const exitFileNotModified = 200

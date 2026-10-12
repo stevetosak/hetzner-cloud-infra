@@ -37,6 +37,7 @@ type Config struct {
 	WireGuard    WireGuard      `yaml:"wireguard"`
 	Versions     Versions       `yaml:"versions"`
 	Manifests    Manifests      `yaml:"manifests"`
+	Secrets      Secrets        `yaml:"secrets"`
 	Terraform    Terraform      `yaml:"terraform"`
 	Envs         map[string]Env `yaml:"envs"`
 	SSH          SSH            `yaml:"ssh"`
@@ -105,6 +106,16 @@ type Versions struct {
 	// are pinned to it, so a Worker never gets a newer kubelet than the
 	// Control Plane it joins.
 	Kubernetes string `yaml:"kubernetes"`
+	// Sops is the exact sops release kluster secrets runs. Any other
+	// installed version is refused (ADR 0003, Amendment 2026-10-06).
+	Sops string `yaml:"sops"`
+}
+
+// Secrets is where kluster secrets finds the Secret Catalog and the sops
+// rules, as paths relative to kluster.yaml.
+type Secrets struct {
+	Catalog    string `yaml:"catalog"`
+	SopsConfig string `yaml:"sopsConfig"`
 }
 
 // Manifests are the cluster manifests the Control Plane Stages apply, as
@@ -261,6 +272,9 @@ func (c *Config) validate() error {
 		{"workers.serverType", c.Workers.ServerType},
 		{"workers.privateIPs", c.Workers.PrivateIPs},
 		{"workers.vpnIPs", c.Workers.VpnIPs},
+		{"versions.sops", c.Versions.Sops},
+		{"secrets.catalog", c.Secrets.Catalog},
+		{"secrets.sopsConfig", c.Secrets.SopsConfig},
 	}
 	for _, r := range required {
 		if r.v == "" {
