@@ -3,10 +3,12 @@ package secrets
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"text/tabwriter"
 
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/bitwarden"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/catalog"
 )
 
@@ -21,6 +23,7 @@ const (
 	NotInCatalog   State = "not in " + catalog.FileName + ": the next write removes it"
 	WrongShape     State = "type or labels differ from " + catalog.FileName + ": the next write fixes them"
 	NotComparedBW  State = "present, not compared with Bitwarden"
+	NotInBitwarden State = "present, its Bitwarden item does not exist: store the value there"
 	shapeKeyMarker       = "(type, labels)"
 )
 
@@ -71,6 +74,10 @@ func List(ctx context.Context, store *Store, vault Vault) ([]Row, error) {
 				row.State = NotComparedBW
 			case k.Kind == catalog.Issued:
 				bw, err := vault.Issued(ctx, k)
+				if errors.Is(err, bitwarden.ErrNotFound) {
+					row.State = NotInBitwarden
+					break
+				}
 				if err != nil {
 					return nil, fmt.Errorf("%s.%s: %w", s.Ref, name, err)
 				}

@@ -12,6 +12,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/bitwarden"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/catalog"
 )
 
@@ -101,7 +102,7 @@ type fakeVault map[string]string
 func (v fakeVault) Issued(_ context.Context, k *catalog.Key) ([]byte, error) {
 	s, ok := v[k.Item+"/"+k.Field]
 	if !ok {
-		return nil, fmt.Errorf("no item %s", k.Item)
+		return nil, fmt.Errorf("Bitwarden item %q: %w", k.Item, bitwarden.ErrNotFound)
 	}
 	return []byte(s), nil
 }

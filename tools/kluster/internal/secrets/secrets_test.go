@@ -229,6 +229,13 @@ func TestList(t *testing.T) {
 	if state(rows, "API_TOKEN") != NotComparedBW {
 		t.Errorf("without a vault: %v", state(rows, "API_TOKEN"))
 	}
+	rows, err = List(ctx, f.store, fakeVault{})
+	if err != nil {
+		t.Fatalf("a missing Bitwarden item stopped list: %v", err)
+	}
+	if state(rows, "API_TOKEN") != NotInBitwarden {
+		t.Errorf("missing item: %v", state(rows, "API_TOKEN"))
+	}
 }
 
 func TestDiffAndApply(t *testing.T) {
