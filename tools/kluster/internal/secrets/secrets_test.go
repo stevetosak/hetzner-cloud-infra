@@ -206,8 +206,14 @@ func TestList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state(rows, "API_TOKEN") != Missing || state(rows, "password") != Present || state(rows, "DB_PASS") != Present {
+	if state(rows, "API_TOKEN") != MissingInBW || state(rows, "password") != Present || state(rows, "DB_PASS") != Present {
 		t.Errorf("rows %v", rows)
+	}
+	if rows, _ := List(ctx, f.store, fakeVault{}); state(rows, "API_TOKEN") != MissingNoBW {
+		t.Errorf("missing everywhere: %v", state(rows, "API_TOKEN"))
+	}
+	if rows, _ := List(ctx, f.store, nil); state(rows, "API_TOKEN") != Missing {
+		t.Errorf("missing, no vault: %v", state(rows, "API_TOKEN"))
 	}
 
 	ref := catalog.KeyRef{Secret: catalog.Ref{Namespace: "app", Name: "credentials"}, Key: "API_TOKEN"}
@@ -235,6 +241,12 @@ func TestList(t *testing.T) {
 	}
 	if state(rows, "API_TOKEN") != NotInBitwarden {
 		t.Errorf("missing item: %v", state(rows, "API_TOKEN"))
+	}
+	if err := os.Remove(f.store.cat.Path(f.secret("db/creds"))); err != nil {
+		t.Fatal(err)
+	}
+	if rows, _ := List(ctx, f.store, nil); state(rows, "DB_PASS") != SourceMissing {
+		t.Errorf("source file gone: %v", state(rows, "DB_PASS"))
 	}
 }
 
