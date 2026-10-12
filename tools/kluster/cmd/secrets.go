@@ -189,7 +189,7 @@ var secretsPullCmd = &cobra.Command{
 
 var secretsSetCmd = &cobra.Command{
 	Use:   "set <namespace>/<name>.<key>",
-	Short: "Type one issued value on the terminal, with no echo; store it in Bitwarden too",
+	Short: "Type one issued value on the terminal, with no echo (store the same value in Bitwarden yourself: kluster never writes the vault)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		refs, err := keyRefs(args)
