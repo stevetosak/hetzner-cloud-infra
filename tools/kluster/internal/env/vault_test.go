@@ -33,16 +33,22 @@ func vaultOf(items map[string][]string) Vault {
 		case "sync":
 			return nil, nil
 		}
-		fields, ok := items[args[2]]
-		if !ok {
-			return nil, errors.New("Not found.")
+		if args[0] != "list" {
+			return nil, errors.New("unexpected call")
 		}
-		var fs []string
-		for _, f := range fields {
-			k, v, _ := strings.Cut(f, "=")
-			fs = append(fs, `{"name":"`+k+`","value":"`+v+`"}`)
+		var hits []string
+		for name, fields := range items {
+			if !strings.Contains(name, args[3]) {
+				continue
+			}
+			var fs []string
+			for _, f := range fields {
+				k, v, _ := strings.Cut(f, "=")
+				fs = append(fs, `{"name":"`+k+`","value":"`+v+`"}`)
+			}
+			hits = append(hits, `{"id":"x","name":"`+name+`","fields":[`+strings.Join(fs, ",")+`]}`)
 		}
-		return []byte(`{"id":"x","name":"` + args[2] + `","fields":[` + strings.Join(fs, ",") + `]}`), nil
+		return []byte("[" + strings.Join(hits, ",") + "]"), nil
 	}
 	return bitwarden.NewWithRunner(run, &bytes.Buffer{})
 }

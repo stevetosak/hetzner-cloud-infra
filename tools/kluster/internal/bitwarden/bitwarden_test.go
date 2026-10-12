@@ -11,7 +11,7 @@ import (
 // fakeVault answers `bw` calls from a table and records them.
 type fakeVault struct {
 	status  string
-	items   map[string]string // search term → JSON
+	items   map[string]string // item name → JSON
 	files   map[string]string // attachment id → content
 	syncErr error
 	calls   []string
@@ -24,13 +24,15 @@ func (f *fakeVault) run(_ context.Context, args ...string) ([]byte, error) {
 		return []byte(`{"status":"` + f.status + `"}`), nil
 	case "sync":
 		return nil, f.syncErr
-	case "get":
-		if args[1] == "item" {
-			if j, ok := f.items[args[2]]; ok {
-				return []byte(j), nil
+	case "list":
+		var hits []string
+		for name, j := range f.items {
+			if strings.Contains(name, args[3]) {
+				hits = append(hits, j)
 			}
-			return nil, errors.New("bw get: exit status 1: Not found.")
 		}
+		return []byte("[" + strings.Join(hits, ",") + "]"), nil
+	case "get":
 		return []byte(f.files[args[2]]), nil
 	}
 	return nil, errors.New("unexpected call")
@@ -59,17 +61,44 @@ func TestItemReadsFieldsAndAttachments(t *testing.T) {
 	if b, err := c.Attachment(context.Background(), it, "keystore.p12"); err != nil || string(b) != "P12" {
 		t.Errorf("Attachment = %q, %v", b, err)
 	}
-	if got := strings.Join(f.calls, "|"); got != "status|sync|get item kluster/live|get attachment a1 --itemid i1 --raw" {
+	if got := strings.Join(f.calls, "|"); got != "status|sync|list items --search kluster/|get attachment a1 --itemid i1 --raw" {
 		t.Errorf("calls = %s", got)
 	}
 }
 
-// `bw get item` searches: a term can find an item whose name only contains it.
-func TestItemRefusesASearchHitThatIsNotTheName(t *testing.T) {
-	f := &fakeVault{status: "unlocked", items: map[string]string{"kluster/liv": liveItem}}
+// The search matches parts of names: only the exact name counts.
+func TestItemNeedsTheExactName(t *testing.T) {
+	f := &fakeVault{status: "unlocked", items: map[string]string{"kluster/live": liveItem}}
 	_, err := NewWithRunner(f.run, &bytes.Buffer{}).Item(context.Background(), "kluster/liv")
-	if err == nil || !strings.Contains(err.Error(), "not an exact match") {
+	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestItemRefusesADuplicateName(t *testing.T) {
+	f := &fakeVault{status: "unlocked", items: map[string]string{
+		"kluster/live":   liveItem,
+		"kluster/live-2": strings.Replace(liveItem, `"id":"i1"`, `"id":"i2"`, 1),
+	}}
+	_, err := NewWithRunner(f.run, &bytes.Buffer{}).Item(context.Background(), "kluster/live")
+	if err == nil || !strings.Contains(err.Error(), "2 items named") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// One status, one sync and one list serve every item under a prefix.
+func TestItemsUnderOnePrefixCostOneList(t *testing.T) {
+	other := strings.NewReplacer(`"id":"i1"`, `"id":"i2"`, `"name":"kluster/live"`, `"name":"kluster/age-key"`).Replace(liveItem)
+	f := &fakeVault{status: "unlocked", items: map[string]string{"kluster/live": liveItem, "kluster/age-key": other}}
+	c := NewWithRunner(f.run, &bytes.Buffer{})
+	for _, n := range []string{"kluster/live", "kluster/age-key", "kluster/live"} {
+		it, err := c.Item(context.Background(), n)
+		if err != nil || it.Name != n {
+			t.Fatalf("%s: %v, %v", n, it, err)
+		}
+	}
+	if got := strings.Join(f.calls, "|"); got != "status|sync|list items --search kluster/" {
+		t.Errorf("calls = %s", got)
 	}
 }
 

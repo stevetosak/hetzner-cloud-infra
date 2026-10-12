@@ -25,11 +25,15 @@ type Runner func(ctx context.Context, args ...string) ([]byte, error)
 // ErrNotFound means the vault holds no item by that name.
 var ErrNotFound = errors.New("not found")
 
-// Client reads one unlocked vault.
+// Client reads one unlocked vault. Each `bw` call starts the Node.js CLI,
+// about 0.7 s, so a Client checks the status and syncs once, and reads all
+// items under one prefix ("kluster/") in a single call.
 type Client struct {
 	run    Runner
 	warn   io.Writer
+	ready  bool
 	synced bool
+	byTerm map[string][]Item // search term → the items it found
 }
 
 // New returns a Client that runs the `bw` binary. Warnings, such as a failed
@@ -64,6 +68,9 @@ const unlockHint = "run: export BW_SESSION=\"$(bw unlock --raw)\""
 // that fails leaves the local cache, which still decrypts offline; kluster
 // warns and goes on.
 func (c *Client) Ready(ctx context.Context) error {
+	if c.ready {
+		return nil
+	}
 	out, err := c.run(ctx, "status")
 	if err != nil {
 		return err
@@ -81,13 +88,13 @@ func (c *Client) Ready(ctx context.Context) error {
 	default:
 		return fmt.Errorf("Bitwarden: the vault is %s; %s", st.Status, unlockHint)
 	}
-	if c.synced {
-		return nil
+	if !c.synced {
+		if _, err := c.run(ctx, "sync"); err != nil {
+			fmt.Fprintf(c.warn, "warning: Bitwarden sync failed, reading the local cache: %v\n", err)
+		}
+		c.synced = true
 	}
-	if _, err := c.run(ctx, "sync"); err != nil {
-		fmt.Fprintf(c.warn, "warning: Bitwarden sync failed, reading the local cache: %v\n", err)
-	}
-	c.synced = true
+	c.ready = true
 	return nil
 }
 
@@ -114,29 +121,62 @@ type attachment struct {
 	FileName string `json:"fileName"`
 }
 
-// Item reads the item named exactly name. `bw get item` searches, so it can
-// return an item whose name only contains the term; that is refused. Two
-// items with the name make the CLI fail, and kluster with it: a duplicate
-// never picks one.
+// Item reads the item named exactly name. Items are listed once per search
+// term, the name up to its last "/" ("kluster/"), so every kluster item
+// costs one `bw` call together. The search matches parts of names, so only
+// an exact name counts; two items with the name are refused, never one
+// picked.
 func (c *Client) Item(ctx context.Context, name string) (*Item, error) {
 	if err := c.Ready(ctx); err != nil {
 		return nil, err
 	}
-	out, err := c.run(ctx, "get", "item", name)
+	items, err := c.search(ctx, searchTerm(name))
 	if err != nil {
-		if strings.Contains(err.Error(), "Not found") {
-			return nil, fmt.Errorf("Bitwarden item %q: %w", name, ErrNotFound)
-		}
 		return nil, fmt.Errorf("Bitwarden item %q: %w", name, err)
 	}
-	var it Item
-	if err := json.Unmarshal(out, &it); err != nil {
-		return nil, fmt.Errorf("Bitwarden item %q: unreadable output", name)
+	var found []*Item
+	for i := range items {
+		if items[i].Name == name {
+			found = append(found, &items[i])
+		}
 	}
-	if it.Name != name {
-		return nil, fmt.Errorf("Bitwarden item %q: the search found %q, not an exact match", name, it.Name)
+	switch len(found) {
+	case 0:
+		return nil, fmt.Errorf("Bitwarden item %q: %w", name, ErrNotFound)
+	case 1:
+		return found[0], nil
+	default:
+		return nil, fmt.Errorf("Bitwarden has %d items named %q; keep one", len(found), name)
 	}
-	return &it, nil
+}
+
+// searchTerm is the prefix of name up to and including its last "/", or the
+// whole name when it has none.
+func searchTerm(name string) string {
+	if i := strings.LastIndex(name, "/"); i >= 0 {
+		return name[:i+1]
+	}
+	return name
+}
+
+// search lists the items a term finds, once per term.
+func (c *Client) search(ctx context.Context, term string) ([]Item, error) {
+	if items, ok := c.byTerm[term]; ok {
+		return items, nil
+	}
+	out, err := c.run(ctx, "list", "items", "--search", term)
+	if err != nil {
+		return nil, err
+	}
+	var items []Item
+	if err := json.Unmarshal(out, &items); err != nil {
+		return nil, errors.New("bw list items: unreadable output")
+	}
+	if c.byTerm == nil {
+		c.byTerm = map[string][]Item{}
+	}
+	c.byTerm[term] = items
+	return items, nil
 }
 
 // Field returns the value of a field. "password" is the login password; any
