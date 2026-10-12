@@ -24,10 +24,18 @@ type Vault interface {
 	Issued(ctx context.Context, k *catalog.Key) ([]byte, error)
 }
 
-// Bitwarden is the Vault over the Bitwarden CLI. It reads each item once.
+// ErrSkipped means a Vault did not read the value on purpose: an attachment
+// read with SkipAttachments set.
+var ErrSkipped = errors.New("not read")
+
+// Bitwarden is the Vault over the password manager. It reads each item
+// once.
 type Bitwarden struct {
 	c     *bitwarden.Client
 	items map[string]*bitwarden.Item
+	// SkipAttachments makes Issued return ErrSkipped for an attachment, once
+	// its item is found: an attachment is read through bw, about 6 s.
+	SkipAttachments bool
 }
 
 // NewBitwarden returns the Vault over c.
@@ -57,6 +65,9 @@ func (b *Bitwarden) Issued(ctx context.Context, k *catalog.Key) ([]byte, error) 
 		return nil, err
 	}
 	if k.Attachment != "" {
+		if b.SkipAttachments {
+			return nil, ErrSkipped
+		}
 		return b.c.Attachment(ctx, it, k.Attachment)
 	}
 	v, err := it.Field(k.Field)

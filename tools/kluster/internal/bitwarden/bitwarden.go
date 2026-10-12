@@ -1,10 +1,17 @@
 // Package bitwarden reads the password manager, the root of every secret
-// kluster uses (ADR 0003, Amendments 2026-10-04 and 2026-10-06). It runs the
-// Bitwarden CLI, `bw`, in an already unlocked shell: kluster never asks for
-// the master password and never logs in.
+// kluster uses (ADR 0003, Amendments 2026-10-04 and 2026-10-06).
+//
+// It reads items with rbw, an unofficial Bitwarden client whose agent holds
+// the unlocked keys, so one call costs milliseconds; the official `bw` CLI
+// starts Node.js on every call, about 3 s. kluster runs rbw under its own
+// profile, Profile, with its own agent and a short lock timeout, and never
+// unlocks it: the operator does, in their own terminal.
+//
+// rbw cannot download attachments (doy/rbw#130), so Attachment alone runs
+// `bw`, in a shell the operator unlocked with BW_SESSION.
 //
 // A value read here stays in memory. Nothing in this package prints one, and
-// no error carries the CLI's standard output, where the values are.
+// no error carries a client's standard output, where the values are.
 package bitwarden
 
 import (
@@ -14,85 +21,92 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 )
 
-// Runner runs `bw` with args and returns its standard output. Tests replace
-// it; the CLI is the only real one.
+// Profile is the rbw profile kluster reads: its own config, local vault and
+// agent, apart from any profile the operator uses day to day.
+const Profile = "kluster"
+
+// Runner runs a client with args and returns its standard output. Tests
+// replace it.
 type Runner func(ctx context.Context, args ...string) ([]byte, error)
 
 // ErrNotFound means the vault holds no item by that name.
 var ErrNotFound = errors.New("not found")
 
-// Client reads one unlocked vault. Each `bw` call starts the Node.js CLI,
-// about 0.7 s, so a Client checks the status and syncs once, and reads all
-// items under one prefix ("kluster/") in a single call.
+// Client reads one vault: items through rbw, attachments through bw. Each
+// client is checked and synced once per Client.
 type Client struct {
-	run    Runner
-	warn   io.Writer
-	ready  bool
-	synced bool
-	byTerm map[string][]Item // search term → the items it found
+	rbw, bw  Runner
+	warn     io.Writer
+	ready    bool
+	bwSynced bool
+	ids      map[string][]string // item name → the ids of the items with that name
+	items    map[string]*Item    // id → item
 }
 
-// New returns a Client that runs the `bw` binary. Warnings, such as a failed
+// New returns a Client over the real rbw and bw. Warnings, such as a failed
 // sync, go to warn.
-func New(warn io.Writer) *Client { return &Client{run: cli, warn: warn} }
+func New(warn io.Writer) *Client {
+	return NewWithRunners(rbwCLI, bwCLI, warn)
+}
 
-// NewWithRunner returns a Client over run, for tests.
-func NewWithRunner(run Runner, warn io.Writer) *Client { return &Client{run: run, warn: warn} }
+// NewWithRunners returns a Client over the given runners, for tests.
+func NewWithRunners(rbw, bw Runner, warn io.Writer) *Client {
+	return &Client{rbw: rbw, bw: bw, warn: warn}
+}
 
-// cli runs the real binary. BW_SESSION reaches it from kluster's own
-// environment. --nointeraction makes a locked vault fail instead of
-// prompting for the master password.
-func cli(ctx context.Context, args ...string) ([]byte, error) {
-	if _, err := exec.LookPath("bw"); err != nil {
-		return nil, errors.New("the Bitwarden CLI `bw` is not installed (docs/runbook/secrets.md)")
+// The commands the operator runs, named in errors.
+const (
+	rbwUnlock = "RBW_PROFILE=" + Profile + " rbw unlock"
+	bwUnlock  = "export BW_SESSION=\"$(bw unlock --raw)\""
+)
+
+// rbwCLI runs rbw under Profile. The rest of kluster's environment passes
+// through: rbw finds its agent socket through XDG_RUNTIME_DIR.
+func rbwCLI(ctx context.Context, args ...string) ([]byte, error) {
+	return run(ctx, "rbw", "rbw is not installed (docs/runbook/secrets.md)",
+		append(os.Environ(), "RBW_PROFILE="+Profile), args)
+}
+
+// bwCLI runs bw. BW_SESSION reaches it from kluster's own environment.
+// --nointeraction makes a locked vault fail instead of prompting.
+func bwCLI(ctx context.Context, args ...string) ([]byte, error) {
+	return run(ctx, "bw", "the Bitwarden CLI `bw` is not installed; it is needed for attachments only",
+		os.Environ(), append([]string{"--nointeraction"}, args...))
+}
+
+func run(ctx context.Context, bin, missing string, env, args []string) ([]byte, error) {
+	if _, err := exec.LookPath(bin); err != nil {
+		return nil, errors.New(missing)
 	}
-	c := exec.CommandContext(ctx, "bw", append([]string{"--nointeraction"}, args...)...)
+	c := exec.CommandContext(ctx, bin, args...)
+	c.Env = env
 	var stdout, stderr bytes.Buffer
 	c.Stdout, c.Stderr = &stdout, &stderr
 	if err := c.Run(); err != nil {
-		// stderr holds the CLI's message ("Not found.", "Vault is locked."),
-		// never a value; stdout is dropped on purpose.
-		return nil, fmt.Errorf("bw %s: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
+		// stderr holds the client's message ("no entry found", "Vault is
+		// locked."), never a value; stdout is dropped on purpose.
+		return nil, fmt.Errorf("%s %s: %w: %s", bin, args[0], err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.Bytes(), nil
 }
 
-// unlockHint is what the operator runs once per shell.
-const unlockHint = "run: export BW_SESSION=\"$(bw unlock --raw)\""
-
-// Ready checks the vault is unlocked, then syncs it once per Client. A sync
-// that fails leaves the local cache, which still decrypts offline; kluster
-// warns and goes on.
+// Ready checks that the rbw agent is unlocked, without starting or
+// unlocking it, then syncs once. A sync that fails leaves the local copy,
+// which still decrypts offline; kluster warns and goes on.
 func (c *Client) Ready(ctx context.Context) error {
 	if c.ready {
 		return nil
 	}
-	out, err := c.run(ctx, "status")
-	if err != nil {
-		return err
+	if _, err := c.rbw(ctx, "unlocked"); err != nil {
+		return fmt.Errorf("Bitwarden: the rbw profile %q is locked or not set up; run `%s` (docs/runbook/secrets.md)", Profile, rbwUnlock)
 	}
-	var st struct {
-		Status string `json:"status"`
-	}
-	if err := json.Unmarshal(out, &st); err != nil {
-		return fmt.Errorf("bw status: unreadable output: %w", err)
-	}
-	switch st.Status {
-	case "unlocked":
-	case "unauthenticated":
-		return errors.New("Bitwarden: not logged in; run `bw login`, then " + unlockHint)
-	default:
-		return fmt.Errorf("Bitwarden: the vault is %s; %s", st.Status, unlockHint)
-	}
-	if !c.synced {
-		if _, err := c.run(ctx, "sync"); err != nil {
-			fmt.Fprintf(c.warn, "warning: Bitwarden sync failed, reading the local cache: %v\n", err)
-		}
-		c.synced = true
+	if _, err := c.rbw(ctx, "sync"); err != nil {
+		fmt.Fprintf(c.warn, "warning: Bitwarden sync failed, reading the local copy: %v\n", err)
 	}
 	c.ready = true
 	return nil
@@ -100,83 +114,86 @@ func (c *Client) Ready(ctx context.Context) error {
 
 // Item is one vault item. Its values are reached through its methods only.
 type Item struct {
-	ID          string       `json:"id"`
-	Name        string       `json:"name"`
-	Login       *login       `json:"login"`
-	Fields      []field      `json:"fields"`
-	Attachments []attachment `json:"attachments"`
+	ID     string  `json:"id"`
+	Name   string  `json:"name"`
+	Data   data    `json:"data"`
+	Fields []field `json:"fields"`
 }
 
-type login struct {
-	Password string `json:"password"`
+// data is the type-specific part of an entry; only a login's password is
+// read.
+type data struct {
+	Password *string `json:"password"`
 }
 
 type field struct {
-	Name  string `json:"name"`
-	Value string `json:"value"`
+	Name  *string `json:"name"`
+	Value *string `json:"value"`
 }
 
-type attachment struct {
-	ID       string `json:"id"`
-	FileName string `json:"fileName"`
+// listed is one line of `rbw list --raw`, which carries no values.
+type listed struct {
+	ID   string  `json:"id"`
+	Name *string `json:"name"`
 }
 
-// Item reads the item named exactly name. Items are listed once per search
-// term, the name up to its last "/" ("kluster/"), so every kluster item
-// costs one `bw` call together. The search matches parts of names, so only
-// an exact name counts; two items with the name are refused, never one
-// picked.
+// Item reads the item named exactly name. `rbw get <name>` falls back to a
+// part match, so kluster lists every item's id and name once, matches the
+// name exactly, and reads the item by its id. Two items with the name are
+// refused, never one picked.
 func (c *Client) Item(ctx context.Context, name string) (*Item, error) {
 	if err := c.Ready(ctx); err != nil {
 		return nil, err
 	}
-	items, err := c.search(ctx, searchTerm(name))
-	if err != nil {
+	if err := c.list(ctx); err != nil {
 		return nil, fmt.Errorf("Bitwarden item %q: %w", name, err)
 	}
-	var found []*Item
-	for i := range items {
-		if items[i].Name == name {
-			found = append(found, &items[i])
-		}
-	}
-	switch len(found) {
+	ids := c.ids[name]
+	switch len(ids) {
 	case 0:
 		return nil, fmt.Errorf("Bitwarden item %q: %w", name, ErrNotFound)
 	case 1:
-		return found[0], nil
 	default:
-		return nil, fmt.Errorf("Bitwarden has %d items named %q; keep one", len(found), name)
+		return nil, fmt.Errorf("Bitwarden has %d items named %q; keep one", len(ids), name)
 	}
-}
-
-// searchTerm is the prefix of name up to and including its last "/", or the
-// whole name when it has none.
-func searchTerm(name string) string {
-	if i := strings.LastIndex(name, "/"); i >= 0 {
-		return name[:i+1]
+	if it, ok := c.items[ids[0]]; ok {
+		return it, nil
 	}
-	return name
-}
-
-// search lists the items a term finds, once per term.
-func (c *Client) search(ctx context.Context, term string) ([]Item, error) {
-	if items, ok := c.byTerm[term]; ok {
-		return items, nil
-	}
-	out, err := c.run(ctx, "list", "items", "--search", term)
+	out, err := c.rbw(ctx, "get", "--raw", ids[0])
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Bitwarden item %q: %w", name, err)
 	}
-	var items []Item
-	if err := json.Unmarshal(out, &items); err != nil {
-		return nil, errors.New("bw list items: unreadable output")
+	var it Item
+	if err := json.Unmarshal(out, &it); err != nil {
+		return nil, fmt.Errorf("Bitwarden item %q: unreadable output", name)
 	}
-	if c.byTerm == nil {
-		c.byTerm = map[string][]Item{}
+	if it.ID != ids[0] || it.Name != name {
+		return nil, fmt.Errorf("Bitwarden item %q: rbw returned another item", name)
 	}
-	c.byTerm[term] = items
-	return items, nil
+	c.items[it.ID] = &it
+	return &it, nil
+}
+
+// list reads every item's id and name once.
+func (c *Client) list(ctx context.Context) error {
+	if c.ids != nil {
+		return nil
+	}
+	out, err := c.rbw(ctx, "list", "--raw")
+	if err != nil {
+		return err
+	}
+	var all []listed
+	if err := json.Unmarshal(out, &all); err != nil {
+		return errors.New("rbw list: unreadable output")
+	}
+	c.ids, c.items = map[string][]string{}, map[string]*Item{}
+	for _, l := range all {
+		if l.Name != nil {
+			c.ids[*l.Name] = append(c.ids[*l.Name], l.ID)
+		}
+	}
+	return nil
 }
 
 // Field returns the value of a field. "password" is the login password; any
@@ -185,15 +202,18 @@ func (c *Client) search(ctx context.Context, term string) ([]Item, error) {
 func (it *Item) Field(name string) (string, error) {
 	var v string
 	found := false
-	if name == "password" && it.Login != nil {
-		v, found = it.Login.Password, true
+	if name == "password" && it.Data.Password != nil {
+		v, found = *it.Data.Password, true
 	} else {
 		for _, f := range it.Fields {
-			if f.Name == name {
+			if f.Name != nil && *f.Name == name {
 				if found {
 					return "", fmt.Errorf("Bitwarden item %q has two fields named %q", it.Name, name)
 				}
-				v, found = f.Value, true
+				found = true
+				if f.Value != nil {
+					v = *f.Value
+				}
 			}
 		}
 	}
@@ -206,23 +226,23 @@ func (it *Item) Field(name string) (string, error) {
 	return v, nil
 }
 
-// Attachment returns the content of the attachment named fileName.
+// Attachment returns the content of the item's attachment named fileName,
+// through bw: rbw cannot download one. bw syncs first, once, so it knows
+// the attachment as the vault holds it now. bw refuses a name two
+// attachments share.
 func (c *Client) Attachment(ctx context.Context, it *Item, fileName string) ([]byte, error) {
-	var id string
-	for _, a := range it.Attachments {
-		if a.FileName == fileName {
-			if id != "" {
-				return nil, fmt.Errorf("Bitwarden item %q has two attachments named %q", it.Name, fileName)
-			}
-			id = a.ID
+	wrap := func(err error) error {
+		return fmt.Errorf("Bitwarden item %q, attachment %q (read with bw; run `%s` in this shell): %w", it.Name, fileName, bwUnlock, err)
+	}
+	if !c.bwSynced {
+		if _, err := c.bw(ctx, "sync"); err != nil {
+			return nil, wrap(err)
 		}
+		c.bwSynced = true
 	}
-	if id == "" {
-		return nil, fmt.Errorf("Bitwarden item %q has no attachment %q", it.Name, fileName)
-	}
-	out, err := c.run(ctx, "get", "attachment", id, "--itemid", it.ID, "--raw")
+	out, err := c.bw(ctx, "get", "attachment", fileName, "--itemid", it.ID, "--raw")
 	if err != nil {
-		return nil, fmt.Errorf("Bitwarden item %q, attachment %q: %w", it.Name, fileName, err)
+		return nil, wrap(err)
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("Bitwarden item %q: attachment %q is empty", it.Name, fileName)

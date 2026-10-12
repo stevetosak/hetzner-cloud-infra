@@ -185,9 +185,10 @@ func (e *Environment) BackendConfig() []string {
 }
 
 // strippedPrefixes are the shell variables that could carry another
-// environment's credentials, change what terraform does, or open the vault
-// (BW_SESSION): no child process reads the password manager.
-var strippedPrefixes = []string{"TF_", "AWS_", "HCLOUD_", "BW_"}
+// environment's credentials, change what terraform does, or name the vault
+// (BW_SESSION, RBW_PROFILE): no child process is pointed at the password
+// manager.
+var strippedPrefixes = []string{"TF_", "AWS_", "HCLOUD_", "BW_", "RBW_"}
 
 // keptTF are the TF_* variables that change only where providers are cached.
 var keptTF = map[string]bool{"TF_PLUGIN_CACHE_DIR": true}

@@ -215,6 +215,9 @@ func TestList(t *testing.T) {
 	if rows, _ := List(ctx, f.store, nil); state(rows, "API_TOKEN") != Missing {
 		t.Errorf("missing, no vault: %v", state(rows, "API_TOKEN"))
 	}
+	if rows, _ := List(ctx, f.store, fakeVault{"kluster/app/api_token": "skip"}); state(rows, "API_TOKEN") != MissingInBW {
+		t.Errorf("missing, skipped: %v", state(rows, "API_TOKEN"))
+	}
 
 	ref := catalog.KeyRef{Secret: catalog.Ref{Namespace: "app", Name: "credentials"}, Key: "API_TOKEN"}
 	f.apply(f.planner.Set(ctx, ref, []byte("typed")))
@@ -241,6 +244,9 @@ func TestList(t *testing.T) {
 	}
 	if state(rows, "API_TOKEN") != NotInBitwarden {
 		t.Errorf("missing item: %v", state(rows, "API_TOKEN"))
+	}
+	if rows, _ := List(ctx, f.store, fakeVault{"kluster/app/api_token": "skip"}); state(rows, "API_TOKEN") != NotComparedAtt {
+		t.Errorf("skipped attachment: %v", state(rows, "API_TOKEN"))
 	}
 	if err := os.Remove(f.store.cat.Path(f.secret("db/creds"))); err != nil {
 		t.Fatal(err)

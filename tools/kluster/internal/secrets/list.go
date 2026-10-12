@@ -27,6 +27,7 @@ const (
 	SourceMissing  State = "present, not compared: its source is missing"
 	MissingInBW    State = "missing; Bitwarden has it: run `kluster secrets pull`"
 	MissingNoBW    State = "missing, and its Bitwarden item does not exist: store the value there, then pull"
+	NotComparedAtt State = "present, not compared with Bitwarden: an attachment (--attachments compares it)"
 	shapeKeyMarker       = "(type, labels)"
 )
 
@@ -115,7 +116,8 @@ func keyState(ctx context.Context, k *catalog.Key, cur []byte, ok bool, vals map
 		}
 		bw, err := vault.Issued(ctx, k)
 		inBW := !errors.Is(err, bitwarden.ErrNotFound)
-		if err != nil && inBW {
+		skipped := errors.Is(err, ErrSkipped)
+		if err != nil && inBW && !skipped {
 			return "", err
 		}
 		switch {
@@ -125,6 +127,8 @@ func keyState(ctx context.Context, k *catalog.Key, cur []byte, ok bool, vals map
 			return MissingNoBW, nil
 		case !inBW:
 			return NotInBitwarden, nil
+		case skipped:
+			return NotComparedAtt, nil
 		case !bytes.Equal(bw, cur):
 			return StaleIssued, nil
 		}

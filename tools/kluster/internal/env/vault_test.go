@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -24,33 +25,35 @@ func vaultConfig(t *testing.T) *config.Config {
 	return cfg
 }
 
-// vaultOf answers `bw` with one item per name; fields are name=value pairs.
+// vaultOf answers rbw with one item per name; fields are name=value pairs.
 func vaultOf(items map[string][]string) Vault {
+	var names []string
+	for name := range items {
+		names = append(names, name)
+	}
 	run := func(_ context.Context, args ...string) ([]byte, error) {
 		switch args[0] {
-		case "status":
-			return []byte(`{"status":"unlocked"}`), nil
-		case "sync":
+		case "unlocked", "sync":
 			return nil, nil
-		}
-		if args[0] != "list" {
-			return nil, errors.New("unexpected call")
-		}
-		var hits []string
-		for name, fields := range items {
-			if !strings.Contains(name, args[3]) {
-				continue
+		case "list":
+			var rows []string
+			for i, name := range names {
+				rows = append(rows, `{"id":"id`+strconv.Itoa(i)+`","name":"`+name+`"}`)
 			}
+			return []byte("[" + strings.Join(rows, ",") + "]"), nil
+		case "get":
+			i, _ := strconv.Atoi(strings.TrimPrefix(args[2], "id"))
 			var fs []string
-			for _, f := range fields {
+			for _, f := range items[names[i]] {
 				k, v, _ := strings.Cut(f, "=")
 				fs = append(fs, `{"name":"`+k+`","value":"`+v+`"}`)
 			}
-			hits = append(hits, `{"id":"x","name":"`+name+`","fields":[`+strings.Join(fs, ",")+`]}`)
+			return []byte(`{"id":"` + args[2] + `","name":"` + names[i] + `","fields":[` + strings.Join(fs, ",") + `]}`), nil
 		}
-		return []byte("[" + strings.Join(hits, ",") + "]"), nil
+		return nil, errors.New("unexpected call")
 	}
-	return bitwarden.NewWithRunner(run, &bytes.Buffer{})
+	noBw := func(context.Context, ...string) ([]byte, error) { return nil, errors.New("bw is not used here") }
+	return bitwarden.NewWithRunners(run, noBw, &bytes.Buffer{})
 }
 
 var (

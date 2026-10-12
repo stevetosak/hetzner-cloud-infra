@@ -101,6 +101,9 @@ type fakeVault map[string]string
 
 func (v fakeVault) Issued(_ context.Context, k *catalog.Key) ([]byte, error) {
 	s, ok := v[k.Item+"/"+k.Field]
+	if s == "skip" {
+		return nil, ErrSkipped
+	}
 	if !ok {
 		return nil, fmt.Errorf("Bitwarden item %q: %w", k.Item, bitwarden.ErrNotFound)
 	}

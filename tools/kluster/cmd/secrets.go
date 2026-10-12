@@ -31,12 +31,14 @@ var secretsFlags struct {
 	all     bool
 	staged  bool
 	noVault bool
+	attach  bool
 }
 
 func init() {
 	secretsRotateCmd.Flags().BoolVar(&secretsFlags.all, "all", false, "rotate every generated key")
 	secretsCheckCmd.Flags().BoolVar(&secretsFlags.staged, "staged", false, "check what is staged for the next commit, not the working tree")
 	secretsListCmd.Flags().BoolVar(&secretsFlags.noVault, "no-bitwarden", false, "do not compare issued keys with Bitwarden")
+	secretsListCmd.Flags().BoolVar(&secretsFlags.attach, "attachments", false, "also compare attachments with Bitwarden (reads them with bw, a few seconds)")
 	secretsCmd.AddCommand(secretsListCmd, secretsGenerateCmd, secretsRotateCmd, secretsPullCmd, secretsSetCmd,
 		secretsDiffCmd, secretsApplyCmd, secretsEditCmd, secretsCheckCmd)
 	rootCmd.AddCommand(secretsCmd)
@@ -123,6 +125,7 @@ var secretsListCmd = &cobra.Command{
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return secretsRun(cmd, func(ctx context.Context, a *secretsApp) error {
+			a.bw.SkipAttachments = !secretsFlags.attach
 			var vault secrets.Vault = a.bw
 			if secretsFlags.noVault {
 				vault = nil
