@@ -14,7 +14,7 @@ advisory lock — safe with `replicas: 1` / `strategy: Recreate`.
 
 **Env-var contract note:** the app takes a single `DATABASE_URL` connection string and
 `APP_ORIGIN`, not the discrete `DB_HOST`/`DB_PORT`/`DB_NAME`/`PUBLIC_ORIGIN` vars an earlier
-draft of the deploy plan assumed — `configmap.yaml` / `credentials.yaml` here match what the
+draft of the deploy plan assumed — `configmap.yaml` / the `doma/credentials` keys in `secrets.yaml` match what the
 app actually reads (`src/core/env.ts`'s callers), not the draft.
 
 ## Applied out of band (not in the kustomize base / ArgoCD sync)
