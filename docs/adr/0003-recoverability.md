@@ -382,7 +382,8 @@ from its encrypted file. Decided in a design grill with the operator:
   `CONTEXT.md`). Each entry is keyed `<namespace>/<name>`, names its
   `*.enc.yaml`, and gives each key a kind — generated, issued, or copy (a
   *Copied Secret*, from `<namespace>/<name>.<key>`) — and a note. It replaces
-  the blank templates. A non-secret value has no kind: `DB_USER` leaves the
+  the blank templates. A non-secret value has no kind (but see *As built*
+  below): `DB_USER` leaves the
   `authos` Secret for a ConfigMap. One file, not one per project, because
   rotation and the copy check must see every Secret at once.
 - **`kluster secrets` replaces `scripts/secrets.sh`**: `list` (kinds and state,
@@ -434,3 +435,14 @@ from its encrypted file. Decided in a design grill with the operator:
 - **The encryption check runs twice**: the pre-commit hook calls `kluster
   secrets check --staged`, and a pull-request check runs it again, because the
   hook is enabled per clone and can be skipped.
+- **As built (2026-10-12 to 2026-10-20).** The design met four changes. A
+  fourth kind, `literal`, holds a value that is not secret but must sit inside
+  a Secret: `db-credentials.username: tosak`, which has to equal
+  `initdb.owner`. A `copy` takes an optional `format` with `{value}`, which
+  builds doma's `DATABASE_URL` from the database password. The encryption
+  check is plain Go with no `sops` binary (sops metadata and MAC present, and
+  every value under `data` is `ENC[…]`), so CI needs only Go. And kluster
+  reads Bitwarden through `rbw`, not `bw` (about 3 s a call), keeping `bw` for
+  the one attachment that `rbw` cannot download; kluster never unlocks the
+  agent itself. [The secrets runbook](../runbook/secrets.md) has the setup and
+  the trade-off.

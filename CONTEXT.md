@@ -239,9 +239,10 @@ _Avoid_: calling it generated or issued; it is neither made nor obtained.
 
 The committed list of every Secret the cluster holds: where its encrypted
 file lives, its namespace and name, and for each key whether the value is a
-Generated Secret, an Issued Secret or a Copied Secret. It holds no value. It
-is the one place that says what a Secret contains and where each value comes
-from.
+Generated Secret, an Issued Secret or a Copied Secret, or a `literal`: a value
+that is not secret but must sit inside a Secret, such as the database user name
+in `db-credentials`. It holds no secret value. It is the one place that
+says what a Secret contains and where each value comes from.
 
 ## Deploy Catalog
 
