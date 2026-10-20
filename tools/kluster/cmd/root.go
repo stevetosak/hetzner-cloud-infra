@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -69,7 +68,7 @@ func run(cmd *cobra.Command, fn func(ctx context.Context, a *app) error) error {
 	if err != nil {
 		return err
 	}
-	e, err := env.Resolve(ctx, cfg, flags.env, os.Getenv, bitwarden.New(cmd.ErrOrStderr()))
+	e, err := env.Resolve(ctx, cfg, flags.env, bitwarden.New(cmd.ErrOrStderr()))
 	if err != nil {
 		return err
 	}

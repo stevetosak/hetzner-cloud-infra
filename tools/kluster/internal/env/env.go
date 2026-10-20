@@ -48,14 +48,13 @@ type Vault interface {
 	Item(ctx context.Context, name string) (*bitwarden.Item, error)
 }
 
-// Resolve reads the named environment's credentials, from its Bitwarden item
-// when it names one, else through getenv.
-func Resolve(ctx context.Context, cfg *config.Config, name string, getenv func(string) string, vault Vault) (*Environment, error) {
+// Resolve reads the named environment's credentials from its Bitwarden item.
+func Resolve(ctx context.Context, cfg *config.Config, name string, vault Vault) (*Environment, error) {
 	e, err := cfg.Env(name)
 	if err != nil {
 		return nil, err
 	}
-	creds, err := read(ctx, e, name, getenv, vault)
+	creds, err := read(ctx, e, vault)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +62,7 @@ func Resolve(ctx context.Context, cfg *config.Config, name string, getenv func(s
 		return nil, fmt.Errorf("env %s: %s is the Terraform token; the cluster needs a token of its own", name, fieldClusterToken)
 	}
 	if name != config.EnvLive {
-		if err := notLive(ctx, cfg, creds, getenv, vault); err != nil {
+		if err := notLive(ctx, cfg, creds, vault); err != nil {
 			return nil, err
 		}
 	}
@@ -75,26 +74,8 @@ func Resolve(ctx context.Context, cfg *config.Config, name string, getenv func(s
 	}, nil
 }
 
-func read(ctx context.Context, e config.Env, name string, getenv func(string) string, vault Vault) (credentials, error) {
-	if e.BitwardenItem != "" {
-		return fromVault(ctx, vault, e.BitwardenItem)
-	}
-	c := credentials{
-		hcloudToken: getenv(e.HcloudTokenEnv),
-		r2KeyID:     getenv(e.R2AccessKeyIDEnv),
-		r2Secret:    getenv(e.R2SecretAccessKeyEnv),
-	}
-	var errs []error
-	for envName, v := range map[string]string{
-		e.HcloudTokenEnv:       c.hcloudToken,
-		e.R2AccessKeyIDEnv:     c.r2KeyID,
-		e.R2SecretAccessKeyEnv: c.r2Secret,
-	} {
-		if v == "" {
-			errs = append(errs, fmt.Errorf("%s is not set (env %s)", envName, name))
-		}
-	}
-	return c, errors.Join(errs...)
+func read(ctx context.Context, e config.Env, vault Vault) (credentials, error) {
+	return fromVault(ctx, vault, e.BitwardenItem)
 }
 
 // fromVault reads an item. The cluster token is optional here: only a
@@ -122,12 +103,12 @@ func fromVault(ctx context.Context, vault Vault, item string) (credentials, erro
 }
 
 // notLive checks a rehearsal does not hold a live value. The config already
-// names different items or variables; this checks the values, because a
+// names different items; this checks the values, because a
 // token pasted from the live project would pass every name check. A live
 // item that does not exist yet has nothing to collide with.
-func notLive(ctx context.Context, cfg *config.Config, c credentials, getenv func(string) string, vault Vault) error {
+func notLive(ctx context.Context, cfg *config.Config, c credentials, vault Vault) error {
 	le, _ := cfg.Env(config.EnvLive)
-	live, err := read(ctx, le, config.EnvLive, getenv, vault)
+	live, err := read(ctx, le, vault)
 	if errors.Is(err, bitwarden.ErrNotFound) {
 		return nil
 	}
@@ -205,7 +186,7 @@ func (e *Environment) TerraformEnv(base []string, moduleDir string) map[string]s
 }
 
 // ExecEnv builds the environment of a command the operator runs with
-// `kluster exec`, in place of sourcing infra/.envrc: the clean base, the R2
+// `kluster exec`: the clean base, the R2
 // keys and the Hetzner token as TF_VAR_HCLOUD_TOKEN. Outside live it also
 // points terraform at this environment's data directory and state bucket;
 // both are relative to the Module, so `terraform -chdir=<module>` works.

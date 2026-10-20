@@ -9,8 +9,8 @@
 # state are skipped.
 #
 # Prerequisites:
-#   TF_VAR_HCLOUD_TOKEN    from infra/.envrc
-#   AWS_ACCESS_KEY_ID      R2 access key id
+#   TF_VAR_HCLOUD_TOKEN    from `kluster exec` (the environment's Bitwarden item)
+#   AWS_ACCESS_KEY_ID      R2 access key id (same source)
 #   AWS_SECRET_ACCESS_KEY  R2 secret access key
 #   terraform init         already run against the R2 backend
 #

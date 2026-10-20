@@ -22,7 +22,7 @@ func init() {
 
 var execCmd = &cobra.Command{
 	Use:   "exec [--env <env>] -- <command> [args...]",
-	Short: "Run a command with an environment's credentials, in place of sourcing infra/.envrc",
+	Short: "Run a command with an environment's credentials, from its Bitwarden item",
 	Long: "Runs the command with the environment's Hetzner token as TF_VAR_HCLOUD_TOKEN and its R2 " +
 		"keys as AWS_*, read from its Bitwarden item. Every TF_*, AWS_*, HCLOUD_* and BW_* variable of the " +
 		"shell is dropped first. Outside live, TF_DATA_DIR and the init backend bucket point at that " +
@@ -40,7 +40,7 @@ var execCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		e, err := env.Resolve(ctx, cfg, flags.env, os.Getenv, bitwarden.New(cmd.ErrOrStderr()))
+		e, err := env.Resolve(ctx, cfg, flags.env, bitwarden.New(cmd.ErrOrStderr()))
 		if err != nil {
 			return err
 		}

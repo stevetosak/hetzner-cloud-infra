@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/bitwarden/fakevault"
 	"os"
 	"path/filepath"
 	"testing"
@@ -38,8 +39,8 @@ const klusterYAML = `
 terraform:
   modules: {shared: s, control-plane: c, workers: w}
 envs:
-  live: {hcloudTokenEnv: T, r2AccessKeyIDEnv: A, r2SecretAccessKeyEnv: S}
-  rehearsal: {hcloudTokenEnv: RT, r2AccessKeyIDEnv: RA, r2SecretAccessKeyEnv: RS, stateBucket: b, refuseProjectWithIP: 1.2.3.4}
+  live: {bitwardenItem: kluster/live}
+  rehearsal: {bitwardenItem: kluster/rehearsal, stateBucket: b, refuseProjectWithIP: 1.2.3.4}
 `
 
 func openTestModule(t *testing.T) (*Module, *RunDir) {
@@ -59,7 +60,7 @@ func openTestModule(t *testing.T) (*Module, *RunDir) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e, err := env.Resolve(context.Background(), cfg, config.EnvLive, func(k string) string { return "x-" + k }, nil)
+	e, err := env.Resolve(context.Background(), cfg, config.EnvLive, fakevault.Of(map[string][]string{"kluster/live": {"hcloud_token=live-token", "r2_access_key_id=live-key", "r2_secret_access_key=live-secret"}}))
 	if err != nil {
 		t.Fatal(err)
 	}
