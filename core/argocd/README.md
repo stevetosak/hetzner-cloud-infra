@@ -9,7 +9,7 @@
 | `argocd-values.yaml` | every value overridden, each with its reason |
 | `render.sh` | pulls the pinned chart to a temp dir and renders |
 | `argocd.yaml` | **generated. Do not edit.** Header carries version and digest |
-| `credentials.yaml` | the one Secret nothing creates: `argocd-notifications-secret` |
+| `argocd-notifications-secret.enc.yaml` | the one Secret nothing creates, SOPS-encrypted; `secrets.yaml` describes it |
 | `httproute.yaml` | the public route, two rules |
 | `appprojects.yaml` | one AppProject per deployed project, each scoped to its own namespace |
 | `applicationset.yaml` | **the one ApplicationSet** (ADR 0003). One overlay directory is one Application |
@@ -36,9 +36,8 @@ The namespace and the CRDs first, then everything else.
     kubectl apply -f core/argocd/namespace.yaml
     kubectl apply --server-side -f core/argocd/argocd.yaml
 
-    # The operator creates this one — see credentials.yaml.
-    kubectl create secret generic argocd-notifications-secret \
-      --namespace argocd --from-literal=github-token=<FINE_GRAINED_PAT>
+    # The one Secret nothing creates (secrets.yaml), from tools/kluster:
+    go run . secrets apply --apply argocd/argocd-notifications-secret
 
     kubectl apply -f core/argocd/httproute.yaml
 

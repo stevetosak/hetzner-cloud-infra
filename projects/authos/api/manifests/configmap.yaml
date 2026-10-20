@@ -9,6 +9,9 @@ data:
   DB_HOST: "tosak-pg-cluster-rw.pg-cluster.svc.cluster.local"
   DB_PORT: "5432"
   DB_NAME: "authos"
+  # The role that owns every database (ADR 0007). Not secret, so not in the
+  # credentials Secret; secrets.yaml lists only DB_PASS there.
+  DB_USER: "tosak"
   KEYSTORE_PATH: "/etc/keystore/keystore.p12"
   FRONTEND_COOKIE_DOMAIN: "authos.tosak.net"
   API_COOKIE_DOMAIN: "authos-api.tosak.net"

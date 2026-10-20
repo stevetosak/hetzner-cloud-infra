@@ -21,6 +21,15 @@ func TestLoadCommittedConfig(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "main.tf")); err != nil {
 		t.Errorf("workers Module path does not resolve to a Module: %v", err)
 	}
+	for _, p := range []string{cfg.Secrets.Catalog, cfg.Secrets.SopsConfig} {
+		abs, err := cfg.Path(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(abs); err != nil {
+			t.Errorf("secrets path %s does not resolve: %v", p, err)
+		}
+	}
 }
 
 // The rehearsal Worker set must be its own file, beside the live one in the
@@ -55,7 +64,8 @@ func TestValidateRefusesUnsafeConfig(t *testing.T) {
 	}
 	tests := map[string]struct{ old, new, want string }{
 		"shared token": {
-			"hcloudTokenEnv: KLUSTER_REHEARSAL_HCLOUD_TOKEN", "hcloudTokenEnv: TF_VAR_HCLOUD_TOKEN",
+			"bitwardenItem: kluster/rehearsal",
+			"hcloudTokenEnv: TF_VAR_HCLOUD_TOKEN\n    r2AccessKeyIDEnv: KLUSTER_REHEARSAL_R2_ACCESS_KEY_ID\n    r2SecretAccessKeyEnv: KLUSTER_REHEARSAL_R2_SECRET_ACCESS_KEY",
 			"its own token",
 		},
 		"no bucket": {

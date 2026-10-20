@@ -8,12 +8,12 @@ PostgreSQL runs under **CloudNativePG**. One shared cluster,
 |---|---|
 | `operator.yaml` | The operator, upstream `cnpg-1.30.0.yaml`, byte for byte |
 | `namespace.yaml` | The `pg-cluster` namespace, which holds the cluster, not the operator |
-| `credentials.yaml` | Template for the `db-credentials` Secret. Values are never committed |
+| `db-credentials.enc.yaml` | The `db-credentials` Secret, SOPS-encrypted. `secrets.yaml` at the top describes it |
 | `pg-cluster.yaml` | The `Cluster` — 3 instances, 10Gi each on `hcloud-volumes-retain`, archiving through the plugin |
 | `databases/<project>.yaml` | One `Database` per project database |
 | `plugin-barman-cloud.yaml` | The barman-cloud CNPG-I plugin, upstream `v0.15.1` `manifest.yaml`, byte for byte |
 | `objectstore.yaml` | Where backups go: R2 bucket `tosak-pg-backups`, zstd WAL, 30-day retention |
-| `r2-backup-credentials.yaml` | Template for the backup token. The real Secret is `r2-backup-credentials.enc.yaml` (SOPS) |
+| `r2-backup-credentials.enc.yaml` | The backup token, SOPS-encrypted. `secrets.yaml` at the top describes it |
 | `storageclass-retain.yaml` | `hcloud-volumes-retain` — a deleted PVC leaves its Hetzner volume behind |
 | `scheduled-backup.yaml` | A full base backup every day at 03:00 UTC, from a standby |
 
@@ -61,8 +61,8 @@ kubectl apply --server-side --field-manager=cloud-infra -f core/cnpg/operator.ya
 kubectl apply --server-side --field-manager=cloud-infra -f core/cnpg/plugin-barman-cloud.yaml
 kubectl apply -f core/cnpg/namespace.yaml
 kubectl apply -f core/cnpg/storageclass-retain.yaml
-# then create the db-credentials Secret — see credentials.yaml
-scripts/secrets.sh apply core/cnpg/r2-backup-credentials.enc.yaml
+# then the two Secrets (from tools/kluster; drop --apply for the diff first)
+#   go run . secrets apply --apply pg-cluster/db-credentials pg-cluster/r2-backup-credentials
 kubectl apply -f core/cnpg/objectstore.yaml
 kubectl apply -f core/cnpg/pg-cluster.yaml
 kubectl apply -f core/cnpg/databases/doma.yaml

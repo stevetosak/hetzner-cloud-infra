@@ -1,6 +1,8 @@
 #!/bin/bash
-# 1. Refuses a commit that would publish an unencrypted *.enc.yaml. The
+# 1. Refuses a commit that would publish an unencrypted *.enc.yaml, or one
+#    that secrets.yaml does not list (`kluster secrets check --staged`). The
 #    repository is public, so that mistake cannot be undone by a later commit.
+#    The CI job .github/workflows/secrets-check.yml runs the same check.
 # 2. Checks the docs.tosak.net Contract (frontmatter) when a Markdown file is
 #    staged, with the checker from a tosak-docs clone beside this one. Without
 #    that clone it says so and lets the commit through; the PR check
@@ -9,7 +11,7 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-scripts/secrets.sh check --staged
+(cd tools/kluster && go run . secrets check --staged)
 
 if git diff --cached --name-only --diff-filter=ACMR | grep -q '\.md$'; then
 	docs="$(dirname "$PWD")/tosak-docs"

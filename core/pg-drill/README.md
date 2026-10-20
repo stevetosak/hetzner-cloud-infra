@@ -41,8 +41,10 @@ merges, or the next morning reports "no Restore Drill has ever passed".
 
 ```sh
 kubectl apply -f core/pg-drill/namespace.yaml
-scripts/secrets.sh diff  core/pg-drill     # three new Secrets, values '***'
-scripts/secrets.sh apply core/pg-drill
+cd tools/kluster   # the three Secrets; key names only, never values
+go run . secrets apply pg-drill/r2-drill-results-credentials pg-drill/r2-readonly-credentials pg-drill/telegram
+go run . secrets apply --apply pg-drill/r2-drill-results-credentials pg-drill/r2-readonly-credentials pg-drill/telegram
+cd ../..
 kubectl diff  -k core/pg-drill
 kubectl apply -k core/pg-drill
 ```

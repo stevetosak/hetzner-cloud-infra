@@ -59,7 +59,7 @@ func openTestModule(t *testing.T) (*Module, *RunDir) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e, err := env.Resolve(cfg, config.EnvLive, func(k string) string { return "x-" + k })
+	e, err := env.Resolve(context.Background(), cfg, config.EnvLive, func(k string) string { return "x-" + k }, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

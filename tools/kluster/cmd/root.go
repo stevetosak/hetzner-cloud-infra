@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/bitwarden"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/cloud"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/config"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/env"
@@ -68,7 +69,7 @@ func run(cmd *cobra.Command, fn func(ctx context.Context, a *app) error) error {
 	if err != nil {
 		return err
 	}
-	e, err := env.Resolve(cfg, flags.env, os.Getenv)
+	e, err := env.Resolve(ctx, cfg, flags.env, os.Getenv, bitwarden.New(cmd.ErrOrStderr()))
 	if err != nil {
 		return err
 	}

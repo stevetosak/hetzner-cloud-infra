@@ -227,6 +227,22 @@ never stored as a secret.
 
 _Avoid_: calling these secrets; they have no value to keep.
 
+## Copied Secret
+
+A secret value that is another Secret's value repeated — the Redis password
+an application holds beside the Redis server's own. It has no source of its
+own: it changes when, and only when, the value it copies changes.
+
+_Avoid_: calling it generated or issued; it is neither made nor obtained.
+
+## Secret Catalog
+
+The committed list of every Secret the cluster holds: where its encrypted
+file lives, its namespace and name, and for each key whether the value is a
+Generated Secret, an Issued Secret or a Copied Secret. It holds no value. It
+is the one place that says what a Secret contains and where each value comes
+from.
+
 ## Deploy Catalog
 
 The record of what version of which application is live. Written by ArgoCD's

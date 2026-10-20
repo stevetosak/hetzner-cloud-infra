@@ -6,7 +6,7 @@ it holds **nothing that must survive a restart**.
 | File | What it is |
 |---|---|
 | `namespace.yaml` | The `redis` namespace. Nothing else declares it |
-| `credentials.yaml` | Template for the `redis` Secret. Values are never committed |
+| `redis.enc.yaml` | The `redis` Secret, SOPS-encrypted. `secrets.yaml` at the top describes it |
 | `deployment.yaml` | One replica, `redis:8.10.2-alpine`, no persistence |
 | `service.yaml` | `redis-master`, ClusterIP 6379 |
 
@@ -98,11 +98,11 @@ The Secret must exist before the Deployment, or the pod stops at
 
 ```
 kubectl apply -f core/redis/namespace.yaml
-# create the `redis` Secret — see credentials.yaml
+# the `redis` Secret, from tools/kluster:  go run . secrets apply --apply redis/redis
 kubectl apply -f core/redis/service.yaml -f core/redis/deployment.yaml
 ```
 
 Then check the password is 40 bytes and nothing else, which the base64 in the
-Secret cannot tell you. `credentials.yaml` gives the two commands; neither
-prints the value. The first build of this Redis stored a 41-byte password and
+Secret cannot tell you. The `redis/redis` note in `secrets.yaml` gives the
+command; it does not print the value. The first build of this Redis stored a 41-byte password and
 went `Ready` anyway.

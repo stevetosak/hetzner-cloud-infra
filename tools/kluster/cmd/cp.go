@@ -53,6 +53,10 @@ var cpInitCmd = &cobra.Command{
 }
 
 func cpInit(ctx context.Context, a *app) (err error) {
+	// Checked before anything opens, so Plan Mode already says it is missing.
+	if _, err := a.env.HcloudClusterToken(); err != nil {
+		return err
+	}
 	cp := a.cfg.ControlPlane
 	srv, err := a.api.Server(ctx, cp.Name)
 	if err != nil {
@@ -295,6 +299,12 @@ func (a *app) cpStages(srv *cloud.Server) ([]stage.Stage, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The cluster's own token, not the one Terraform and kluster use, so
+	// either can be revoked alone.
+	token, err := a.env.HcloudClusterToken()
+	if err != nil {
+		return nil, err
+	}
 	return []stage.Stage{
 		stages.PrivateNetwork{Interface: c.Node.NetworkInterface, MAC: srv.PrivateMAC, IP: cp.PrivateIP},
 		stages.BaseHost{User: cp.SSHUser, Containerd: c.Versions.Containerd, Runc: c.Versions.Runc, CNIPlugins: c.Versions.CNIPlugins},
@@ -303,7 +313,7 @@ func (a *app) cpStages(srv *cloud.Server) ([]stage.Stage, error) {
 		stages.KubeadmInit{Endpoint: cp.Endpoint, PrivateIP: cp.PrivateIP, VpnIP: cp.VpnIP, PublicIP: srv.PublicIP,
 			PodCIDR: c.Cluster.PodCIDR, ServiceCIDR: c.Cluster.ServiceCIDR},
 		stages.Flannel{Manifest: flannel, Node: cp.Name, PrivateIP: cp.PrivateIP, Interface: c.Node.NetworkInterface, PodMTU: c.Cluster.PodMTU},
-		stages.CloudController{Token: a.env.HcloudToken(), Network: c.Cluster.HcloudNetwork, Manifest: ccm,
+		stages.CloudController{Token: token, Network: c.Cluster.HcloudNetwork, Manifest: ccm,
 			Node: cp.Name, ServerID: srv.ID, PrivateIP: cp.PrivateIP},
 		stages.CSI{Manifest: csi},
 	}, nil
