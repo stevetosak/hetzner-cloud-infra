@@ -20,11 +20,16 @@ as it was run. Output is quoted only where it was used as evidence. Every
 claim about Hetzner state was checked against the API, never read from
 Terraform output.
 
-Environment for every Terraform command:
+Environment for every Terraform command, from `tools/kluster`:
 
 ```
-cd infra && source .envrc
+go run . exec -- <command>
 ```
+
+`kluster exec` reads the environment's Bitwarden item and gives the command the
+Hetzner token and the R2 keys; `infra/.envrc` was deleted on 2026-10-20 (see
+[the control-plane runbook](./control-plane.md)). The commands below were run
+in 2026-09 with those variables exported from that file.
 
 ## How kluster carries this out
 

@@ -31,15 +31,13 @@ transcript.
 2. In Cloudflare R2, create the bucket `hetzner-cloud-infra-staging` and an
    R2 API token with Object Read & Write **on that bucket only**. Rehearsal
    state never shares the live bucket or its token.
-3. Keep the three kluster values in the password manager and in a file
-   outside the repository, readable by the operator only, for example
-   `~/.config/kluster/rehearsal.env` (`chmod 600`):
-
-   ```sh
-   export KLUSTER_REHEARSAL_HCLOUD_TOKEN=…
-   export KLUSTER_REHEARSAL_R2_ACCESS_KEY_ID=…
-   export KLUSTER_REHEARSAL_R2_SECRET_ACCESS_KEY=…
-   ```
+3. Keep the values in the Bitwarden item `kluster/rehearsal`, as hidden
+   fields: `hcloud_token` (the Read & Write token), `r2_access_key_id` and
+   `r2_secret_access_key`, plus `hcloud_cluster_token`, a token of its own for
+   the cluster's cloud controller. kluster reads the item through `rbw`; no
+   file and no shell variable holds the values. The earlier
+   `~/.config/kluster/rehearsal.env` file is no longer read, and the operator
+   deletes it.
 
 4. Add the Read token as the repository secret
    `HCLOUD_REHEARSAL_READONLY_TOKEN`. Until it exists, the daily
@@ -47,9 +45,9 @@ transcript.
 
 ## Run a rehearsal
 
-From `tools/kluster`, with `infra/.envrc` and the rehearsal file both
-sourced (kluster reads the live variables only to refuse a rehearsal value
-that equals one of them):
+From `tools/kluster`, with the Bitwarden vault unlocked (nothing is sourced;
+kluster reads `kluster/live` only to refuse a rehearsal value that equals a
+live one):
 
 ```sh
 go build -o kluster .
