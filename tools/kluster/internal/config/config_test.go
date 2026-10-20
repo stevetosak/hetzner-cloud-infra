@@ -65,7 +65,7 @@ func TestValidateRefusesUnsafeConfig(t *testing.T) {
 	tests := map[string]struct{ old, new, want string }{
 		"shared token": {
 			"bitwardenItem: kluster/rehearsal",
-			"hcloudTokenEnv: TF_VAR_HCLOUD_TOKEN\n    r2AccessKeyIDEnv: KLUSTER_REHEARSAL_R2_ACCESS_KEY_ID\n    r2SecretAccessKeyEnv: KLUSTER_REHEARSAL_R2_SECRET_ACCESS_KEY",
+			"bitwardenItem: kluster/live",
 			"its own token",
 		},
 		"no bucket": {

@@ -27,19 +27,22 @@ modules at plan time.
 
 ## Environment
 
-State lives in Cloudflare R2, not in git. Every command needs:
+State lives in Cloudflare R2, not in git. Every command runs through kluster,
+from `tools/kluster`, with the Bitwarden vault unlocked:
 
 ```sh
-cd infra && source .envrc
+cd tools/kluster
+go run . exec -- terraform -chdir=../../infra/shared plan
+go run . exec --env rehearsal -- <command>    # the rehearsal project
 ```
 
-`.envrc` is gitignored and must export three things:
-
-```sh
-export TF_VAR_HCLOUD_TOKEN=...   # Hetzner API token
-export AWS_ACCESS_KEY_ID=...     # R2 access key id
-export AWS_SECRET_ACCESS_KEY=... # R2 secret access key
-```
+`kluster exec` reads the environment's Bitwarden item (`kluster/live` or
+`kluster/rehearsal`; fields `hcloud_token`, `hcloud_cluster_token`,
+`r2_access_key_id`, `r2_secret_access_key`) and runs the command with a clean
+environment: `TF_VAR_HCLOUD_TOKEN`, `AWS_ACCESS_KEY_ID` and
+`AWS_SECRET_ACCESS_KEY` are set for the child and no `TF_*`, `AWS_*` or
+`HCLOUD_*` variable from the shell reaches it. There is no `.envrc` any more
+(deleted 2026-10-20) and nothing to source.
 
 **No AWS account is involved.** Terraform has no R2 backend, so R2 is reached
 through the `s3` backend, which is built on the AWS SDK and reads credentials

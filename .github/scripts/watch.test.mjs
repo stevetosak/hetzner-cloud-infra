@@ -126,7 +126,7 @@ test('the message is null when everything is clean — the watcher is silent', (
 test('an orphan message warns about data before it gives the delete command', () => {
   const msg = composeMessage({ broken: [], orphans: [detachedVolumes(page([volume(9, null)]))[0]] })
   assert.ok(msg.indexOf('MAY HOLD DATA') < msg.indexOf('curl -sS -X DELETE'))
-  assert.match(msg, /volumes\/9 \)/)
+  assert.match(msg, /volumes\/9' \)/)
 })
 
 const listing = (kind, items = []) => ({ [kind]: items, meta: { pagination: { next_page: null } } })

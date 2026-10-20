@@ -169,8 +169,9 @@ export function checkRehearsal(resources, now) {
 
 export function deleteCommand(id) {
   return (
-    `( . infra/.envrc && curl -sS -X DELETE -H "Authorization: Bearer ` +
-    `$TF_VAR_HCLOUD_TOKEN" https://api.hetzner.cloud/v1/volumes/${id} )`
+    `( cd tools/kluster && go run . exec -- sh -c 'curl -sS -X DELETE -H ` +
+    `"Authorization: Bearer $TF_VAR_HCLOUD_TOKEN" ` +
+    `https://api.hetzner.cloud/v1/volumes/${id}' )`
   )
 }
 

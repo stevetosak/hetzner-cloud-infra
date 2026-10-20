@@ -6,7 +6,7 @@
 # (ADR 0001). A topology that exists only on one laptop is the same exposure.
 #
 # It holds no secret. Public keys are public, and the Hetzner token lives in
-# infra/.envrc, which stays gitignored.
+# a Bitwarden item per environment (envs.<env>.bitwardenItem).
 #
 # kluster is a convenience over Terraform and the runbook, never the authority
 # (ADR 0004). Per-worker addresses are NOT here: a worker's identity — its
@@ -92,15 +92,16 @@ terraform:
 
 # Where kluster acts. `--env` picks one; live is the default (ADR 0009).
 #
-# Only the NAMES of environment variables are here. kluster reads the values
-# from its own environment and hands the terraform child process a clean one:
+# Only the NAME of a Bitwarden item is here. kluster reads the values from it
+# and hands the terraform child process a clean environment:
 # no TF_VAR_*, AWS_* or HCLOUD_* from the shell reaches it, so a rehearsal run
 # can never carry the live token.
 envs:
   live:
-    hcloudTokenEnv: TF_VAR_HCLOUD_TOKEN
-    r2AccessKeyIDEnv: AWS_ACCESS_KEY_ID
-    r2SecretAccessKeyEnv: AWS_SECRET_ACCESS_KEY
+    # The Bitwarden item that holds this environment's credentials (ADR 0003,
+    # Amendment 2026-10-06): hcloud_token, hcloud_cluster_token,
+    # r2_access_key_id, r2_secret_access_key.
+    bitwardenItem: kluster/live
     # Empty: the bucket in each Module's backend.tf.
     stateBucket: ""
     # The Worker set. kluster writes it for `node add` and `node remove`

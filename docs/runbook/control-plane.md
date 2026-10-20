@@ -17,15 +17,20 @@ as it was run. Output is quoted only where it was used as evidence. Every
 claim about Hetzner state was checked against the API, never read from
 Terraform output.
 
-Environment for every Terraform command:
+Environment for every Terraform command, from `tools/kluster`:
 
 ```
-cd infra && source .envrc
+go run . exec -- <command>
 ```
 
-That exports `TF_VAR_HCLOUD_TOKEN`, `AWS_ACCESS_KEY_ID` and
-`AWS_SECRET_ACCESS_KEY`. The two R2 names must **not** carry a `TF_VAR_`
-prefix — a backend block cannot read Terraform variables.
+`kluster exec` reads the environment's Bitwarden item (`kluster/live`) and
+gives the command `TF_VAR_HCLOUD_TOKEN`, `AWS_ACCESS_KEY_ID` and
+`AWS_SECRET_ACCESS_KEY`, in a clean environment. The two R2 names must **not**
+carry a `TF_VAR_` prefix — a backend block cannot read Terraform variables.
+The commands below were run in 2026-09 with the same three variables exported
+from `infra/.envrc`, which was deleted on 2026-10-20; the one block that named
+the file now names `kluster exec`, and a bare `terraform` line elsewhere reads
+as `go run . exec -- terraform` today.
 
 ---
 
@@ -705,8 +710,12 @@ kubectl -n kube-system create secret generic hcloud \
   --from-literal=network=tosak-net
 ```
 
-The token is read from the environment that `infra/.envrc` exports. It is never
-typed into a file, never echoed, and never committed. `network=tosak-net` is
+The token is read from the environment, never typed into a file, never echoed,
+and never committed. Run by hand, `$TF_VAR_HCLOUD_TOKEN` comes from
+`kluster exec`, and it is the Terraform token. `kluster cp init` does not do
+that: it reads the field `hcloud_cluster_token` of the environment's item, a
+token of its own, so a token leaked from the cluster can be revoked without
+breaking Terraform. The command above stays as the by-hand path. `network=tosak-net` is
 what makes the CCM network-aware: without it the node gets a public
 `InternalIP` and [ADR 0006](../adr/0006-network-paths-and-control-plane-endpoint.md) is reversed.
 
@@ -827,9 +836,9 @@ ssh cp-dev@10.100.0.1 'echo VPN_SSH_OK; echo "peer: $SSH_CONNECTION"'
 ### Apply
 
 ```
-cd infra && source .envrc
-terraform -chdir=shared plan -out=<scratch>/close22.tfplan
-terraform -chdir=shared apply <scratch>/close22.tfplan
+cd tools/kluster
+go run . exec -- terraform -chdir=../../infra/shared plan -out=<scratch>/close22.tfplan
+go run . exec -- terraform -chdir=../../infra/shared apply <scratch>/close22.tfplan
 ```
 
 No `-var` is needed; both variables default to false.

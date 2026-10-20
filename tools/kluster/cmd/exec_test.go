@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/bitwarden/fakevault"
 	"slices"
 	"testing"
 
@@ -32,12 +33,7 @@ func TestExecTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	vars := map[string]string{
-		"TF_VAR_HCLOUD_TOKEN":   "live-token",
-		"AWS_ACCESS_KEY_ID":     "live-key",
-		"AWS_SECRET_ACCESS_KEY": "live-secret",
-	}
-	e, err := env.Resolve(context.Background(), cfg, config.EnvLive, func(k string) string { return vars[k] }, nil)
+	e, err := env.Resolve(context.Background(), cfg, config.EnvLive, fakevault.Of(map[string][]string{"kluster/live": {"hcloud_token=live-token", "r2_access_key_id=live-key", "r2_secret_access_key=live-secret"}}))
 	if err != nil {
 		t.Fatal(err)
 	}

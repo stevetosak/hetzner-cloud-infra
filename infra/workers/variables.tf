@@ -1,7 +1,7 @@
 variable "HCLOUD_TOKEN" {
   type        = string
   sensitive   = true
-  description = "Hetzner Cloud API token. Supplied as TF_VAR_HCLOUD_TOKEN from infra/.envrc."
+  description = "Hetzner Cloud API token. Supplied as TF_VAR_HCLOUD_TOKEN by `kluster exec`, from the environment's Bitwarden item."
 }
 
 variable "image" {

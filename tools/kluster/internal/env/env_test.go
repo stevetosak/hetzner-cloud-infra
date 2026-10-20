@@ -17,27 +17,23 @@ func testConfig(t *testing.T) *config.Config {
 	return cfg
 }
 
-func lookup(m map[string]string) func(string) string {
-	return func(k string) string { return m[k] }
-}
-
-// shell is the operator's shell: the live credentials, which the committed
-// config still reads from environment variables.
+// shell is variables the operator's shell may hold. None of them may reach
+// a child, and their values stand for live credentials.
 var shell = map[string]string{
 	"TF_VAR_HCLOUD_TOKEN":   "live-token",
 	"AWS_ACCESS_KEY_ID":     "live-key",
 	"AWS_SECRET_ACCESS_KEY": "live-secret",
 }
 
-// rehearsalVault holds the rehearsal item the committed config names.
-func rehearsalVault() Vault {
-	return vaultOf(map[string][]string{"kluster/rehearsal": rehearsalFields})
+// bothItems holds the live and the rehearsal item the committed config names.
+func bothItems() Vault {
+	return vaultOf(map[string][]string{"kluster/live": liveFields, "kluster/rehearsal": rehearsalFields})
 }
 
 // A rehearsal terraform must never see a live credential, whatever the shell
 // holds.
 func TestRehearsalTerraformEnvCarriesNoLiveCredential(t *testing.T) {
-	e, err := Resolve(context.Background(), testConfig(t), config.EnvRehearsal, lookup(shell), rehearsalVault())
+	e, err := Resolve(context.Background(), testConfig(t), config.EnvRehearsal, bothItems())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +67,7 @@ func TestRehearsalTerraformEnvCarriesNoLiveCredential(t *testing.T) {
 }
 
 func TestLiveUsesBackendAsWritten(t *testing.T) {
-	e, err := Resolve(context.Background(), testConfig(t), config.EnvLive, lookup(shell), nil)
+	e, err := Resolve(context.Background(), testConfig(t), config.EnvLive, bothItems())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,24 +79,24 @@ func TestLiveUsesBackendAsWritten(t *testing.T) {
 	}
 }
 
-// The rehearsal item is checked against the live values wherever they come
-// from, here the shell.
+// The rehearsal item is checked against the live item's values.
 func TestRehearsalRefusesTheLiveToken(t *testing.T) {
-	v := vaultOf(map[string][]string{"kluster/rehearsal": {"hcloud_token=live-token",
+	v := vaultOf(map[string][]string{"kluster/live": liveFields, "kluster/rehearsal": {"hcloud_token=live-tf",
 		"r2_access_key_id=reh-key", "r2_secret_access_key=reh-secret"}})
-	if _, err := Resolve(context.Background(), testConfig(t), config.EnvRehearsal, lookup(shell), v); err == nil {
+	if _, err := Resolve(context.Background(), testConfig(t), config.EnvRehearsal, v); err == nil {
 		t.Fatal("a rehearsal item holding the live token was accepted")
 	}
 }
 
-func TestResolveNamesMissingVariables(t *testing.T) {
-	_, err := Resolve(context.Background(), testConfig(t), config.EnvLive, lookup(nil), nil)
-	if err == nil || !strings.Contains(err.Error(), "TF_VAR_HCLOUD_TOKEN") {
+func TestResolveNamesMissingFields(t *testing.T) {
+	v := vaultOf(map[string][]string{"kluster/live": {"hcloud_token=t", "r2_access_key_id=k"}})
+	_, err := Resolve(context.Background(), testConfig(t), config.EnvLive, v)
+	if err == nil || !strings.Contains(err.Error(), "r2_secret_access_key") {
 		t.Fatalf("got %v", err)
 	}
 }
 
-// `kluster exec` replaces sourcing infra/.envrc: the child gets this
+// `kluster exec`: the child gets this
 // environment's token and keys, and nothing the shell held.
 func TestExecEnv(t *testing.T) {
 	base := []string{"PATH=/usr/bin", "TF_PLUGIN_CACHE_DIR=/c", "TF_DATA_DIR=/elsewhere",
@@ -110,7 +106,7 @@ func TestExecEnv(t *testing.T) {
 	}
 
 	t.Run("rehearsal", func(t *testing.T) {
-		e, err := Resolve(context.Background(), testConfig(t), config.EnvRehearsal, lookup(shell), rehearsalVault())
+		e, err := Resolve(context.Background(), testConfig(t), config.EnvRehearsal, bothItems())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -142,12 +138,12 @@ func TestExecEnv(t *testing.T) {
 	})
 
 	t.Run("live", func(t *testing.T) {
-		e, err := Resolve(context.Background(), testConfig(t), config.EnvLive, lookup(shell), nil)
+		e, err := Resolve(context.Background(), testConfig(t), config.EnvLive, bothItems())
 		if err != nil {
 			t.Fatal(err)
 		}
 		got := e.ExecEnv(base)
-		if got["TF_VAR_HCLOUD_TOKEN"] != "live-token" || got["AWS_ACCESS_KEY_ID"] != "live-key" {
+		if got["TF_VAR_HCLOUD_TOKEN"] != "live-tf" || got["AWS_ACCESS_KEY_ID"] != "live-key" {
 			t.Error("live credentials are not set")
 		}
 		for _, k := range []string{"TF_DATA_DIR", "TF_CLI_ARGS_init", "BW_SESSION"} {

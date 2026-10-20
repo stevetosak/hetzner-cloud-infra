@@ -132,16 +132,11 @@ type Terraform struct {
 
 // Env names where one environment's credentials are. It never holds a value.
 // BitwardenItem is the password manager item that holds them (ADR 0003,
-// Amendments 2026-10-06). The *Env names are the old path, environment
-// variables, kept only until the Bitwarden path is proven on both
-// environments; an Env uses one path or the other.
+// Amendments 2026-10-06).
 type Env struct {
-	BitwardenItem        string `yaml:"bitwardenItem"`
-	HcloudTokenEnv       string `yaml:"hcloudTokenEnv"`
-	R2AccessKeyIDEnv     string `yaml:"r2AccessKeyIDEnv"`
-	R2SecretAccessKeyEnv string `yaml:"r2SecretAccessKeyEnv"`
-	StateBucket          string `yaml:"stateBucket"`
-	RefuseProjectWithIP  string `yaml:"refuseProjectWithIP"`
+	BitwardenItem       string `yaml:"bitwardenItem"`
+	StateBucket         string `yaml:"stateBucket"`
+	RefuseProjectWithIP string `yaml:"refuseProjectWithIP"`
 	// WorkerSet is the tfvars file that declares this environment's
 	// Workers, relative to kluster.yaml. kluster passes it to the workers
 	// Module with -var-file, so it wins over terraform.tfvars, which
@@ -293,12 +288,8 @@ func (c *Config) validate() error {
 			errs = append(errs, fmt.Errorf("envs.%s is required", name))
 			continue
 		}
-		names := e.HcloudTokenEnv != "" || e.R2AccessKeyIDEnv != "" || e.R2SecretAccessKeyEnv != ""
-		switch {
-		case e.BitwardenItem != "" && names:
-			errs = append(errs, fmt.Errorf("envs.%s names both a bitwardenItem and environment variables; use one", name))
-		case e.BitwardenItem == "" && (e.HcloudTokenEnv == "" || e.R2AccessKeyIDEnv == "" || e.R2SecretAccessKeyEnv == ""):
-			errs = append(errs, fmt.Errorf("envs.%s must name a bitwardenItem, or hcloudTokenEnv, r2AccessKeyIDEnv and r2SecretAccessKeyEnv", name))
+		if e.BitwardenItem == "" {
+			errs = append(errs, fmt.Errorf("envs.%s must name a bitwardenItem", name))
 		}
 		if e.WorkerSet == "" {
 			errs = append(errs, fmt.Errorf("envs.%s.workerSet is required", name))
@@ -317,11 +308,8 @@ func (c *Config) validate() error {
 			errs = append(errs, errors.New("envs.rehearsal.refuseProjectWithIP is required"))
 		}
 		if l, ok := c.Envs[EnvLive]; ok {
-			sameNames := r.BitwardenItem == "" && l.BitwardenItem == "" &&
-				(r.HcloudTokenEnv == l.HcloudTokenEnv || r.R2AccessKeyIDEnv == l.R2AccessKeyIDEnv ||
-					r.R2SecretAccessKeyEnv == l.R2SecretAccessKeyEnv)
 			sameItem := r.BitwardenItem != "" && r.BitwardenItem == l.BitwardenItem
-			if sameNames || sameItem || r.StateBucket == l.StateBucket {
+			if sameItem || r.StateBucket == l.StateBucket {
 				errs = append(errs, errors.New("envs.rehearsal must name its own token, R2 keys and bucket, not the live ones"))
 			}
 			// The same file would make `node add --env rehearsal` write the

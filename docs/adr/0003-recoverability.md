@@ -365,7 +365,8 @@ store; nothing above changes. What was decided:
 - **`infra/.envrc` retires as a plaintext file.** It held five values in
   plaintext, two of them unused WireGuard keys (`grep` over
   `infra/`, `tools/` and `docs/` on 2026-10-04 found no reader). It becomes
-  `bw get` calls, or goes.
+  `bw get` calls, or goes. *As built 2026-10-20: it went. The file was deleted
+  after a read-only live run; its unused WireGuard values went with it.*
 - Bitwarden Secrets Manager with the External Secrets Operator was weighed and
   lost: the cluster would depend on an outside service to start, and ESO
   needs a machine token living in the cluster.
@@ -417,7 +418,10 @@ from its encrypted file. Decided in a design grill with the operator:
   Terraform, so the live/rehearsal separation holds for hand runs too. During
   the build an `env` source stays beside the Bitwarden one; it is deleted in
   the same change once the rehearsal and a read-only live run pass, with
-  `infra/.envrc` and the rehearsal env file.
+  `infra/.envrc` and the rehearsal env file. *As built 2026-10-20: the source,
+  the `*Env` config fields and the `getenv` fallback are deleted; every
+  environment must name a `bitwardenItem`. `infra/.envrc` is deleted; the
+  operator deletes the rehearsal env file.*
 - **The cluster gets its own Hetzner token per environment**, stored in the
   environment's Bitwarden item and read by `kluster cp init` for
   `kube-system/hcloud`. A Hetzner token is project-wide, so the gain is
