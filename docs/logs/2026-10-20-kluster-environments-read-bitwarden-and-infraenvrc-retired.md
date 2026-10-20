@@ -1,6 +1,6 @@
 ---
 title: "kluster environments read Bitwarden and infra/.envrc retired"
-description: "Both environments now read their credentials from a Bitwarden item, kluster's environment-variable source is deleted, and infra/.envrc is gone; the live cluster still holds the shared Hetzner token."
+description: "Both environments now read their credentials from a Bitwarden item, kluster's environment-variable source is deleted, and infra/.envrc is gone; the live cluster now holds a Hetzner token of its own."
 type: log
 date: 2026-10-20
 topics: [secrets, security, provisioning]
@@ -24,6 +24,6 @@ The R2 values were therefore proven by a hash. The `sha256sum` of the three valu
 
 ## What is still open
 
-🔴 The live cluster still holds the shared token. `kluster/live` has a `hcloud_cluster_token` (the operator added it on 2026-10-20), and `kluster cp init` reads it for `kube-system/hcloud`. The live Secret was made earlier by runbook step 8a from `$TF_VAR_HCLOUD_TOKEN` (assumed, not read), and nothing here changed it. **Until a live change moves the cluster to the new token, revoking the Terraform token would still break the cloud controller and the CSI driver.** That change mutates the live cluster, so it waits for the operator's go-ahead.
+The live cluster held the shared Hetzner token until the same day. `kluster/live` has a `hcloud_cluster_token` (the operator added it on 2026-10-20), and `kluster cp init` reads it for `kube-system/hcloud`, but the live Secret had been made earlier by runbook step 8a from `$TF_VAR_HCLOUD_TOKEN` (assumed, not read). On 2026-10-20 the operator patched the live Secret's `token` key with `hcloud_cluster_token` and restarted `hcloud-cloud-controller-manager` and `hcloud-csi-controller`, the only two readers (found by their `secretKeyRef`). Proof: both pods Running within 23 s, no `unauthorized`, `401`, `forbidden` or `error` line in the last 200 log lines of either, all four nodes kept their `providerID`, and the SHA-256 of the live Secret's token differs from the SHA-256 of `TF_VAR_HCLOUD_TOKEN` from `kluster exec`. The cluster therefore holds a token of its own, and the Terraform token can be revoked without breaking the cloud controller or the CSI driver. The old shared token stays valid until the operator revokes it; that is not done.
 
 The operator also owns `~/.config/kluster/rehearsal.env`. kluster no longer reads it, and the operator deletes it after a hash check against `kluster/rehearsal`. The next items on the Plan stay open: the `kluster up --db fresh|recover` rehearsal, `services seed`, and the guided pass over the risky kluster parts.
