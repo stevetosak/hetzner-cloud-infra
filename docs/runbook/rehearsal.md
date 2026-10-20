@@ -11,8 +11,9 @@ Hetzner project ([ADR 0009](../adr/0009-kluster-builds-the-whole-cluster-and-pro
 rehearsal uses the same resource names and the same Terraform Modules as live;
 what differs is every credential and the bucket that holds the state.
 
-kluster keeps the two apart in three ways. `--env rehearsal` reads its own
-environment variables, and the terraform child process gets a clean
+kluster keeps the two apart in three ways. `--env rehearsal` reads its
+credentials from its own Bitwarden item, `kluster/rehearsal`, and the
+terraform child process gets a clean
 environment with no `TF_*`, `AWS_*` or `HCLOUD_*` from the shell, so the live
 token cannot reach it. Each Module keeps a separate data directory,
 `.terraform-rehearsal`, so a rehearsal init never repoints the live

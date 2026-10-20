@@ -71,6 +71,16 @@ The `rbw config` commands are rbw's own; this task did not run them, and rbw's
 README is the authority. What was proven on 2026-10-20 is that `kluster secrets
 list` and `pull --apply` ran through rbw and read all four issued values.
 
+kluster reads the rbw profile `kluster` (its files are in `~/.config/rbw-kluster`),
+apart from the default profile, so `RBW_PROFILE=kluster rbw unlocked` is the
+check that matters. A profile on a fresh state can fail at login with
+`New device verification required`; `rbw` shows it as `failed to log in to
+bitwarden instance: api request returned error: 400`. On 2026-10-20 the
+default profile failed this way, and `rbw register` fixed it; the same step is
+expected to fix the `kluster` profile (assumed, not run there). kluster only warns when `rbw sync` fails and then reads
+the local copy, so an item stored in the web vault can show as "not found"
+until the sync works.
+
 Three rules follow from the trade-off of trusting a second client. kluster
 never unlocks the agent: the operator unlocks it in their own terminal before
 running kluster, and kluster fails with the exact unlock command when it is
