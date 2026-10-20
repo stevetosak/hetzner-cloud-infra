@@ -10,6 +10,10 @@ metadata:
   namespace: redis
   labels:
     app: redis
+  annotations:
+    # Reloader restarts this Deployment when the `redis` Secret changes
+    # (core/reloader). Redis reads --requirepass once, at start.
+    secret.reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
   revisionHistoryLimit: 3
