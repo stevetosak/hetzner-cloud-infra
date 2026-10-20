@@ -82,6 +82,15 @@ spec:
         # nothing. Dropped. The two must agree in any case, or ArgoCD refuses
         # the sync.
         path: '{{.path.path}}'
+      # Reloader (core/reloader) restarts a Deployment by writing this pod-template
+      # annotation. Without this ArgoCD would show every reloaded Deployment as
+      # OutOfSync. Nothing is reverted either way: there is no selfHeal, and
+      # server-side apply leaves fields another manager owns.
+      ignoreDifferences:
+        - group: apps
+          kind: Deployment
+          jqPathExpressions:
+            - '.spec.template.metadata.annotations."reloader.stakater.com/last-reloaded-from"'
       syncPolicy:
         automated:
           # Matches what the hand-made Applications did: auto-sync on, no prune

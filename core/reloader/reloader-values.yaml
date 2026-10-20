@@ -1,0 +1,54 @@
+# Values that produce core/reloader/reloader.yaml.
+#
+# Chart: oci://ghcr.io/stakater/charts/reloader, version 2.2.18 (Reloader v1.4.22).
+# Render with core/reloader/render.sh. Do not edit the rendered file.
+#
+# Reloader restarts the readers of a changed Secret, whatever changed it:
+# kluster, a hand apply, or a later ArgoCD sync (ADR 0003, Amendment 2026-10-06).
+
+image:
+  # Pinned by digest. A floating tag changes under a rebuild. With a digest set,
+  # the chart renders repository@digest and ignores the tag.
+  tag: v1.4.22
+  digest: sha256:def2480040adc164b3a57340e77674eadfd88fb7f0593df25e93297f29c7fd7c
+
+reloader:
+  # A workload opts in with `secret.reloader.stakater.com/auto: "true"` in its
+  # base deployment.yaml. Nothing is restarted by surprise, and a new reader is
+  # a visible line in git. Never autoReloadAll: it would restart system
+  # components (cert-manager, ArgoCD) whose Secrets change on their own terms.
+  autoReloadAll: false
+
+  # Restart by a pod-template ANNOTATION, not by an injected STAKATER_* env var.
+  # The ApplicationSet ignores this annotation (applicationset.yaml), so ArgoCD
+  # does not report drift after a reload.
+  reloadStrategy: annotations
+
+  # 🔴 Least privilege: a cluster-wide watch needs a ClusterRole that reads every
+  # Secret, ArgoCD's and the Cloudflare token included. Scoped mode gives one
+  # Role + RoleBinding per namespace listed here, and no ClusterRole.
+  # The release namespace (reloader) is always included by the chart.
+  # A new project that reads a Secret adds its namespace here, then renders again.
+  watchGlobally: false
+  namespaces:
+    - redis
+    - authos
+    - doma
+
+  logFormat: json
+
+  readOnlyRootFileSystem: true
+
+  deployment:
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: ["ALL"]
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi

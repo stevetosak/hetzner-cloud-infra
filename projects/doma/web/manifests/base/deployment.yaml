@@ -4,6 +4,9 @@ metadata:
   name: doma
   labels:
     app: doma
+  annotations:
+    # Reloader restarts this Deployment when a Secret it reads changes (core/reloader).
+    secret.reloader.stakater.com/auto: "true"
 spec:
   revisionHistoryLimit: 3
   selector:
