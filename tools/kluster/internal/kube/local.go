@@ -72,10 +72,16 @@ func (l *Local) Secret(ctx context.Context, ref catalog.Ref) ([]byte, error) {
 	return out, nil
 }
 
-// Apply applies one Secret manifest server-side as FieldManager. It never
-// forces a conflict: a key another manager owns stops the apply.
-func (l *Local) Apply(ctx context.Context, manifest []byte) error {
-	_, stderr, err := l.run(ctx, manifest, l.args("apply", "--server-side", "--field-manager="+FieldManager, "-f", "-")...)
+// Apply applies one Secret manifest server-side as FieldManager. A key
+// another manager owns stops the apply, unless force is true: then kluster
+// takes those keys over (a Secret made by `kubectl create` has its keys
+// owned by "kubectl-create"). force is opt-in and never the default.
+func (l *Local) Apply(ctx context.Context, manifest []byte, force bool) error {
+	args := []string{"apply", "--server-side", "--field-manager=" + FieldManager}
+	if force {
+		args = append(args, "--force-conflicts")
+	}
+	_, stderr, err := l.run(ctx, manifest, l.args(append(args, "-f", "-")...)...)
 	if err != nil {
 		return fmt.Errorf("kubectl apply: %w: %s", err, scrub(stderr, manifest))
 	}
