@@ -31,7 +31,7 @@ manifest expresses them: the Cloudflare zone, and anything that waits on the
 load balancer's address.
 
 **Secrets stay out of ArgoCD.** They are applied by kluster from the
-`*.enc.yaml` files, as `scripts/secrets.sh apply` does today; there is still
+`*.enc.yaml` files, with `kluster secrets apply`; there is still
 no ArgoCD plugin ([the secrets runbook](../runbook/secrets.md), "What is deliberately NOT done").
 
 **The CNPG `Cluster` resource stays out of ArgoCD.** The committed
