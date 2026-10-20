@@ -32,6 +32,7 @@ var secretsFlags struct {
 	staged  bool
 	noVault bool
 	attach  bool
+	force   bool
 }
 
 func init() {
@@ -39,6 +40,7 @@ func init() {
 	secretsCheckCmd.Flags().BoolVar(&secretsFlags.staged, "staged", false, "check what is staged for the next commit, not the working tree")
 	secretsListCmd.Flags().BoolVar(&secretsFlags.noVault, "no-bitwarden", false, "do not compare issued keys with Bitwarden")
 	secretsListCmd.Flags().BoolVar(&secretsFlags.attach, "attachments", false, "also compare attachments with Bitwarden (reads them with bw, a few seconds)")
+	secretsApplyCmd.Flags().BoolVar(&secretsFlags.force, "force-conflicts", false, "take over keys another field manager owns (a Secret made by kubectl create); once per Secret")
 	secretsCmd.AddCommand(secretsListCmd, secretsGenerateCmd, secretsRotateCmd, secretsPullCmd, secretsSetCmd,
 		secretsDiffCmd, secretsApplyCmd, secretsEditCmd, secretsCheckCmd)
 	rootCmd.AddCommand(secretsCmd)
@@ -235,8 +237,9 @@ var secretsApplyCmd = &cobra.Command{
 	Use:   "apply [<namespace>/<name>...]",
 	Short: "Apply the Secrets that differ from their files to the live cluster, server-side",
 	Long: "Plan Mode prints the diff. --apply applies each drifting Secret server-side as field " +
-		"manager \"" + kube.FieldManager + "\" and never forces a conflict. Live only. A Secret with a " +
-		"missing key is refused.",
+		"manager \"" + kube.FieldManager + "\" and does not force a conflict unless given " +
+		"--force-conflicts, which takes over the keys another manager owns: needed once for a Secret " +
+		"made by `kubectl create`. Live only. A Secret with a missing key is refused.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return secretsRun(cmd, func(ctx context.Context, a *secretsApp) error {
 			diffs, drift, err := a.liveDiff(ctx, args)
@@ -247,7 +250,7 @@ var secretsApplyCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			if err := secrets.Apply(ctx, a.store, cl, diffs); err != nil {
+			if err := secrets.Apply(ctx, a.store, cl, diffs, secretsFlags.force); err != nil {
 				return err
 			}
 			fmt.Fprintln(a.out, "applied; reading back:")

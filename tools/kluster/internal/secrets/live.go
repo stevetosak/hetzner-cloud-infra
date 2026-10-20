@@ -14,8 +14,9 @@ import (
 type Cluster interface {
 	// Secret returns the live Secret as YAML, or nil when it does not exist.
 	Secret(ctx context.Context, ref catalog.Ref) ([]byte, error)
-	// Apply applies one Secret manifest.
-	Apply(ctx context.Context, manifest []byte) error
+	// Apply applies one Secret manifest. With force it takes over keys that
+	// another field manager owns; without it such a key stops the apply.
+	Apply(ctx context.Context, manifest []byte, force bool) error
 }
 
 // Manifest returns the plaintext manifest of s, ready to apply. It refuses
@@ -123,8 +124,9 @@ func PrintDiff(w io.Writer, diffs []LiveDiff) (drift bool, err error) {
 	return drift, tw.Flush()
 }
 
-// Apply applies each Secret whose live copy drifts from its file.
-func Apply(ctx context.Context, store *Store, cl Cluster, diffs []LiveDiff) error {
+// Apply applies each Secret whose live copy drifts from its file. force is
+// passed to the cluster: see Cluster.Apply.
+func Apply(ctx context.Context, store *Store, cl Cluster, diffs []LiveDiff, force bool) error {
 	for _, d := range diffs {
 		if !d.Drift() {
 			continue
@@ -133,7 +135,7 @@ func Apply(ctx context.Context, store *Store, cl Cluster, diffs []LiveDiff) erro
 		if err != nil {
 			return err
 		}
-		if err := cl.Apply(ctx, m); err != nil {
+		if err := cl.Apply(ctx, m, force); err != nil {
 			return fmt.Errorf("%s: %w", d.Secret.Ref, err)
 		}
 	}

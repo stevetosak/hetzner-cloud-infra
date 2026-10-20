@@ -120,7 +120,7 @@ func (c *fakeCluster) Secret(_ context.Context, ref catalog.Ref) ([]byte, error)
 	return c.live[ref], nil
 }
 
-func (c *fakeCluster) Apply(_ context.Context, m []byte) error {
+func (c *fakeCluster) Apply(_ context.Context, m []byte, _ bool) error {
 	sh, _, err := parse(m)
 	if err != nil {
 		return err

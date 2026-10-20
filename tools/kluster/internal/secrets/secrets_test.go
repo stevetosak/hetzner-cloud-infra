@@ -295,7 +295,7 @@ func TestDiffAndApply(t *testing.T) {
 		t.Errorf("app diff %q, want %q", got, want)
 	}
 
-	if err := Apply(ctx, f.store, cl, diffs); err != nil {
+	if err := Apply(ctx, f.store, cl, diffs, false); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(cl.applied, []catalog.Ref{db.Ref, app.Ref}) {
