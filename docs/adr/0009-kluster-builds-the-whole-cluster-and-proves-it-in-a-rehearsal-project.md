@@ -71,8 +71,9 @@ adding it never plans a replacement of a live server. The SSH client's
 
 **The Worker set is written by kluster and committed by the operator.**
 `node add` writes the new entry into `infra/workers/terraform.tfvars` with the
-next free private and VPN address, and `node remove` deletes it. Under
-`--apply` kluster refuses to run Terraform until that file is committed.
+next free private and VPN address, and `node remove` deletes it. Until that
+file is committed kluster refuses to open the workers Module, in Plan Mode as
+well as under `--apply`.
 Terraform state lives in R2 and is shared by every clone, so an uncommitted
 Worker would read as a planned destroy from any other checkout.
 
