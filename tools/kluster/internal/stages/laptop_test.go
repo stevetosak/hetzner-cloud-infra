@@ -93,41 +93,117 @@ func TestLaptopKubeconfigWritesAStandAlone(t *testing.T) {
 	}
 }
 
-// The merge replaces the dead cluster's entries under the same names, and
-// leaves current-context alone when the new context does not answer.
-func TestLaptopKubeconfigMergeReplacesOldEntriesAndWaitsForAnAnswer(t *testing.T) {
+// countingExec is the laptop, counting the writes of each file and
+// recording each command.
+type countingExec struct {
+	local.Exec
+	writes map[string]int
+	ran    []string
+}
+
+func (c *countingExec) WriteFile(ctx context.Context, path, content string, mode os.FileMode) error {
+	c.writes[path]++
+	return c.Exec.WriteFile(ctx, path, content, mode)
+}
+
+func (c *countingExec) Run(ctx context.Context, cmd string) (string, error) {
+	c.ran = append(c.ran, cmd)
+	return c.Exec.Run(ctx, cmd)
+}
+
+// mergeSetup writes a live kubeconfig holding a dead cluster under the
+// names "tosak", with current-context current, and the merge of a new
+// cluster at port 1 of the loopback, which refuses at once, standing in for
+// a context that does not answer. Every kubectl call names a file under the
+// test's directory.
+func mergeSetup(t *testing.T, current string) (LaptopKubeconfig, *countingExec) {
+	t.Helper()
 	if _, err := exec.LookPath("kubectl"); err != nil {
 		t.Skip("kubectl not on PATH")
 	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config")
-	old := strings.NewReplacer("Q0EtTkVX", "Q0EtT0xE", "kubernetes-admin@kubernetes", "tosak-admin@tosak",
+	old := strings.NewReplacer("Q0EtTkVX", "Q0EtT0xE", "name: kubernetes-admin@kubernetes", "name: tosak-admin@tosak",
+		"kubernetes-admin@kubernetes", "tosak-admin@tosak",
 		"kubernetes-admin", "tosak-admin", "name: kubernetes", "name: tosak", "cluster: kubernetes", "cluster: tosak",
 		"https://k8s-cp.tosak.internal:6443", "https://10.100.0.1:6443").Replace(adminConf)
-	old = strings.Replace(old, "current-context: tosak-admin@tosak", "current-context: other", 1)
+	old = strings.Replace(old, "current-context: tosak-admin@tosak", "current-context: "+current, 1)
 	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	names := kubeconfig.NamesFor("tosak")
-	// Port 1 refuses at once, standing in for a context that does not answer.
 	conf, _ := kubeconfig.ForLaptop([]byte(adminConf), names, "https://127.0.0.1:1")
-	l := LaptopKubeconfig{Path: path, Merge: true, Names: names, Conf: conf, TmpDir: dir}
-	err := l.Act(context.Background(), laptopHost(t))
-	if err == nil || !strings.Contains(err.Error(), "current-context was not moved") {
-		t.Fatalf("want the merge to stop before use-context, got %v", err)
+	run := filepath.Join(dir, "run")
+	if err := os.Mkdir(run, 0o700); err != nil {
+		t.Fatal(err)
 	}
-	b, _ := os.ReadFile(path)
-	e, err := kubeconfig.Find(b, names)
+	l := LaptopKubeconfig{Path: path, Merge: true, Names: names, Conf: conf, TmpDir: run}
+	return l, &countingExec{Exec: local.Exec{TmpDir: run}, writes: map[string]int{}}
+}
+
+func readEntries(t *testing.T, l LaptopKubeconfig) kubeconfig.Entries {
+	t.Helper()
+	b, _ := os.ReadFile(l.Path)
+	e, err := kubeconfig.Find(b, l.Names)
 	if err != nil {
 		t.Fatal(err)
 	}
+	return e
+}
+
+// The merge replaces the dead cluster's entries under the same names, and
+// leaves current-context alone when the new context does not answer. The
+// deletes run on a copy, and the live file is written once.
+func TestLaptopKubeconfigMergeReplacesOldEntriesAndWaitsForAnAnswer(t *testing.T) {
+	l, x := mergeSetup(t, "other")
+	err := l.Act(context.Background(), &stage.Host{Name: "laptop", Exec: x})
+	if err == nil || !strings.Contains(err.Error(), "current-context was not moved") {
+		t.Fatalf("want the merge to stop before use-context, got %v", err)
+	}
+	e := readEntries(t, l)
 	if e.Cluster == nil || e.Cluster.CAData != "Q0EtTkVX" || e.Cluster.Server != "https://127.0.0.1:1" {
 		t.Fatalf("the dead cluster's entry survived: %+v", e.Cluster)
 	}
 	if e.CurrentContext != "other" {
 		t.Fatalf("current-context moved to %q before the new context answered", e.CurrentContext)
 	}
-	if backups, _ := filepath.Glob(path + ".bak-kluster-*"); len(backups) != 1 {
+	if backups, _ := filepath.Glob(l.Path + ".bak-kluster-*"); len(backups) != 1 {
 		t.Fatalf("want one backup, got %v", backups)
+	}
+	if x.writes[l.Path] != 1 {
+		t.Fatalf("the live file was written %d times, want once", x.writes[l.Path])
+	}
+	deletes := 0
+	for _, c := range x.ran {
+		if strings.Contains(c, "config delete-") {
+			deletes++
+			if strings.Contains(c, local.Quote(l.Path)+" ") {
+				t.Fatalf("a delete ran on the live file: %s", c)
+			}
+		}
+	}
+	if deletes != 3 {
+		t.Fatalf("ran %d deletes, want 3: %v", deletes, x.ran)
+	}
+	if left, _ := filepath.Glob(filepath.Join(l.TmpDir, "*")); len(left) != 0 {
+		t.Fatalf("the run directory keeps %v", left)
+	}
+}
+
+// When the live current-context is the new context's own name, deleting it
+// from the copy must not leave the merge without one: the name stays
+// current, now naming the new cluster's entry, and the error says so.
+func TestLaptopKubeconfigMergeKeepsACurrentContextOfTheSameName(t *testing.T) {
+	l, x := mergeSetup(t, "tosak-admin@tosak")
+	err := l.Act(context.Background(), &stage.Host{Name: "laptop", Exec: x})
+	if err == nil || !strings.Contains(err.Error(), "current-context already named tosak-admin@tosak") {
+		t.Fatalf("got %v", err)
+	}
+	e := readEntries(t, l)
+	if e.CurrentContext != "tosak-admin@tosak" || e.Cluster == nil || e.Cluster.Server != "https://127.0.0.1:1" {
+		t.Fatalf("current-context %q, cluster %+v", e.CurrentContext, e.Cluster)
+	}
+	if x.writes[l.Path] != 1 {
+		t.Fatalf("the live file was written %d times, want once", x.writes[l.Path])
 	}
 }
