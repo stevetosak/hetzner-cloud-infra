@@ -98,9 +98,12 @@ tunnel. The peer is then removed; it was never in `wg0.conf`, so a restart of
 **Then the workstation.** On live, kluster edits `/etc/wireguard/wg0.conf`
 through `sudo` (the hub peer's `PublicKey`, and its `Endpoint` if the address
 changed; nothing else), keeps a `.bak-kluster-<time>` copy and restarts
-`wg-quick@wg0`. It merges the kubeconfig as `tosak-admin@tosak` after deleting
-any old entries under those names, backs the file up, and moves
-`current-context` only once the new context answers `/readyz`. A rehearsal
+`wg-quick@wg0`. It merges the kubeconfig as `tosak-admin@tosak`: it backs the file up,
+deletes any old entries under those names on a copy, and writes the merged
+result to the live file in one write, so a run that stops earlier leaves it
+unchanged. It moves `current-context` only once the new context answers
+`/readyz`, except when the live current-context already is `tosak-admin@tosak`:
+that name then points at the new cluster's entry from the write on. A rehearsal
 hub has the live VPN addresses, so `--env rehearsal` writes both files under
 `~/.config/kluster/rehearsal/` instead and never touches the live setup.
 

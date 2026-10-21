@@ -99,9 +99,13 @@ Over the connection the seeded key verified, as `root`:
 4. Dial the host again, accepting the new key and nothing else.
 
 5. Only when that dial succeeds, pin the new key alone. The seeded key is
-   refused everywhere only once this step completes. A run stopped between
-   steps 3 and 5 currently keeps both pins, because the "rotated" marker is
-   written in step 3; a fix is in progress.
+   refused everywhere only once this step completes. The Probe is done only
+   when the marker exists and exactly one key is pinned at the address, so a
+   run stopped between steps 3 and 5 is not skipped. Resumed, it runs only
+   steps 4 and 5: it dials accepting the key pinned last (step 2 appends it)
+   and pins that key alone. It never reads the key from the host, because a
+   session verified by the public seeded key cannot be trusted. If the host
+   does not serve that key, the pins stay as they are and the run fails.
 
 ## A server kluster did not build
 
@@ -138,7 +142,7 @@ Run on live on 2026-10-06 with the operator's approval: `10.100.0.1` pinned as
 ## How to know it worked
 
 The Stage's Probe reads `/etc/ssh/kluster-host-key-rotated` over the verified
-connection; under `--apply` the Stage must pass its own Probe after acting, or
+connection and counts the pins at the address (exactly one); under `--apply` the Stage must pass its own Probe after acting, or
 the run fails. By hand, both of these must hold:
 
 ```sh

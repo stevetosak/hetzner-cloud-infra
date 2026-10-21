@@ -75,7 +75,8 @@ and kluster proves the route with its own in-process peer
 bootstrap SSH on the Worker firewall, creates the Workers with seeded host
 keys, logs in to each and rotates its key ([host keys](./host-keys.md)), and closes SSH with the
 API readback of the [workers runbook, step 9](./workers.md#9-close-bootstrap-ssh). The close runs at the end of
-every run, a failed or interrupted one included.
+every run, a failed or interrupted one included; SIGHUP (a closed terminal) is caught too, SIGPIPE is not.
+Every `cp`, `node` and `reset` run also warns at start for each firewall that admits port 22.
 
 ## Clear it away
 
