@@ -37,6 +37,7 @@ var resetCmd = &cobra.Command{
 const resetDatabaseWait = 15 * time.Minute
 
 func reset(ctx context.Context, a *app) error {
+	a.warnOpenSSH(ctx)
 	path, err := a.workerSetPath()
 	if err != nil {
 		return err

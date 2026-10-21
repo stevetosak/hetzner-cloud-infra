@@ -38,6 +38,7 @@ var nodeReplaceCmd = &cobra.Command{
 }
 
 func nodeReplace(ctx context.Context, a *app, name string) error {
+	a.warnOpenSSH(ctx)
 	if err := checkWorkerName(name, a.cfg.ControlPlane.Name); err != nil {
 		return err
 	}
