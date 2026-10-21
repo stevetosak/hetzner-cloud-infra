@@ -89,29 +89,52 @@ func ReplaceIntent(name string) intent.Intent {
 	}
 }
 
-// ReplaceWorker destroys the named Worker's server and creates it again
-// under the same name, with a seeded host key in user_data. The Module has
-// no create_before_destroy, so the old server goes first: Hetzner names are
-// unique. Under --apply it pins the seeded key at the new server's public
-// address and returns that address; "" when nothing was applied.
-func ReplaceWorker(ctx context.Context, m Replacer, name string, pins *hostkey.Pins, mode tf.Mode, out io.Writer) (string, error) {
+// Replacement is one Worker's replacement, planned and checked against
+// ReplaceIntent but not yet applied: the saved plan and the seeded key its
+// user_data installs. node replace makes it before the Worker leaves the
+// cluster, so a plan that would do anything else is refused while nothing
+// has changed.
+type Replacement struct {
+	m    Replacer
+	name string
+	plan *tf.Plan
+	key  *hostkey.KeyPair
+}
+
+// PlanReplace plans to destroy the named Worker's server and create it again
+// under the same name, with a seeded host key in user_data, and checks the
+// plan against ReplaceIntent. A mismatch warns in Plan Mode and returns
+// tf.ErrIntent under --apply. The Module has no create_before_destroy, so
+// the old server goes first: Hetzner names are unique.
+func PlanReplace(ctx context.Context, m Replacer, name string, mode tf.Mode, out io.Writer) (*Replacement, error) {
 	kp, ud, err := seed()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	p, err := m.PlanReplace(ctx, map[string]any{"user_data": map[string]string{name: ud}}, WorkerAddress(name))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	applied, err := tf.Decide(ctx, m, p, ReplaceIntent(name), mode, out)
+	if err := tf.Check(p, ReplaceIntent(name), mode, out); err != nil {
+		return nil, err
+	}
+	return &Replacement{m: m, name: name, plan: p, key: kp}, nil
+}
+
+// Apply applies the saved plan, not a new one: Terraform refuses it if the
+// workers state changed since it was made. Under --apply it pins the seeded
+// key at the new server's public address and returns that address; "" when
+// nothing was applied.
+func (r *Replacement) Apply(ctx context.Context, pins *hostkey.Pins, mode tf.Mode, out io.Writer) (string, error) {
+	applied, err := tf.ApplyChecked(ctx, r.m, r.plan, mode, out)
 	if err != nil || !applied {
 		return "", err
 	}
-	created, err := pinCreated(ctx, m, map[string]*hostkey.KeyPair{name: kp}, pins, out)
+	created, err := pinCreated(ctx, r.m, map[string]*hostkey.KeyPair{r.name: r.key}, pins, out)
 	if err != nil {
 		return "", err
 	}
-	return created[name], nil
+	return created[r.name], nil
 }
 
 // WorkerAddress is the named Worker's server in the workers Module.

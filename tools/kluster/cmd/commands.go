@@ -253,6 +253,13 @@ func (a *app) dialer() stages.Dialer {
 	}
 }
 
+// warnOpenSSH starts every command that may open bootstrap SSH (cp init,
+// node add, remove and replace, reset): it warns about a port 22 an earlier
+// run left open.
+func (a *app) warnOpenSSH(ctx context.Context) {
+	sshgate.WarnOpen(ctx, a.api, a.out)
+}
+
 func (a *app) gate(ctx context.Context) (*sshgate.Gate, error) {
 	shared, err := a.module(ctx, config.ModuleShared)
 	if err != nil {

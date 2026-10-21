@@ -57,6 +57,7 @@ func cpInit(ctx context.Context, a *app) (err error) {
 	if _, err := a.env.HcloudClusterToken(); err != nil {
 		return err
 	}
+	a.warnOpenSSH(ctx)
 	cp := a.cfg.ControlPlane
 	srv, err := a.api.Server(ctx, cp.Name)
 	if err != nil {

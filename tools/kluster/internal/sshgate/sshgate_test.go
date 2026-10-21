@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/intent"
@@ -28,14 +29,17 @@ func (f *fakeShared) Plan(context.Context, map[string]any) (*tf.Plan, error) {
 func (f *fakeShared) Apply(context.Context, *tf.Plan) error { f.applied++; return nil }
 
 // fakeAPI holds which firewalls admit port 22. clearWorks false models a
-// set_rules that does not take.
+// set_rules that does not take; err fails every read.
 type fakeAPI struct {
 	open       map[string]bool
 	clearWorks bool
 	cleared    []string
+	err        error
 }
 
-func (f *fakeAPI) SSHOpen(_ context.Context, name string) (bool, error) { return f.open[name], nil }
+func (f *fakeAPI) SSHOpen(_ context.Context, name string) (bool, error) {
+	return f.open[name], f.err
+}
 
 func (f *fakeAPI) ClearSSH(_ context.Context, name string) error {
 	f.cleared = append(f.cleared, name)
@@ -134,6 +138,29 @@ func TestOpenReadsBack(t *testing.T) {
 
 	if err := g.Open(context.Background(), Worker); err == nil {
 		t.Fatal("an open the API does not show passed")
+	}
+}
+
+// A run killed before its close leaves port 22 open; the next run warns,
+// and an API error warns too instead of failing.
+func TestWarnOpen(t *testing.T) {
+	var out strings.Builder
+	WarnOpen(context.Background(), &fakeAPI{open: map[string]bool{Worker.Name: true}}, &out)
+	if got := out.String(); !strings.Contains(got, "WARNING: bootstrap SSH is open on "+Worker.Name) ||
+		strings.Contains(got, ControlPlane.Name) {
+		t.Fatalf("one open firewall:\n%s", got)
+	}
+
+	out.Reset()
+	WarnOpen(context.Background(), &fakeAPI{open: map[string]bool{}}, &out)
+	if out.Len() != 0 {
+		t.Fatalf("both closed:\n%s", out.String())
+	}
+
+	out.Reset()
+	WarnOpen(context.Background(), &fakeAPI{err: errors.New("503")}, &out)
+	if got := out.String(); strings.Count(got, "WARNING: not read whether") != 2 {
+		t.Fatalf("API error:\n%s", got)
 	}
 }
 

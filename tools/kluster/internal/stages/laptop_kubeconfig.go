@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/kubeconfig"
@@ -81,22 +82,26 @@ func (l LaptopKubeconfig) Preview(context.Context, *stage.Host) (string, error) 
 		return fmt.Sprintf("# write %s (0600): cluster %s at %s, context %s, nothing else\n", l.Path, l.Names.Cluster, want.Server, l.Names.Context), nil
 	}
 	return fmt.Sprintf(`# back up %[1]s
-# delete context %[2]s, cluster %[3]s and user %[4]s if present
-# merge the new cluster %[3]s at %[5]s
+# on a copy in the run directory: delete context %[2]s, cluster %[3]s and user %[4]s if present
+# merge the copy and the new cluster %[3]s at %[5]s; write the result to %[1]s in one write
 kubectl --kubeconfig %[1]s --context %[2]s get --raw=/readyz   # must answer ok
 kubectl --kubeconfig %[1]s config use-context %[2]s
 `, l.Path, l.Names.Context, l.Names.Cluster, l.Names.User, want.Server), nil
 }
 
+// Act under merge never edits the live file in steps. The old entries are
+// deleted from a copy in the run directory, the copy and the new cluster are
+// merged, and the result replaces the live file in one write, so a run that
+// stops anywhere before that write leaves the live file as it was.
 func (l LaptopKubeconfig) Act(ctx context.Context, h *stage.Host) error {
 	if !l.Merge {
 		return h.Exec.WriteFile(ctx, l.Path, string(l.Conf), 0o600)
 	}
-	kc := "kubectl --kubeconfig " + local.Quote(l.Path) + " "
 	old, err := h.Exec.ReadFile(ctx, l.Path)
+	var sources []string
+	var current string // the live file's current-context
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		old = ""
 	case err != nil:
 		return err
 	default:
@@ -108,40 +113,72 @@ func (l LaptopKubeconfig) Act(ctx context.Context, h *stage.Host) error {
 		if err != nil {
 			return err
 		}
-		if e.HasContext {
-			if _, err := h.Exec.Run(ctx, kc+"config delete-context "+l.Names.Context); err != nil {
-				return err
-			}
+		current = e.CurrentContext
+		cp := filepath.Join(l.TmpDir, "old-kubeconfig")
+		if err := os.WriteFile(cp, []byte(old), 0o600); err != nil {
+			return err
 		}
-		if e.Cluster != nil {
-			if _, err := h.Exec.Run(ctx, kc+"config delete-cluster "+l.Names.Cluster); err != nil {
-				return err
-			}
+		defer os.Remove(cp)
+		if err := l.deleteOld(ctx, h, cp, e); err != nil {
+			return err
 		}
-		if e.HasUser {
-			if _, err := h.Exec.Run(ctx, kc+"config delete-user "+l.Names.User); err != nil {
-				return err
-			}
-		}
+		sources = append(sources, cp)
 	}
 
-	// The old file first, so its current-context stays until the new one
-	// has answered.
+	// The old file first: the first current-context in KUBECONFIG wins, so
+	// the old one stays until the new context has answered.
 	tmp := filepath.Join(l.TmpDir, "new-kubeconfig")
 	if err := os.WriteFile(tmp, l.Conf, 0o600); err != nil {
 		return err
 	}
 	defer os.Remove(tmp)
-	merged, err := h.Exec.Run(ctx, "KUBECONFIG="+local.Quote(l.Path+":"+tmp)+" kubectl config view --flatten")
+	sources = append(sources, tmp)
+	merged, err := h.Exec.Run(ctx, "KUBECONFIG="+local.Quote(strings.Join(sources, ":"))+" kubectl config view --flatten")
 	if err != nil {
 		return err
 	}
 	if err := h.Exec.WriteFile(ctx, l.Path, merged+"\n", 0o600); err != nil {
 		return err
 	}
+	kc := "kubectl --kubeconfig " + local.Quote(l.Path) + " "
 	if out, err := h.Exec.Run(ctx, kc+"--context "+l.Names.Context+" get --raw=/readyz"); err != nil || out != "ok" {
+		if current == l.Names.Context {
+			return fmt.Errorf("merged, but %s does not answer; current-context already named %s, so it now names the new cluster's entry (the old one was the replaced cluster's) (is the laptop's WireGuard up with the new hub key?): %v", l.Names.Context, l.Names.Context, err)
+		}
 		return fmt.Errorf("merged, but %s does not answer, so current-context was not moved (is the laptop's WireGuard up with the new hub key?): %v", l.Names.Context, err)
 	}
 	_, err = h.Exec.Run(ctx, kc+"config use-context "+l.Names.Context)
 	return err
+}
+
+// deleteOld deletes the entries under the new cluster's names from the copy
+// cp of the live file. Were current-context unset, the new file's would win
+// the merge before the new context has answered, so kluster does not rely on
+// what delete-context does to a current-context it deletes: the copy's
+// current-context is set back to the live file's.
+// When the live file's current-context is the new context's own name, that
+// name stays current and from the one write on names the new cluster's
+// entry: the old entry under it was the replaced cluster's, the very entry
+// the merge exists to drop.
+func (l LaptopKubeconfig) deleteOld(ctx context.Context, h *stage.Host, cp string, e kubeconfig.Entries) error {
+	kc := "kubectl --kubeconfig " + local.Quote(cp) + " "
+	var cmds []string
+	if e.HasContext {
+		cmds = append(cmds, "config delete-context "+l.Names.Context)
+	}
+	if e.Cluster != nil {
+		cmds = append(cmds, "config delete-cluster "+l.Names.Cluster)
+	}
+	if e.HasUser {
+		cmds = append(cmds, "config delete-user "+l.Names.User)
+	}
+	if e.CurrentContext != "" && len(cmds) > 0 {
+		cmds = append(cmds, "config set current-context "+local.Quote(e.CurrentContext))
+	}
+	for _, c := range cmds {
+		if _, err := h.Exec.Run(ctx, kc+c); err != nil {
+			return err
+		}
+	}
+	return nil
 }

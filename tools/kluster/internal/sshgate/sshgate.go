@@ -163,6 +163,23 @@ func (g *Gate) Close(ctx context.Context) error {
 	return nil
 }
 
+// WarnOpen warns on out for each firewall that admits port 22 as a run
+// starts. An interrupt, SIGTERM or SIGHUP still reaches a run's close, but a
+// SIGKILL or a crash does not, so the next run says what it finds. A read
+// error warns too: this is a warning, never a refusal.
+func WarnOpen(ctx context.Context, api API, out io.Writer) {
+	for _, fw := range All {
+		open, err := api.SSHOpen(ctx, fw.Name)
+		switch {
+		case err != nil:
+			fmt.Fprintf(out, "WARNING: not read whether %s admits port 22: %v\n", fw.Name, err)
+		case open:
+			fmt.Fprintf(out, "WARNING: bootstrap SSH is open on %s: a run stopped before its close, or ssh open opened it. "+
+				"A run that opens bootstrap SSH closes it at its end under --apply; otherwise run kluster ssh close (%s)\n", fw.Name, Runbook)
+		}
+	}
+}
+
 func (g *Gate) converge(ctx context.Context, vars map[string]any, in intent.Intent) (bool, error) {
 	p, err := g.Shared.Plan(ctx, vars)
 	if err != nil {

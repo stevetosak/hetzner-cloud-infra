@@ -109,7 +109,10 @@ git add ../../infra/workers/terraform.tfvars && git commit -m "…"
 ./kluster node remove k8swk4 --apply      # run 2
 ```
 
-Run 1 runs three Stages on the Control Plane, each with a Probe:
+Run 1 first runs the database gate and the last-Worker check described under
+"Replace a Worker", then three Stages on the Control Plane, each with a Probe.
+A dead Worker that holds a not-ready CloudNativePG instance is refused until
+CloudNativePG fails over or the instance is fenced:
 
 1. **drain** — `kubectl drain <name> --ignore-daemonsets --delete-emptydir-data
    --timeout=5m0s`. Done when the Node is gone, or cordoned with only
@@ -142,13 +145,17 @@ Worker, both runs under `--apply`; the drain of the last Worker passed too.
 entry, so there is no commit between runs. It refuses a name the set does not
 declare, and a declared Worker with no server (`node add` builds that).
 
-Before the Worker leaves, two gates must pass. **The database gate:** every
+Before the Worker leaves, the plan and two gates must pass. kluster plans
+first and checks the plan against the intent (exactly one replace); a refused
+plan leaves the Worker whole, with no command run on the Control Plane and the
+pins kept. **The gates:** **The database gate:** every
 CloudNativePG Cluster has `status.readyInstances` at least `spec.instances`;
 with no CloudNativePG CRD or no Cluster it passes and says so. **The last
-Worker:** it refuses to replace the only Ready Worker Node. Then it runs the
-three Stages of "Remove a Worker", drops both pins, and plans exactly one
-replacement, `terraform plan -replace=hcloud_server.workers["<name>"]`, with a
-new seeded key in that Worker's `user_data`. The new server is built as in
+Worker:** it refuses to replace the only Ready Worker Node. The plan is
+`terraform plan -replace=hcloud_server.workers["<name>"]`, with a new seeded
+key in that Worker's `user_data`. Then it runs the three Stages of "Remove a
+Worker", drops both pins and applies the saved plan, without a second plan;
+Terraform refuses it if the workers state changed since. The new server is built as in
 `node add`, steps 3 to 8. If the build stops after the replacement, `kluster
 node add <name> --apply` resumes it, because the new server's key is pinned.
 A Worker built by hand has no kluster pin, so `node add` refuses its server;

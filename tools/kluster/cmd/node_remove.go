@@ -29,7 +29,8 @@ func init() {
 var nodeRemoveCmd = &cobra.Command{
 	Use:   "remove <name>",
 	Short: "Remove one Worker: take it out of the cluster and the hub, then delete its server (docs/runbook/workers.md)",
-	Long: "Run twice. While the environment's Worker set declares the name, kluster drains the Node " +
+	Long: "Run twice. While the environment's Worker set declares the name, kluster refuses while a CNPG " +
+		"Cluster has an instance that is not ready, and while the Worker is the only Ready one; then it drains the Node " +
 		"(PodDisruptionBudgets hold the drain, for 5 minutes at most), deletes it, removes the Worker's " +
 		"peer from the hub without restarting the hub, drops the pin at its VPN address and, under " +
 		"--apply, removes the entry from the set. kluster then stops, because it runs no Terraform on a " +
@@ -47,6 +48,7 @@ var nodeRemoveCmd = &cobra.Command{
 const drainTimeout = 5 * time.Minute
 
 func nodeRemove(ctx context.Context, a *app, name string) error {
+	a.warnOpenSSH(ctx)
 	if err := checkWorkerName(name, a.cfg.ControlPlane.Name); err != nil {
 		return err
 	}
@@ -76,7 +78,7 @@ func nodeRemove(ctx context.Context, a *app, name string) error {
 // Worker set. Its server stays until run 2, so the Worker set git holds
 // is the one Terraform deletes it from.
 func (a *app) retireWorker(ctx context.Context, set *workerset.Set, w workerset.Worker) error {
-	if err := workerset.CheckCommitted(ctx, set.Path); err != nil {
+	if err := workerset.CheckCommitted(ctx, set.Path, a.out); err != nil {
 		return err
 	}
 	if err := notReservedVPN(a.cfg, w.VpnIP); err != nil {
@@ -118,7 +120,8 @@ func (a *app) retireWorker(ctx context.Context, set *workerset.Set, w workerset.
 }
 
 // retireOnControlPlane drains and deletes the Worker's Node and removes its
-// hub peer. A project with no Control Plane has neither.
+// hub peer, after the checks in retire. A project with no Control Plane has
+// neither.
 func (a *app) retireOnControlPlane(ctx context.Context, w workerset.Worker) error {
 	cpName := a.cfg.ControlPlane.Name
 	cpSrv, err := a.api.Server(ctx, cpName)
@@ -129,13 +132,23 @@ func (a *app) retireOnControlPlane(ctx context.Context, w workerset.Worker) erro
 		fmt.Fprintf(a.out, "the project has no %s: no Node and no hub peer of %s to remove\n", cpName, w.Name)
 		return nil
 	}
-	retire := retireStages(w)
-	return a.onControlPlane(ctx, func(cp *stage.Host) error {
-		if cp == nil {
-			return stage.PlanNew(ctx, retire, cpName, a.out)
-		}
-		return stage.Run(ctx, retire, cp, stage.Options{Apply: a.mode.Apply, Out: a.out})
-	})
+	return a.onControlPlane(ctx, func(cp *stage.Host) error { return a.retire(ctx, cp, w) })
+}
+
+// retire takes a Worker out of the cluster and the hub: the database gate
+// and the last-Worker check first, then the retire Stages. node remove and
+// node replace both go through it, so no Worker leaves without the checks.
+// In Plan Mode cp may be nil: the checks are not run and the Stages are
+// printed.
+func (a *app) retire(ctx context.Context, cp *stage.Host, w workerset.Worker) error {
+	if err := a.checkRetirable(ctx, cp, w.Name); err != nil {
+		return err
+	}
+	steps := retireStages(w)
+	if cp == nil {
+		return stage.PlanNew(ctx, steps, a.cfg.ControlPlane.Name, a.out)
+	}
+	return stage.Run(ctx, steps, cp, stage.Options{Apply: a.mode.Apply, Out: a.out})
 }
 
 // retireStages take a Worker out of the cluster and the hub, on the

@@ -65,6 +65,7 @@ func checkWorkerName(name, controlPlane string) error {
 }
 
 func nodeAdd(ctx context.Context, a *app, name string) error {
+	a.warnOpenSSH(ctx)
 	if err := checkWorkerName(name, a.cfg.ControlPlane.Name); err != nil {
 		return err
 	}
@@ -184,7 +185,7 @@ func (a *app) createAndBuild(ctx context.Context, workers *tf.Module, w workerse
 // declareWorker writes a new Worker's entry into the Worker set, on top of
 // a set git holds, so the commit the operator makes is exactly that entry.
 func (a *app) declareWorker(ctx context.Context, set *workerset.Set, name string) error {
-	if err := workerset.CheckCommitted(ctx, set.Path); err != nil {
+	if err := workerset.CheckCommitted(ctx, set.Path, a.out); err != nil {
 		return err
 	}
 	w, err := nextWorker(a.cfg, set, name)

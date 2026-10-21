@@ -21,15 +21,18 @@ import (
 // fakeWorkers plans the same changes whatever the vars, and records the
 // user_data of the plan it was asked to apply.
 type fakeWorkers struct {
-	changes  []intent.Change
-	lastVars map[string]any
-	applied  map[string]any
-	ips      map[string]string
-	replaced []string
+	changes     []intent.Change
+	lastVars    map[string]any
+	applied     map[string]any
+	appliedPlan *tf.Plan
+	ips         map[string]string
+	replaced    []string
+	plans       int
 }
 
 func (f *fakeWorkers) Plan(_ context.Context, vars map[string]any) (*tf.Plan, error) {
 	f.lastVars = vars
+	f.plans++
 	return &tf.Plan{Module: "workers", Changes: f.changes}, nil
 }
 
@@ -38,7 +41,10 @@ func (f *fakeWorkers) PlanReplace(ctx context.Context, vars map[string]any, repl
 	return f.Plan(ctx, vars)
 }
 
-func (f *fakeWorkers) Apply(context.Context, *tf.Plan) error { f.applied = f.lastVars; return nil }
+func (f *fakeWorkers) Apply(_ context.Context, p *tf.Plan) error {
+	f.applied, f.appliedPlan = f.lastVars, p
+	return nil
+}
 
 func (f *fakeWorkers) Output(_ context.Context, name string, v any) error {
 	if name != "worker_public_ips" {
@@ -130,7 +136,8 @@ func TestCreateWorkersRefusesCreatesBeyondWant(t *testing.T) {
 }
 
 // A replacement plans -replace of that one server with a new seeded key,
-// and pins that key at the new server's address.
+// applies that saved plan without planning again, and pins that key at the
+// new server's address.
 func TestReplaceWorkerSeedsAndPinsTheNewServer(t *testing.T) {
 	addr := `hcloud_server.workers["k8swk2"]`
 	m := &fakeWorkers{
@@ -138,12 +145,23 @@ func TestReplaceWorkerSeedsAndPinsTheNewServer(t *testing.T) {
 		ips:     map[string]string{"k8swk1": "203.0.113.1", "k8swk2": "203.0.113.9"},
 	}
 	pins := newPins(t)
-	ip, err := ReplaceWorker(context.Background(), m, "k8swk2", pins, tf.Mode{Apply: true}, io.Discard)
+	mode := tf.Mode{Apply: true}
+	r, err := PlanReplace(context.Background(), m, "k8swk2", mode, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.applied != nil {
+		t.Fatal("planning applied")
+	}
+	ip, err := r.Apply(context.Background(), pins, mode, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if ip != "203.0.113.9" || len(m.replaced) != 1 || m.replaced[0] != addr {
 		t.Fatalf("ip %q, -replace %v", ip, m.replaced)
+	}
+	if m.plans != 1 || m.appliedPlan != r.plan {
+		t.Fatalf("planned %d times, want 1; applied the saved plan: %v", m.plans, m.appliedPlan == r.plan)
 	}
 	ud := m.applied["user_data"].(map[string]string)
 	if len(ud) != 1 || ud["k8swk2"] == "" {
@@ -157,8 +175,9 @@ func TestReplaceWorkerSeedsAndPinsTheNewServer(t *testing.T) {
 	}
 }
 
-// Anything but one replace of that server aborts before anything is
-// applied or pinned: a delete alone, an update in place, a second Worker.
+// Anything but one replace of that server is refused at the plan, before
+// anything is applied or pinned: a delete alone, an update in place, a
+// second Worker.
 func TestReplaceWorkerRefusesAnyOtherPlan(t *testing.T) {
 	addr := `hcloud_server.workers["k8swk2"]`
 	for name, changes := range map[string][]intent.Change{
@@ -170,9 +189,12 @@ func TestReplaceWorkerRefusesAnyOtherPlan(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			m := &fakeWorkers{changes: changes, ips: map[string]string{"k8swk2": "203.0.113.9"}}
 			pins := newPins(t)
-			_, err := ReplaceWorker(context.Background(), m, "k8swk2", pins, tf.Mode{Apply: true}, io.Discard)
-			if !errors.Is(err, tf.ErrIntent) || m.applied != nil {
+			r, err := PlanReplace(context.Background(), m, "k8swk2", tf.Mode{Apply: true}, io.Discard)
+			if !errors.Is(err, tf.ErrIntent) || r != nil || m.applied != nil {
 				t.Fatalf("want ErrIntent and nothing applied, got %v", err)
+			}
+			if ok, _ := pins.Has("203.0.113.9"); ok {
+				t.Fatal("pinned")
 			}
 		})
 	}

@@ -24,10 +24,11 @@ func init() {
 var nodeReplaceCmd = &cobra.Command{
 	Use:   "replace <name>",
 	Short: "Replace one Worker: take it out, delete its server, create it again under the same name and build it (docs/runbook/workers.md)",
-	Long: "One run. The Worker keeps its entry in the Worker set, so no commit is needed. kluster refuses " +
-		"while a CNPG Cluster has an instance that is not ready, and while the Worker is the only Ready " +
-		"one. It drains and deletes the Node, removes the hub peer, drops the Worker's pins, then has " +
-		"Terraform replace exactly that server with a seeded host key, and builds and joins it as node " +
+	Long: "One run. The Worker keeps its entry in the Worker set, so no commit is needed. kluster first " +
+		"plans the replacement of exactly that server with a seeded host key and refuses a plan that would " +
+		"do anything else. It refuses while a CNPG Cluster has an instance that is not ready, and while the " +
+		"Worker is the only Ready one. It drains and deletes the Node, removes the hub peer, drops the " +
+		"Worker's pins, then applies the saved plan, and builds and joins the new server as node " +
 		"add does. Bootstrap SSH is closed at the end with an API readback, failed runs included. A build " +
 		"that stops after the replacement is resumed by node add.",
 	Args: cobra.ExactArgs(1),
@@ -37,6 +38,7 @@ var nodeReplaceCmd = &cobra.Command{
 }
 
 func nodeReplace(ctx context.Context, a *app, name string) error {
+	a.warnOpenSSH(ctx)
 	if err := checkWorkerName(name, a.cfg.ControlPlane.Name); err != nil {
 		return err
 	}
@@ -91,30 +93,30 @@ func (a *app) withReplaceAccess(ctx context.Context, fn func(workers *tf.Module,
 }
 
 // replaceWorker takes one Worker out of the cluster and the hub, has
-// Terraform replace its server, and builds the new one. The old Node is
-// gone before the new server exists, so the new kubelet registers a fresh
-// Node and inherits no taints or labels.
-func (a *app) replaceWorker(ctx context.Context, workers *tf.Module, w workerset.Worker, srv, cpSrv *cloud.Server, cp *stage.Host) error {
+// Terraform replace its server, and builds the new one. The replacement is
+// planned and checked against its Intent first, so a plan that would do
+// anything else is refused while the Worker is still whole; the saved plan
+// is applied only after the Worker has left. The retire Stages and the pins
+// do not touch the workers state, so that plan is still current. The old
+// Node is gone before the new server exists, so the new kubelet registers a
+// fresh Node and inherits no taints or labels.
+func (a *app) replaceWorker(ctx context.Context, workers provision.Replacer, w workerset.Worker, srv, cpSrv *cloud.Server, cp *stage.Host) error {
 	fmt.Fprintf(a.out, "replace %s: server %s at %s, private %s, VPN %s\n", w.Name, srv.ID, srv.PublicIP, w.PrivateIP, w.VpnIP)
 	if err := notReservedVPN(a.cfg, w.VpnIP); err != nil {
 		return err
 	}
-	if err := a.checkReplaceable(ctx, cp, w.Name); err != nil {
+	r, err := provision.PlanReplace(ctx, workers, w.Name, a.mode, a.out)
+	if err != nil {
 		return err
 	}
-	retire := retireStages(w)
-	if cp == nil {
-		if err := stage.PlanNew(ctx, retire, a.cfg.ControlPlane.Name, a.out); err != nil {
-			return err
-		}
-	} else if err := stage.Run(ctx, retire, cp, stage.Options{Apply: a.mode.Apply, Out: a.out}); err != nil {
+	if err := a.retire(ctx, cp, w); err != nil {
 		return err
 	}
 	if err := a.dropPins(w.Name, w.VpnIP, srv.PublicIP); err != nil {
 		return err
 	}
 
-	ip, err := provision.ReplaceWorker(ctx, workers, w.Name, a.pins, a.mode, a.out)
+	ip, err := r.Apply(ctx, a.pins, a.mode, a.out)
 	if err != nil {
 		return err
 	}
@@ -156,9 +158,10 @@ func (a *app) dropPins(name string, addrs ...string) error {
 	return nil
 }
 
-// checkReplaceable is the gate before a Worker leaves the cluster: every
-// CNPG Cluster healthy, and another Worker Ready to take its pods.
-func (a *app) checkReplaceable(ctx context.Context, cp *stage.Host, name string) error {
+// checkRetirable is the gate before a Worker leaves the cluster, by node
+// remove or node replace: every CNPG Cluster healthy, and another Worker
+// Ready to take its pods.
+func (a *app) checkRetirable(ctx context.Context, cp *stage.Host, name string) error {
 	if cp == nil {
 		fmt.Fprintf(a.out, "Plan Mode: the database gate and the last-Worker check are not run; --apply runs them before %s leaves\n", name)
 		return nil
@@ -216,7 +219,7 @@ func notLastReadyWorker(nodes []kube.Node, name string) error {
 		serving = true
 	}
 	if serving {
-		return fmt.Errorf("%s is the only Ready Worker: replacing it leaves the cluster with none; node add another first", name)
+		return fmt.Errorf("%s is the only Ready Worker: taking it out leaves the cluster with none; node add another first", name)
 	}
 	return nil
 }
