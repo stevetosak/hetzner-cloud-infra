@@ -121,6 +121,31 @@ func (p *Pins) Has(addr string) (bool, error) {
 	return false, nil
 }
 
+// Last returns the key pinned last for addr, nil if it has none. Add writes
+// its key after the ones already there, so during a rotation it is the new
+// key, never the seeded one.
+func (p *Pins) Last(addr string) (ssh.PublicKey, error) {
+	data, err := os.ReadFile(p.path)
+	if err != nil {
+		return nil, err
+	}
+	host := knownhosts.Normalize(addr)
+	var last string
+	for _, line := range strings.Split(string(data), "\n") {
+		if lineHost(line) == host {
+			last = line
+		}
+	}
+	if last == "" {
+		return nil, nil
+	}
+	k, _, _, _, err := ssh.ParseAuthorizedKey([]byte(strings.Join(strings.Fields(last)[1:], " ")))
+	if err != nil {
+		return nil, fmt.Errorf("pins %s, the last line for %s: %w", p.path, addr, err)
+	}
+	return k, nil
+}
+
 // Reset drops every pin. `kluster down` calls it once the project it pinned
 // is empty.
 func (p *Pins) Reset() error {

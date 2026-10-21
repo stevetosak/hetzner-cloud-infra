@@ -112,3 +112,31 @@ func TestPinsKeys(t *testing.T) {
 		t.Fatalf("after Set: %v, %v", got, err)
 	}
 }
+
+// Last is the key Add pinned last for that address, whatever other
+// addresses were pinned after it.
+func TestPinsLastIsTheKeyAddedLast(t *testing.T) {
+	pins, err := OpenPins(filepath.Join(t.TempDir(), "known_hosts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if k, err := pins.Last("203.0.113.9"); err != nil || k != nil {
+		t.Fatalf("no pin: %v, %v", k, err)
+	}
+	seeded, _ := Generate()
+	fresh, _ := Generate()
+	other, _ := Generate()
+	if err := pins.Set("203.0.113.9", seeded.Public); err != nil {
+		t.Fatal(err)
+	}
+	if err := pins.Add("203.0.113.9", fresh.Public); err != nil {
+		t.Fatal(err)
+	}
+	if err := pins.Set("203.0.113.10", other.Public); err != nil {
+		t.Fatal(err)
+	}
+	k, err := pins.Last("203.0.113.9")
+	if err != nil || k == nil || !sameKey(k, fresh.Public) {
+		t.Fatalf("got %v, %v; want the key added last", k, err)
+	}
+}

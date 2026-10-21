@@ -110,6 +110,92 @@ func TestRotationStoppedHalfwayKeepsBothPins(t *testing.T) {
 	}
 }
 
+func pinned(t *testing.T, pins *hostkey.Pins, addr string) int {
+	t.Helper()
+	keys, err := pins.Keys(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(keys)
+}
+
+func ranCount(fh *fakeHost, cmd string) int {
+	n := 0
+	for _, c := range fh.ran {
+		if c == cmd {
+			n++
+		}
+	}
+	return n
+}
+
+// A run that stopped before the install resumes from the start and ends
+// with the new key pinned alone.
+func TestRotationResumedBeforeTheInstallEndsWithOnePin(t *testing.T) {
+	fh, pins, seeded, h, r := setup(t)
+	fh.failNext = "set -e\nrm -f /etc/ssh/ssh_host_" // the install
+	if err := r.Act(context.Background(), h); err == nil {
+		t.Fatal("no error")
+	}
+	fh.failNext = ""
+	if err := stage.Run(context.Background(), []stage.Stage{r}, h, stage.Options{Apply: true, Out: io.Discard}); err != nil {
+		t.Fatal(err)
+	}
+	if n := pinned(t, pins, h.Addr); n != 1 || accepts(t, pins, h.Addr, seeded.Public) || !accepts(t, pins, h.Addr, fh.newKey.Public) {
+		t.Fatalf("%d keys pinned; want the new key alone", n)
+	}
+}
+
+// A run that stopped after the install, before the final pin, left the
+// marker and both keys pinned. The Probe says not done, and the resume pins
+// the new key alone without installing again.
+func TestRotationResumedAfterTheInstallFinishesThePin(t *testing.T) {
+	fh, pins, seeded, h, r := setup(t)
+	dial := r.Dial
+	r.Dial = func(context.Context, string, ssh.HostKeyCallback) (io.Closer, error) {
+		return nil, errors.New("connection reset")
+	}
+	if err := r.Act(context.Background(), h); err == nil {
+		t.Fatal("no error")
+	}
+	if fh.rotated == "" || pinned(t, pins, h.Addr) != 2 {
+		t.Fatalf("setup: marker %q, %d keys pinned; want the marker and two", fh.rotated, pinned(t, pins, h.Addr))
+	}
+	if st, err := r.Probe(context.Background(), h); err != nil || st.Done {
+		t.Fatalf("probe after the stop: %+v, %v; want not done", st, err)
+	}
+
+	r.Dial = dial
+	if err := stage.Run(context.Background(), []stage.Stage{r}, h, stage.Options{Apply: true, Out: io.Discard}); err != nil {
+		t.Fatal(err)
+	}
+	if ranCount(fh, generateScript) != 1 || ranCount(fh, installScript) != 1 {
+		t.Fatalf("the resume ran the rotation again: %d generates, %d installs", ranCount(fh, generateScript), ranCount(fh, installScript))
+	}
+	if n := pinned(t, pins, h.Addr); n != 1 || accepts(t, pins, h.Addr, seeded.Public) || !accepts(t, pins, h.Addr, fh.newKey.Public) {
+		t.Fatalf("%d keys pinned; want the new key alone", n)
+	}
+}
+
+// A resume that meets the seeded key, not the new one, changes no pin: the
+// seeded key is public and proves nothing.
+func TestRotationResumeRefusesAHostServingTheSeededKey(t *testing.T) {
+	fh, pins, seeded, h, r := setup(t)
+	dial := r.Dial
+	r.Dial = func(context.Context, string, ssh.HostKeyCallback) (io.Closer, error) {
+		return nil, errors.New("connection reset")
+	}
+	_ = r.Act(context.Background(), h)
+	fh.serving = seeded.Public
+	r.Dial = dial
+	if err := r.Act(context.Background(), h); err == nil {
+		t.Fatal("no error")
+	}
+	if pinned(t, pins, h.Addr) != 2 {
+		t.Fatal("pins were changed by a host that did not prove the new key")
+	}
+}
+
 // If the host does not serve the key it reported, the old pins stay and the
 // stage fails.
 func TestRotationFailsWhenTheHostServesAnotherKey(t *testing.T) {

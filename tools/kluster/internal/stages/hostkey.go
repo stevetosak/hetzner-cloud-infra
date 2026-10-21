@@ -56,23 +56,53 @@ func (RotateHostKey) Runbook() string {
 	return "docs/runbook/host-keys.md#rotate-the-seeded-key-at-the-first-login"
 }
 
-func (RotateHostKey) Probe(ctx context.Context, h *stage.Host) (stage.Status, error) {
-	out, err := h.Exec.Run(ctx, "cat "+rotatedMarker+" 2>/dev/null || true")
+// Probe is done once the host has the rotated key and it is the only key
+// pinned at its address. A run that stopped after the install but before the
+// final pin leaves the marker with the seeded key still pinned beside the new
+// one: that is not done.
+func (r RotateHostKey) Probe(ctx context.Context, h *stage.Host) (stage.Status, error) {
+	rotated, err := installed(ctx, h)
 	if err != nil {
 		return stage.Status{}, err
 	}
-	if out == "" {
+	if rotated == "" {
 		return stage.Status{Detail: "the host still serves the seeded key"}, nil
 	}
-	return stage.Status{Done: true, Detail: "rotated " + out}, nil
+	if r.Pins != nil {
+		keys, err := r.Pins.Keys(h.Addr)
+		if err != nil {
+			return stage.Status{}, err
+		}
+		if len(keys) > 1 {
+			return stage.Status{Detail: fmt.Sprintf("rotated %s, but %d keys are pinned at %s: the seeded key is not dropped yet", rotated, len(keys), h.Addr)}, nil
+		}
+	}
+	return stage.Status{Done: true, Detail: "rotated " + rotated}, nil
 }
 
-func (RotateHostKey) Preview(context.Context, *stage.Host) (string, error) {
+func (RotateHostKey) Preview(ctx context.Context, h *stage.Host) (string, error) {
+	if h.Exec != nil {
+		rotated, err := installed(ctx, h)
+		if err != nil {
+			return "", err
+		}
+		if rotated != "" {
+			return "# the host serves the rotated key since " + rotated +
+				"\n# dial again accepting only the key pinned last, then pin it alone\n", nil
+		}
+	}
 	return generateScript + "\n# pin the new key beside the seeded one\n" + installScript +
 		"\n# dial again accepting only the new key, then pin it alone\n", nil
 }
 
 func (r RotateHostKey) Act(ctx context.Context, h *stage.Host) error {
+	rotated, err := installed(ctx, h)
+	if err != nil {
+		return err
+	}
+	if rotated != "" {
+		return r.finishPin(ctx, h)
+	}
 	out, err := h.Exec.Run(ctx, generateScript)
 	if err != nil {
 		return err
@@ -95,4 +125,33 @@ func (r RotateHostKey) Act(ctx context.Context, h *stage.Host) error {
 	}
 	_ = c.Close()
 	return r.Pins.Set(h.Addr, key)
+}
+
+// finishPin ends a rotation that stopped after the install: the host serves
+// the new key, and the seeded key is still pinned beside it. The install is
+// not run again. The new key is the one pinned last (Add put it after the
+// seeded one); the host proves it holds it on a connection that accepts that
+// key alone, and only then is it pinned alone. The key is never read from
+// the host: the seeded key is public on the metadata service, so a session
+// it verified cannot say which key is the new one.
+func (r RotateHostKey) finishPin(ctx context.Context, h *stage.Host) error {
+	key, err := r.Pins.Last(h.Addr)
+	if err != nil {
+		return err
+	}
+	if key == nil {
+		return fmt.Errorf("no key is pinned at %s: kluster cannot tell which key the rotation made", h.Addr)
+	}
+	c, err := r.Dial(ctx, h.Addr, remote.FixedHostKey(key))
+	if err != nil {
+		return fmt.Errorf("the host does not serve the key the rotation pinned at %s; the pins stay as they are: %w", h.Addr, err)
+	}
+	_ = c.Close()
+	return r.Pins.Set(h.Addr, key)
+}
+
+// installed returns when the rotated key was installed, "" while the host
+// still has the seeded key.
+func installed(ctx context.Context, h *stage.Host) (string, error) {
+	return h.Exec.Run(ctx, "cat "+rotatedMarker+" 2>/dev/null || true")
 }
