@@ -99,7 +99,9 @@ Over the connection the seeded key verified, as `root`:
 4. Dial the host again, accepting the new key and nothing else.
 
 5. Only when that dial succeeds, pin the new key alone. The seeded key is
-   then refused everywhere.
+   refused everywhere only once this step completes. A run stopped between
+   steps 3 and 5 currently keeps both pins, because the "rotated" marker is
+   written in step 3; a fix is in progress.
 
 ## A server kluster did not build
 
@@ -114,6 +116,11 @@ cd tools/kluster
 ssh cp-dev@10.100.0.1 'ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub'
 ./kluster pin import 10.100.0.1 --apply    # only when both fingerprints match
 ```
+
+The `ssh-keygen -lf` check is not independent: the fingerprint it prints is
+compared with the `known_hosts` entry that is then imported, so both come from
+the same source. The independent check is the host key fingerprint in the
+boot log of the Hetzner web console (see [the Control Plane runbook](./control-plane.md)).
 
 It reads the one ed25519 key that `known_hosts` holds for the address, hashed
 entries included, and refuses none, two, a host name or a revoked key. It
