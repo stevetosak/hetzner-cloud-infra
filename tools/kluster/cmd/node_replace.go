@@ -99,15 +99,7 @@ func (a *app) replaceWorker(ctx context.Context, workers *tf.Module, w workerset
 	if err := notReservedVPN(a.cfg, w.VpnIP); err != nil {
 		return err
 	}
-	if err := a.checkReplaceable(ctx, cp, w.Name); err != nil {
-		return err
-	}
-	retire := retireStages(w)
-	if cp == nil {
-		if err := stage.PlanNew(ctx, retire, a.cfg.ControlPlane.Name, a.out); err != nil {
-			return err
-		}
-	} else if err := stage.Run(ctx, retire, cp, stage.Options{Apply: a.mode.Apply, Out: a.out}); err != nil {
+	if err := a.retire(ctx, cp, w); err != nil {
 		return err
 	}
 	if err := a.dropPins(w.Name, w.VpnIP, srv.PublicIP); err != nil {
@@ -156,9 +148,10 @@ func (a *app) dropPins(name string, addrs ...string) error {
 	return nil
 }
 
-// checkReplaceable is the gate before a Worker leaves the cluster: every
-// CNPG Cluster healthy, and another Worker Ready to take its pods.
-func (a *app) checkReplaceable(ctx context.Context, cp *stage.Host, name string) error {
+// checkRetirable is the gate before a Worker leaves the cluster, by node
+// remove or node replace: every CNPG Cluster healthy, and another Worker
+// Ready to take its pods.
+func (a *app) checkRetirable(ctx context.Context, cp *stage.Host, name string) error {
 	if cp == nil {
 		fmt.Fprintf(a.out, "Plan Mode: the database gate and the last-Worker check are not run; --apply runs them before %s leaves\n", name)
 		return nil
@@ -216,7 +209,7 @@ func notLastReadyWorker(nodes []kube.Node, name string) error {
 		serving = true
 	}
 	if serving {
-		return fmt.Errorf("%s is the only Ready Worker: replacing it leaves the cluster with none; node add another first", name)
+		return fmt.Errorf("%s is the only Ready Worker: taking it out leaves the cluster with none; node add another first", name)
 	}
 	return nil
 }
