@@ -151,6 +151,8 @@ replacement, `terraform plan -replace=hcloud_server.workers["<name>"]`, with a
 new seeded key in that Worker's `user_data`. The new server is built as in
 `node add`, steps 3 to 8. If the build stops after the replacement, `kluster
 node add <name> --apply` resumes it, because the new server's key is pinned.
+A Worker built by hand has no kluster pin, so `node add` refuses its server;
+it is built again with `node replace`, never resumed.
 
 ```sh
 ./kluster node replace k8swk1             # Plan Mode
