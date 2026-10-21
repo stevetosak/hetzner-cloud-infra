@@ -5,9 +5,13 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/cloud"
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/hostkey"
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/intent"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/stage"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/tf"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/workerset"
@@ -78,6 +82,64 @@ func TestRetireRunsTheChecksBeforeTheDrain(t *testing.T) {
 				t.Fatalf("a retire Stage ran: %v", c.f.ran)
 			}
 		})
+	}
+}
+
+// fakeReplacer plans the same changes whatever it is asked, and counts
+// applies.
+type fakeReplacer struct {
+	changes []intent.Change
+	applied int
+}
+
+func (f *fakeReplacer) Plan(context.Context, map[string]any) (*tf.Plan, error) {
+	return &tf.Plan{Module: "workers", Changes: f.changes}, nil
+}
+
+func (f *fakeReplacer) PlanReplace(ctx context.Context, vars map[string]any, _ ...string) (*tf.Plan, error) {
+	return f.Plan(ctx, vars)
+}
+
+func (f *fakeReplacer) Apply(context.Context, *tf.Plan) error { f.applied++; return nil }
+
+func (f *fakeReplacer) Output(context.Context, string, any) error {
+	return errors.New("no outputs")
+}
+
+// node replace checks its plan before the Worker leaves: a plan that would
+// also touch another Worker is refused before any command runs on the
+// Control Plane and before a pin is dropped.
+func TestReplaceRefusesAMismatchedPlanBeforeTheWorkerLeaves(t *testing.T) {
+	pins, err := hostkey.OpenPins(filepath.Join(t.TempDir(), "known_hosts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	kp, _ := hostkey.Generate()
+	w := workerset.Worker{Name: "k8swk1", PrivateIP: "10.0.2.6", VpnIP: "10.100.0.4"}
+	srv := &cloud.Server{ID: "1", Name: "k8swk1", PublicIP: "203.0.113.7"}
+	for _, addr := range []string{w.VpnIP, srv.PublicIP} {
+		if err := pins.Set(addr, kp.Public); err != nil {
+			t.Fatal(err)
+		}
+	}
+	workers := &fakeReplacer{changes: []intent.Change{
+		{Address: `hcloud_server.workers["k8swk1"]`, Action: intent.Replace},
+		{Address: `hcloud_server.workers["k8swk2"]`, Action: intent.Replace},
+	}}
+	cp := &fakeCP{nodes: twoReadyWorkers}
+	a := &app{cfg: nodeAddConfig(), pins: pins, mode: tf.Mode{Apply: true}, out: io.Discard}
+
+	err = a.replaceWorker(context.Background(), workers, w, srv, &cloud.Server{Name: "k8s-cp"}, &stage.Host{Name: "k8s-cp", Exec: cp})
+	if !errors.Is(err, tf.ErrIntent) {
+		t.Fatalf("got %v, want ErrIntent", err)
+	}
+	if len(cp.ran) > 0 || workers.applied > 0 {
+		t.Fatalf("ran on the Control Plane %v, applied %d", cp.ran, workers.applied)
+	}
+	for _, addr := range []string{w.VpnIP, srv.PublicIP} {
+		if ok, _ := pins.Has(addr); !ok {
+			t.Fatalf("the pin at %s was dropped", addr)
+		}
 	}
 }
 

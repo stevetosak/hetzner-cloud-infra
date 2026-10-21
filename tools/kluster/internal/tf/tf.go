@@ -197,6 +197,17 @@ func Converge(ctx context.Context, m *Module, vars map[string]any, in intent.Int
 // the saved plan. A mismatch warns in Plan Mode and aborts under --apply
 // unless AllowUnexpected (ADR 0004). It reports whether it applied.
 func Decide(ctx context.Context, a Applier, p *Plan, in intent.Intent, mode Mode, out io.Writer) (bool, error) {
+	if err := Check(p, in, mode, out); err != nil {
+		return false, err
+	}
+	return ApplyChecked(ctx, a, p, mode, out)
+}
+
+// Check is the first half of Decide: it prints the plan and its check
+// against in. A mismatch warns in Plan Mode and returns ErrIntent under
+// --apply unless AllowUnexpected. A command that must change something else
+// between the check and the apply calls Check and ApplyChecked itself.
+func Check(p *Plan, in intent.Intent, mode Mode, out io.Writer) error {
 	fmt.Fprintf(out, "plan %s (env %s): %s\n%s", p.Module, p.Env, in.Description, intent.Summary(p.Changes))
 
 	if mm := in.Check(p.Changes); len(mm) > 0 {
@@ -207,11 +218,17 @@ func Decide(ctx context.Context, a Applier, p *Plan, in intent.Intent, mode Mode
 		case !mode.Apply:
 			fmt.Fprintf(out, "WARNING: the plan does not match the intent; --apply would abort.\n")
 		case !mode.AllowUnexpected:
-			return false, fmt.Errorf("%s: %w (%d mismatches); nothing applied", p.Module, ErrIntent, len(mm))
+			return fmt.Errorf("%s: %w (%d mismatches); nothing applied", p.Module, ErrIntent, len(mm))
 		default:
 			fmt.Fprintf(out, "--allow-unexpected: applying despite %d mismatches above.\n", len(mm))
 		}
 	}
+	return nil
+}
+
+// ApplyChecked is the second half of Decide: under --apply it applies the
+// saved plan p, which Check passed. It reports whether it applied.
+func ApplyChecked(ctx context.Context, a Applier, p *Plan, mode Mode, out io.Writer) (bool, error) {
 	if !mode.Apply || len(p.Changes) == 0 {
 		return false, nil
 	}
