@@ -77,7 +77,7 @@ func nodeRemove(ctx context.Context, a *app, name string) error {
 // Worker set. Its server stays until run 2, so the Worker set git holds
 // is the one Terraform deletes it from.
 func (a *app) retireWorker(ctx context.Context, set *workerset.Set, w workerset.Worker) error {
-	if err := workerset.CheckCommitted(ctx, set.Path); err != nil {
+	if err := workerset.CheckCommitted(ctx, set.Path, a.out); err != nil {
 		return err
 	}
 	if err := notReservedVPN(a.cfg, w.VpnIP); err != nil {

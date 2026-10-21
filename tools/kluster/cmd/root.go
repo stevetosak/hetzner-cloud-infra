@@ -122,7 +122,7 @@ func (a *app) module(ctx context.Context, name string) (*tf.Module, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := workerset.CheckCommitted(ctx, set); err != nil {
+		if err := workerset.CheckCommitted(ctx, set, a.out); err != nil {
 			return nil, err
 		}
 		varFiles = append(varFiles, set)

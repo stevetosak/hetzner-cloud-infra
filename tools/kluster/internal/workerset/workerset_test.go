@@ -3,6 +3,7 @@ package workerset
 import (
 	"context"
 	"errors"
+	"io"
 	"net/netip"
 	"os"
 	"os/exec"
@@ -159,19 +160,86 @@ func TestCheckCommitted(t *testing.T) {
 	ctx := context.Background()
 
 	write(sample)
-	if err := CheckCommitted(ctx, path); !errors.Is(err, ErrUncommitted) {
+	if err := CheckCommitted(ctx, path, io.Discard); !errors.Is(err, ErrUncommitted) {
 		t.Fatalf("untracked: %v", err)
 	}
 	git("add", "rehearsal.tfvars")
-	if err := CheckCommitted(ctx, path); !errors.Is(err, ErrUncommitted) {
+	if err := CheckCommitted(ctx, path, io.Discard); !errors.Is(err, ErrUncommitted) {
 		t.Fatalf("staged, not committed: %v", err)
 	}
 	git("commit", "-q", "-m", "set")
-	if err := CheckCommitted(ctx, path); err != nil {
+	if err := CheckCommitted(ctx, path, io.Discard); err != nil {
 		t.Fatalf("committed: %v", err)
 	}
 	write(sample + "\n")
-	if err := CheckCommitted(ctx, path); !errors.Is(err, ErrUncommitted) {
+	if err := CheckCommitted(ctx, path, io.Discard); !errors.Is(err, ErrUncommitted) {
 		t.Fatalf("edited: %v", err)
+	}
+}
+
+// A committed set passes the gate whether or not the upstream branch holds
+// its commit; when it does not, or there is no upstream, the run is warned.
+func TestCheckCommittedWarnsWhenTheCommitIsNotUpstream(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git")
+	}
+	root := t.TempDir()
+	dir, remote := filepath.Join(root, "clone"), filepath.Join(root, "remote.git")
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", root, "-c", "user.name=t", "-c", "user.email=t@t"}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	git("init", "-q", "--bare", remote)
+	git("init", "-q", dir)
+	path := filepath.Join(dir, "rehearsal.tfvars")
+	ctx := context.Background()
+	check := func(content string) string {
+		t.Helper()
+		if content != "" {
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			git("-C", dir, "add", "rehearsal.tfvars")
+			git("-C", dir, "commit", "-q", "-m", "set")
+		}
+		var out strings.Builder
+		if err := CheckCommitted(ctx, path, &out); err != nil {
+			t.Fatalf("a committed set was refused: %v", err)
+		}
+		return out.String()
+	}
+
+	if got := check(sample); !strings.Contains(got, "WARNING: the checked-out branch has no upstream") {
+		t.Fatalf("no upstream: %q", got)
+	}
+	git("-C", dir, "remote", "add", "origin", remote)
+	git("-C", dir, "push", "-q", "-u", "origin", "HEAD")
+	if got := check(""); got != "" {
+		t.Fatalf("pushed: %q", got)
+	}
+	if got := check(sample + "# more\n"); !strings.Contains(got, "which the upstream branch does not hold") {
+		t.Fatalf("committed, not pushed: %q", got)
+	}
+}
+
+// A git failure in the upstream check warns; it never stops the run.
+func TestUpstreamWarningOnAGitFailure(t *testing.T) {
+	failing := func(...string) (string, error) { return "fatal: boom", errors.New("exit status 128") }
+	if got := upstreamWarning(failing, "set.tfvars", "set.tfvars"); !strings.HasPrefix(got, "WARNING: could not read the last commit") {
+		t.Fatalf("got %q", got)
+	}
+	call := 0
+	lateFailure := func(...string) (string, error) {
+		call++
+		if call < 3 {
+			return "0123456789abcdef", nil
+		}
+		return "fatal: bad object", errors.New("exit status 128")
+	}
+	if got := upstreamWarning(lateFailure, "set.tfvars", "set.tfvars"); !strings.HasPrefix(got, "WARNING: could not check") {
+		t.Fatalf("got %q", got)
 	}
 }
