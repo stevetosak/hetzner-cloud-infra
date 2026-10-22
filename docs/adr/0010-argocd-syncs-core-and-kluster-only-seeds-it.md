@@ -156,8 +156,13 @@ that changes anything but `newTag:` in a generator overlay's
 `kustomization.yaml`. The deploy catalog's data, `history.jsonl` and
 `CATALOG.md`, moves to its own branch `deploy-catalog`, written with the
 workflow's own `GITHUB_TOKEN`, while its scripts stay on `master`; the
-Deployment record on each app repository is written with the same App
-instead of `APP_DEPLOY_PAT`. **Each of these mechanics is to be proven on a
+Deployment record on each app repository is written by a second App,
+`tosak-deployments`, installed on Authos and doma with Deployments write
+alone, instead of `APP_DEPLOY_PAT`. Two Apps, because an App holds the same
+permissions on every repository it is installed on: one App on the app
+repositories would carry contents write there as well, and whoever holds its
+private key can make a token with every permission it has, whatever a
+workflow narrows its own token to. **Each of these mechanics is to be proven on a
 throwaway public repository first:** that a ruleset with an empty bypass
 binds the owner of a personal repository, that a `pull_request_target` check
 satisfies it, and that auto-merge works for a pull request opened by an App.
