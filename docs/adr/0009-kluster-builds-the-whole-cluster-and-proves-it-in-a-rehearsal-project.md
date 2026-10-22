@@ -206,3 +206,21 @@ the auto-loaded `terraform.tfvars`, so the rehearsal file is never read under
 live. kluster's configuration refuses a rehearsal Worker set equal to the
 live one, and the commit gate applies to both files
 ([workers runbook](../runbook/workers.md#how-kluster-carries-this-out)). Chosen by the operator.
+
+**2026-10-22 — the rehearsal patch set becomes kustomize overlays in git.**
+The decision cut the rehearsal off from the live outside world with a patch
+set over `core/`, applied the way `pg-rehearsal` is, with
+`kubectl patch --local`. [ADR 0010, Amendments](./0010-argocd-syncs-core-and-kluster-only-seeds-it.md#amendments)
+has ArgoCD sync `core/` with self-heal on, so a patch applied beside ArgoCD
+would be reverted on the next sync. Each cut is instead a kustomize overlay
+committed next to what it changes, `core/<dir>/rehearsal/kustomization.yaml`,
+with `..` as its base and the cut as a patch, and the seed writes the core
+ApplicationSet for each environment so that a rehearsal Application points at
+the overlay. The cuts in the `services seed` task are a self-signed
+ClusterIssuer instead of Let's Encrypt, ArgoCD notifications off, the Restore
+Drill and the `projects` ApplicationSet left out, and rehearsal Secrets made
+fresh in memory and never written to an `*.enc.yaml`. The CNPG cuts —
+archiving to a `rehearsal/` prefix with its own token, and a recovery reading
+the live bucket with a read-only token — stay with the `db create` task.
+Overlays in git also make each cut reviewable in the same pull request as
+the file it changes. Chosen by the operator.

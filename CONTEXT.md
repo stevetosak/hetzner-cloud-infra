@@ -249,6 +249,15 @@ says what a Secret contains and where each value comes from.
 The record of what version of which application is live. Written by ArgoCD's
 `on-deployed` signal, not by the deploying repository.
 
+## Seed
+
+What kluster applies before ArgoCD can take over `core/`: every CRD, every
+Namespace, the Secrets from the `*.enc.yaml` files, ArgoCD itself and both
+ApplicationSets. The same command repairs ArgoCD when a commit has broken it.
+Everything else in `core/` is synced by ArgoCD, not seeded.
+
+_Avoid_: bootstrap, which is a server's way into the cluster.
+
 ## Module
 
 One of three Terraform root modules, each with its own state: **shared**
