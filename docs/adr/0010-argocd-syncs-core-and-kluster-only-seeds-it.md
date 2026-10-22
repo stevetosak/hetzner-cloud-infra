@@ -146,7 +146,7 @@ with a personal access token, and protection on `master` (read from the GitHub
 API on 2026-10-22) requires a pull request with no approvals, no checks, and
 does not bind administrators. So the write path is narrowed in this task,
 before `core/` is synced on live, and not later. A GitHub App
-`tosak-deployer`, installed on this repository only with contents and pull
+`tosak-tag-bump`, installed on this repository only with contents and pull
 request write, replaces `INFRA_REPO_TOKEN`: each deploy pushes a branch
 `deploy/<app>-<sha>`, opens a pull request and enables auto-merge. A ruleset
 on `master` requires a pull request and the check `deploy-scope`, has an
@@ -157,7 +157,7 @@ that changes anything but `newTag:` in a generator overlay's
 `CATALOG.md`, moves to its own branch `deploy-catalog`, written with the
 workflow's own `GITHUB_TOKEN`, while its scripts stay on `master`; the
 Deployment record on each app repository is written by a second App,
-`tosak-deployments`, installed on Authos and doma with Deployments write
+`tosak-deploy-status`, installed on Authos and doma with Deployments write
 alone, instead of `APP_DEPLOY_PAT`. Two Apps, because an App holds the same
 permissions on every repository it is installed on: one App on the app
 repositories would carry contents write there as well, and whoever holds its
