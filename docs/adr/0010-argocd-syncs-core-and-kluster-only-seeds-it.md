@@ -70,3 +70,118 @@ The workspace guide's and both `CLAUDE.md` files' lists of what is applied
 out of band change when this is built, not before: until then, they describe
 the cluster as it is. Worth revisiting if sync waves cannot express an order
 the runbook depends on, or if an ArgoCD outage ever blocks a recovery.
+
+## Amendments
+
+**2026-10-22 — the order comes from a seed, not from sync waves, and write
+access to `master` is narrowed first.** A design review before the build
+answered fourteen questions the decision above left open. Each answer was
+chosen by the operator. Nothing below is built yet, and the GitHub mechanics
+in the last part are still to be proven.
+
+The decision named sync waves for the order. Waves order resources inside one
+Application; they cannot hold one Application back until another is healthy,
+and the ApplicationSet feature that can, Progressive Syncs, turns off
+automatic sync for the Applications it manages (behind
+`applicationsetcontroller.enable.progressive.syncs`, off in chart 10.9.2). An
+app of apps would add a layer that has to be seeded too. The order instead
+comes from the seed: `kluster services seed` applies every CRD server-side
+first, then ArgoCD and both ApplicationSets, and the core Applications
+converge on their own with `SkipDryRunOnMissingResource=true` and `retry`. An
+Application whose kind is not served yet fails and retries until it is.
+
+**Only kluster owns CRDs.** Each `render.sh` writes the CRDs of its chart to
+`core/<dir>/crds.yaml`, which no `kustomization.yaml` lists, and the seed
+applies every such file. `CustomResourceDefinition` is not in the `core`
+AppProject's whitelist, so ArgoCD cannot change or delete one. An upgrade
+that brings new CRDs is a seed from the branch, then the merge; kluster warns
+when a branch `crds.yaml` differs from the live CRDs. `core/gateway-api/`
+holds CRDs only, so it is seeded and is not an Application. The seed also owns
+every Namespace, those of `core/` and of the generator's projects, from the
+committed files; ArgoCD owns none. `cnpg-system` is cut out of the CNPG
+render with a kustomize `$patch: delete` into its own namespace file.
+`kube-flannel` stays with `cp init`.
+
+The second ApplicationSet lists its directories the way the project
+generator lists projects, and each listed directory becomes the Application
+`core-<dir>`. Each synced directory has a `kustomization.yaml` with an
+explicit `resources:` list, so a file appears on the cluster only when it is
+named, and a check refuses a list that names an `*.enc.yaml`,
+`pg-cluster.yaml` or a values file. The synced directories are `gateway`,
+`cert-manager`, `redis`, `reloader`, `pg-drill`, `cnpg` and `argocd`.
+`hcloud` and `cni` stay with `cp init`, and `monitoring` stays parked. One
+AppProject, `core`, admits this repository and the core namespaces by name;
+its cluster-scoped whitelist is exactly ClusterRole, ClusterRoleBinding,
+MutatingWebhookConfiguration, ValidatingWebhookConfiguration, GatewayClass,
+ClusterIssuer and StorageClass. `core-cnpg` syncs the operator, the
+barman-cloud plugin, the StorageClass, the ObjectStore, the ScheduledBackup,
+and the `Database` objects of the generator's projects only (today doma). The
+`Cluster` and `recovery/` stay out, as decided above; that a ScheduledBackup
+and a `Database` wait for a missing `Cluster` without harm is to be proven in
+the rehearsal.
+
+ArgoCD manages itself in full: `core-argocd` syncs its install, its route,
+the AppProjects and both ApplicationSets. The cost named above, a broken
+commit removing the controller that would repair it, is met in two ways. The
+core ApplicationSet sets `preserveResourcesOnDeletion: true`, and the repair
+path is the seed itself, which installs ArgoCD again over whatever is left.
+Breaking ArgoCD on purpose and repairing it with the seed is part of the
+rehearsal.
+
+**Core Applications self-heal but never prune.** A wrong deletion in `core/`
+should leave the object running and show it as out of sync, not remove a
+controller. The core ApplicationSet ignores differences in
+`.spec.syncPolicy`, so an operator who pauses one Application by hand is not
+overruled by the generator a moment later; the runbook names the pause and the
+resume. 🔴 The consequence: a change to the template's `syncPolicy` never
+reaches an Application that already exists. It takes deleting the
+Application, which `preserveResourcesOnDeletion` makes safe. The Reloader
+ignore rule of the project generator is copied over; the `projects`
+ApplicationSet's own policy does not change.
+
+**After this task, write access to `master` is cluster-admin.** Once `core/`
+is synced, a commit to `master` can grant any ClusterRole the whitelist
+allows. Today the five deploy workflows of Authos and doma push to `master`
+with a personal access token, and protection on `master` (read from the GitHub
+API on 2026-10-22) requires a pull request with no approvals, no checks, and
+does not bind administrators. So the write path is narrowed in this task,
+before `core/` is synced on live, and not later. A GitHub App
+`tosak-deployer`, installed on this repository only with contents and pull
+request write, replaces `INFRA_REPO_TOKEN`: each deploy pushes a branch
+`deploy/<app>-<sha>`, opens a pull request and enables auto-merge. A ruleset
+on `master` requires a pull request and the check `deploy-scope`, has an
+empty bypass list, and forbids force pushes and deletion. `deploy-scope` runs
+on `pull_request_target` without a checkout and refuses a bot pull request
+that changes anything but `newTag:` in a generator overlay's
+`kustomization.yaml`. The deploy catalog's data, `history.jsonl` and
+`CATALOG.md`, moves to its own branch `deploy-catalog`, written with the
+workflow's own `GITHUB_TOKEN`, while its scripts stay on `master`; the
+Deployment record on each app repository is written with the same App
+instead of `APP_DEPLOY_PAT`. **Each of these mechanics is to be proven on a
+throwaway public repository first:** that a ruleset with an empty bypass
+binds the owner of a personal repository, that a `pull_request_target` check
+satisfies it, and that auto-merge works for a pull request opened by an App.
+
+**The seed reads the outside world but does not write it.** It waits for the
+load balancer's address and reads the Cloudflare zone; it refuses to report
+success while an in-scope A record points elsewhere, and prints the records
+to change. Writing those records — a kluster Stage, or `external-dns` in
+`core/` — is a separate decision, deferred.
+
+**The live cluster is adopted, not rebuilt.** Everything in `core/` already
+runs, applied by hand. In Plan Mode the seed prints a server-side
+`kubectl diff` per Application and the diffs of the CRDs, Namespaces and
+Secrets; every live diff is fixed or understood before `--apply`. A rehearsal
+from an empty project runs first. Two things are to be proven there: that the
+Helm hook Jobs in the renders (`eg-gateway-helm-certgen`,
+`argocd-redis-secret-init`, `cert-manager-startupapicheck`), which ArgoCD runs
+on every sync, are idempotent, and that the keys in `argocd-secret` survive a
+server-side apply of a render that carries the Secret with no data. How the
+rehearsal cuts its links to the live outside world changed with this design;
+[ADR 0009, Amendments](./0009-kluster-builds-the-whole-cluster-and-proves-it-in-a-rehearsal-project.md#amendments)
+has it.
+
+Fixing the write path after the cutover was weighed and rejected: it would
+leave a personal access token with cluster-admin reach in between. Moving the
+deploy catalog out of git entirely, to GitHub Deployments or R2, is deferred
+until after the rebuild.
