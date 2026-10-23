@@ -37,7 +37,7 @@ inputs:
     required: true
   client-id:
     description: The tosak-tag-bump Client ID (not a secret)
-    default: __TAG_BUMP_CLIENT_ID__
+    default: Iv23liNlAONPbKagrZJF
   infra-repo:
     description: owner/name of the infra repo
     default: stevetosak/hetzner-cloud-infra
