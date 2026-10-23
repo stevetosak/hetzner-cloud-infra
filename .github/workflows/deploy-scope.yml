@@ -1,0 +1,37 @@
+# The required check on `master` (ADR 0010, Amendment 2026-10-22). The ruleset
+# names this job, `deploy-scope`, from GitHub Actions; renaming the job breaks
+# every merge. What passes and why: .github/scripts/deploy-scope.mjs.
+name: deploy-scope
+
+# `pull_request_target` runs this file and its script from the BASE branch, so
+# a pull request cannot change the check that judges it.
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  deploy-scope:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      # 🔴 The base commit, never the pull request's head: code from the head
+      # would run with this job's token and judge itself.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts
+            core/argocd/applicationset.yaml
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const root = process.env.GITHUB_WORKSPACE
+            const { run } = await import(`${root}/.github/scripts/deploy-scope.mjs`)
+            await run({ github, context, core, root })
