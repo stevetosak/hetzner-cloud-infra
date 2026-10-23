@@ -1,6 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { renderCatalog } from './render-catalog.mjs'
+import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { renderCatalog, NOTICE } from './render-catalog.mjs'
 
 const apps = {
   doma: { repo: 'stevetosak/doma', tagPrefix: 'v' },
@@ -84,4 +89,14 @@ test('an app missing from apps.json still renders, with a plain (unlinked) sha',
   assert.match(md, /\| mystery \| unknown \|/)
   assert.match(md, /abc1234/)
   assert.doesNotMatch(md, /\[abc1234def\]\(/)
+})
+
+test('the CLI renders CATALOG.md in the data folder', () => {
+  const data = mkdtempSync(join(tmpdir(), 'catalog-'))
+  writeFileSync(join(data, 'history.jsonl'), rows.map((r) => JSON.stringify(r)).join('\n') + '\n')
+  const script = fileURLToPath(new URL('./render-catalog.mjs', import.meta.url))
+  execFileSync('node', [script, data])
+  const md = readFileSync(join(data, 'CATALOG.md'), 'utf8')
+  assert.ok(md.includes(NOTICE))
+  assert.match(md, /\| authos-api \|/)
 })

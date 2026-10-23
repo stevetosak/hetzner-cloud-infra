@@ -22,8 +22,7 @@
 # Nothing is mapped by hand, so nothing can drift. The cost is paid in two
 # names: the Applications formerly called `duster` and `doma` are now
 # `authos-duster` and `doma-web`. `deployments/apps.json` is keyed on
-# `.app.metadata.name` and was renamed to match — cheap, because
-# `deployments/history.jsonl` was still empty. Check that file whenever this
+# `.app.metadata.name` and was renamed to match. Check that file whenever this
 # naming rule changes, or the deploy catalog cannot resolve a version.
 #
 # 🔴 THE GENERATOR LISTS ITS PROJECTS, IT DOES NOT SWEEP THEM. ADR 0003 scopes

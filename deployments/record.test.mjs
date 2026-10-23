@@ -1,6 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { recordRow } from './record.mjs'
@@ -59,4 +61,24 @@ test('a different sha appends', () => {
     { appended: true },
   )
   assert.equal(readFileSync(f.historyPath, 'utf8').trim().split('\n').length, 2)
+})
+
+test('the CLI writes into the data folder and reads apps.json from master', () => {
+  const data = mkdtempSync(join(tmpdir(), 'catalog-'))
+  writeFileSync(join(data, 'history.jsonl'), '')
+  const script = fileURLToPath(new URL('./record.mjs', import.meta.url))
+  const run = (r) => execFileSync('node', [script, JSON.stringify(r), data]).toString().trim()
+
+  const sha = 'abc1234def'
+  assert.equal(run(row({ app: 'doma-web', sha })), 'appended')
+  assert.equal(run(row({ app: 'doma-web', sha })), 'duplicate')
+  assert.equal(readFileSync(join(data, 'history.jsonl'), 'utf8').trim().split('\n').length, 1)
+  // The repo link comes from deployments/apps.json, next to the script.
+  assert.match(readFileSync(join(data, 'CATALOG.md'), 'utf8'), /github\.com\/stevetosak\/doma\/commit\/abc1234def/)
+  assert.ok(!existsSync(join(data, 'apps.json')))
+})
+
+test('the CLI refuses to run without a data folder', () => {
+  const script = fileURLToPath(new URL('./record.mjs', import.meta.url))
+  assert.throws(() => execFileSync('node', [script, JSON.stringify(row())], { stdio: 'pipe' }), /usage/)
 })

@@ -17,12 +17,17 @@ export function recordRow(row, { historyPath, appsPath, catalogPath }) {
   return { appended: true }
 }
 
+// node record.mjs <row-json> <data-dir>
+// <data-dir> is a checkout of the `deploy-catalog` branch; apps.json stays on
+// `master`, next to this script.
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const [rowJson, dataDir] = process.argv.slice(2)
+  if (!rowJson || !dataDir) throw new Error('usage: record.mjs <row-json> <data-dir>')
   const here = dirname(fileURLToPath(import.meta.url))
-  const res = recordRow(JSON.parse(process.argv[2]), {
-    historyPath: join(here, 'history.jsonl'),
+  const res = recordRow(JSON.parse(rowJson), {
+    historyPath: join(dataDir, 'history.jsonl'),
     appsPath: join(here, 'apps.json'),
-    catalogPath: join(here, 'CATALOG.md'),
+    catalogPath: join(dataDir, 'CATALOG.md'),
   })
   console.log(res.appended ? 'appended' : 'duplicate')
 }
