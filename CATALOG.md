@@ -6,10 +6,10 @@ _Generated from `history.jsonl` on this branch by `deployments/render-catalog.mj
 
 | App | Version | Commit | Env | Deployed (UTC) |
 | --- | --- | --- | --- | --- |
+| authos-demo | authos-demo-v0.0.0+a8d580f | [a8d580f](https://github.com/stevetosak/authos/commit/a8d580fc30e315004afa15ad19fcdb26715d3784) | dev | 2026-10-23T10:56:24Z |
 | doma-web | v0.3.0-7-gd0fa1d7 | [d0fa1d7](https://github.com/stevetosak/doma/commit/d0fa1d74932ca2df272c89aff47621dbbb3cddc2) | dev | 2026-10-23T10:35:30Z |
 | authos-api | unknown | [e9a30ae](https://github.com/stevetosak/authos/commit/e9a30ae12f993dee38b7e3cfd7a3ab9367857406) | dev | 2026-10-01T18:57:14Z |
 | authos-duster | unknown | [e9a30ae](https://github.com/stevetosak/authos/commit/e9a30ae12f993dee38b7e3cfd7a3ab9367857406) | dev | 2026-10-01T18:56:34Z |
-| authos-demo | unknown | [48f3cad](https://github.com/stevetosak/authos/commit/48f3cadfd01fe5afdd74562904118aead1f1ebba) | dev | 2026-10-01T18:56:30Z |
 | authos-ui | unknown | [79fd738](https://github.com/stevetosak/authos/commit/79fd738af7d1e7c1244fdb6bbef2416afe0142f2) | dev | 2026-10-01T18:56:23Z |
 
 ## Recent history
@@ -18,6 +18,7 @@ _Generated from `history.jsonl` on this branch by `deployments/render-catalog.mj
 
 | App | Version | Commit | Env | Deployed (UTC) |
 | --- | --- | --- | --- | --- |
+| authos-demo | authos-demo-v0.0.0+a8d580f | [a8d580f](https://github.com/stevetosak/authos/commit/a8d580fc30e315004afa15ad19fcdb26715d3784) | dev | 2026-10-23T10:56:24Z |
 | doma-web | v0.3.0-7-gd0fa1d7 | [d0fa1d7](https://github.com/stevetosak/doma/commit/d0fa1d74932ca2df272c89aff47621dbbb3cddc2) | dev | 2026-10-23T10:35:30Z |
 | doma-web | v0.3.0-5-gae7a54a | [ae7a54a](https://github.com/stevetosak/doma/commit/ae7a54a120561ae89d1e37ba5f64aed3e80cf79a) | dev | 2026-10-03T22:06:43Z |
 | authos-api | unknown | [e9a30ae](https://github.com/stevetosak/authos/commit/e9a30ae12f993dee38b7e3cfd7a3ab9367857406) | dev | 2026-10-01T18:57:14Z |
