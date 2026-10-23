@@ -8,7 +8,7 @@ resources:
 
 images:
 - name: stevetosak/authos-demo
-  newTag: alpha-48f3cadfd01fe5afdd74562904118aead1f1ebba
+  newTag: alpha-a8d580fc30e315004afa15ad19fcdb26715d3784
 
 replicas:
 - count: 1
