@@ -1,5 +1,18 @@
 name: Deploy catalog
 
+# Records every deploy ArgoCD reports healthy (deployments/HOW-IT-WORKS.md).
+#
+# The data, `history.jsonl` and `CATALOG.md`, lives on its own branch
+# `deploy-catalog` (ADR 0010, Amendment 2026-10-22). `master` takes only pull
+# requests that pass `deploy-scope`, and no token may bypass that; the
+# `deploy-catalog` ruleset forbids only force pushes and deletion, so this
+# run's own GITHUB_TOKEN can push there. The scripts and `apps.json` always
+# come from `master`: the data branch holds data, never code that runs.
+#
+# No `concurrency:` group on purpose. A group keeps one pending run and
+# CANCELS the older pending one, which would lose that deploy's row. Parallel
+# runs instead converge in the push loop below.
+
 on:
   repository_dispatch:
     types: [deploy-live]
@@ -10,53 +23,58 @@ on:
         required: true
 
 permissions:
-  contents: write
+  contents: write # the deploy-catalog branch; master's ruleset refuses this token
 
 jobs:
   record:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
-          fetch-depth: 0
-          # 🔴 `master` requires a pull request (classic branch protection,
-          # `enforce_admins: false`). The default GITHUB_TOKEN pushes as
-          # `github-actions[bot]`, which is not an admin, so every catalog push was
-          # refused with `GH006 protected branch hook declined` from 2026-09-08
-          # until 2026-09-21 — and the only symptom was a missing row.
-          # INFRA_REPO_TOKEN is the operator's PAT, the same one the app repos push
-          # the overlay bump with; an admin bypasses the rule.
-          token: ${{ secrets.INFRA_REPO_TOKEN }}
+          ref: master
+          persist-credentials: false
+          sparse-checkout: deployments
 
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
         with:
-          node-version: 20
+          ref: deploy-catalog
+          path: _catalog
 
-      - name: Assemble the payload
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # The payload reaches the shell only through `env`, never through `${{ }}`
+      # inside a script, and leaves this step as one line of JSON.
+      - name: Read the payload
         id: p
+        env:
+          EVENT: ${{ github.event_name }}
+          DISPATCHED: ${{ toJSON(github.event.client_payload) }}
+          REPLAYED: ${{ github.event.inputs.payload }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            PAYLOAD=$(cat <<'EOF'
-          ${{ github.event.inputs.payload }}
-          EOF
-          )
-          else
-            PAYLOAD=$(cat <<'EOF'
-          ${{ toJSON(github.event.client_payload) }}
-          EOF
-          )
-          fi
-          {
-            echo "payload<<PAYLOAD_EOF"
-            echo "$PAYLOAD"
-            echo "PAYLOAD_EOF"
-          } >> "$GITHUB_OUTPUT"
-          echo "repo=$(node -e 'const a=require("./deployments/apps.json");const p=JSON.parse(process.argv[1]);process.stdout.write((a[p.app]&&a[p.app].repo)||"")' "$PAYLOAD")" >> "$GITHUB_OUTPUT"
+          node -e '
+            const { appendFileSync } = require("node:fs")
+            const e = process.env
+            const payload = JSON.parse(e.EVENT === "workflow_dispatch" ? e.REPLAYED : e.DISPATCHED)
+            const entry = require("./deployments/apps.json")[payload.app] ?? {}
+            const repo = entry.repo ?? ""
+            appendFileSync(e.GITHUB_OUTPUT, [
+              `payload=${JSON.stringify(payload)}`,
+              `repo=${repo}`,
+              `owner=${repo.split("/")[0] ?? ""}`,
+              `name=${repo.split("/")[1] ?? ""}`,
+              `host=${entry.host ?? `${payload.app}.tosak.net`}`,
+            ].join("\n") + "\n")
+          '
 
       - name: Clone the app repo (for git describe)
         if: steps.p.outputs.repo != ''
+        env:
+          REPO: ${{ steps.p.outputs.repo }}
         run: |
-          git clone --filter=blob:none --no-checkout "https://github.com/${{ steps.p.outputs.repo }}.git" _app
+          git clone --filter=blob:none --no-checkout "https://github.com/$REPO.git" _app
           git -C _app fetch --tags --force origin
 
       - name: Build the row
@@ -75,56 +93,60 @@ jobs:
         env:
           ROW: ${{ steps.row.outputs.row }}
         run: |
-          RESULT=$(node deployments/record.mjs "$ROW")
+          RESULT=$(node deployments/record.mjs "$ROW" _catalog)
           echo "result=$RESULT" >> "$GITHUB_OUTPUT"
           echo "$RESULT"
 
-      - name: Commit
+      - name: Push to deploy-catalog
         if: steps.rec.outputs.result == 'appended'
+        working-directory: _catalog
         env:
           ROW: ${{ steps.row.outputs.row }}
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          APP=$(node -e 'process.stdout.write(JSON.parse(process.env.ROW).app)')
-          VER=$(node -e 'process.stdout.write(JSON.parse(process.env.ROW).version)')
-          MSG="chore: catalog $APP $VER [skip ci]"
-          git add deployments/history.jsonl deployments/CATALOG.md
-          git commit -m "$MSG"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          MSG=$(node -e 'const r=JSON.parse(process.env.ROW);process.stdout.write(`catalog: ${r.app} ${r.version}`)')
+          commit() { git add history.jsonl CATALOG.md && git commit -q -m "$MSG"; }
+          commit
           for i in 1 2 3 4 5; do
-            git fetch origin master || { sleep $((RANDOM % 5 + 2)); continue; }
-            if [ "$(git rev-parse HEAD^)" = "$(git rev-parse FETCH_HEAD)" ]; then
-              git push origin HEAD:master && exit 0
-              sleep $((RANDOM % 5 + 2)); continue
-            fi
-            # Upstream moved. CATALOG.md is a derived file, never merge it: drop our
-            # local commit, re-append the row onto the new tip (record.mjs is
-            # idempotent on app+sha and regenerates CATALOG.md), commit fresh, push.
-            git reset --hard FETCH_HEAD
-            node deployments/record.mjs "$ROW"
-            git add deployments/history.jsonl deployments/CATALOG.md
-            if git diff --cached --quiet; then
+            git push -q origin HEAD:deploy-catalog && exit 0
+            sleep $((RANDOM % 5 + 2))
+            # Another run pushed first. CATALOG.md is derived, so never merge it:
+            # take the new tip and record the row again (record.mjs ignores an
+            # app+sha it already has, and renders CATALOG.md afresh).
+            git fetch -q origin deploy-catalog && git reset -q --hard FETCH_HEAD || continue
+            if [ "$(node ../deployments/record.mjs "$ROW" .)" != appended ]; then
               echo "row already recorded upstream"; exit 0
             fi
-            git commit -m "$MSG"
-            git push origin HEAD:master && exit 0
-            sleep $((RANDOM % 5 + 2))
+            commit
           done
           echo "::error::catalog push failed after 5 attempts" && exit 1
+
+      # A one-hour token for the one app repo, with Deployments write and
+      # nothing else. A missing key fails the run, so a deploy never goes
+      # unreported in silence; the replay is idempotent (see the next step).
+      - name: Token for the app repo
+        id: status-token
+        if: steps.p.outputs.repo != ''
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: Iv23liSHYlhhQXMHAyuW # tosak-deploy-status, not a secret
+          private-key: ${{ secrets.DEPLOY_STATUS_APP_KEY }}
+          owner: ${{ steps.p.outputs.owner }}
+          repositories: ${{ steps.p.outputs.name }}
+          permission-deployments: write
 
       - name: GitHub Deployment on the app repo
         if: steps.p.outputs.repo != ''
         env:
-          GH_TOKEN: ${{ secrets.APP_DEPLOY_PAT }}
+          GH_TOKEN: ${{ steps.status-token.outputs.token }}
           ROW: ${{ steps.row.outputs.row }}
           REPO: ${{ steps.p.outputs.repo }}
+          HOST: ${{ steps.p.outputs.host }}
         run: |
-          [ -n "$GH_TOKEN" ] || { echo "::warning::APP_DEPLOY_PAT unset, skipping GitHub Deployment"; exit 0; }
           SHA=$(node -e 'process.stdout.write(JSON.parse(process.env.ROW).sha)')
-          APP=$(node -e 'process.stdout.write(JSON.parse(process.env.ROW).app)')
           [ -n "$SHA" ] || { echo "::warning::no git sha resolved, skipping GitHub Deployment"; exit 0; }
-          HOST=$(node -e 'const a=require("./deployments/apps.json");const n=JSON.parse(process.env.ROW).app;process.stdout.write((a[n]&&a[n].host)||(n+".tosak.net"))')
-          COUNT=$(gh api "repos/$REPO/deployments?environment=dev&sha=$SHA" --jq 'length' || echo 0)
+          COUNT=$(gh api "repos/$REPO/deployments?environment=dev&sha=$SHA" --jq 'length')
           if [ "$COUNT" != "0" ]; then echo "deployment already exists"; exit 0; fi
           DID=$(gh api "repos/$REPO/deployments" --input - --jq '.id' <<JSON
           {"ref": "$SHA", "environment": "dev", "auto_merge": false, "required_contexts": [], "description": "ArgoCD reported healthy"}
@@ -132,7 +154,7 @@ jobs:
           )
           gh api "repos/$REPO/deployments/$DID/statuses" -f state=success \
             -f environment_url="https://$HOST" \
-            -f log_url="https://github.com/stevetosak/hetzner-cloud-infra/blob/master/deployments/CATALOG.md" \
+            -f log_url="https://github.com/$GITHUB_REPOSITORY/blob/deploy-catalog/CATALOG.md" \
             -f description="Live in dev"
 
       - name: Telegram
@@ -146,7 +168,7 @@ jobs:
           APP=$(node -e 'process.stdout.write(JSON.parse(process.env.ROW).app)')
           VER=$(node -e 'process.stdout.write(JSON.parse(process.env.ROW).version)')
           SHA=$(node -e 'process.stdout.write(JSON.parse(process.env.ROW).sha.slice(0,7))')
-          TEXT=$(printf 'Deployed: %s %s (%s)\nhttps://github.com/stevetosak/hetzner-cloud-infra/blob/master/deployments/CATALOG.md' "$APP" "$VER" "$SHA")
+          TEXT=$(printf 'Deployed: %s %s (%s)\nhttps://github.com/%s/blob/deploy-catalog/CATALOG.md' "$APP" "$VER" "$SHA" "$GITHUB_REPOSITORY")
           curl -sS --fail-with-body -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${TG_CHAT}" \
             --data-urlencode "text=${TEXT}" \

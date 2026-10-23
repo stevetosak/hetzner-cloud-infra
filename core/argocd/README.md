@@ -78,13 +78,11 @@ them `duster` and `doma`. `deployments/apps.json` is keyed on
 `.app.metadata.name` and was renamed to match. **Anything that keys on an
 ArgoCD Application name must be checked whenever this rule changes.**
 
-🔴 **And check it on `master`, not on your branch.** `deployments/history.jsonl`
-is empty on `feature/cluster-rebuild`, which made the rename look free. On
-`master` it holds two rows named `doma`, and `render-catalog.mjs` keys its
-"Current" table on the app name — so the rename leaves a stale `doma` row
-there, with a bare sha because `apps.json` no longer has that key. It cannot be
-repaired on a branch: `.gitattributes` gives that file `merge=union`, so editing
-the two lines would merge to four. **One commit on `master` after the merge.**
+🔴 **And check it against the data the consumer reads.** The deploy catalog's
+rows live on the `deploy-catalog` branch, and `render-catalog.mjs` keys its
+"Current" table on the app name, so a rename leaves the old name's row behind
+with a bare sha. The 2026-09 rename did exactly that to two `doma` rows: the
+feature branch held no rows, which made it look free.
 
 🔴 **The generator lists its projects, it does not sweep them.** ADR 0003 scopes
 the restore to `authos` and `doma`. A `projects/*/*/manifests/overlays/dev`

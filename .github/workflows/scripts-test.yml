@@ -1,0 +1,27 @@
+# Runs the node:test suites of the workflow scripts, the tag-bump action and the
+# deploy catalog. Advisory: the only required check on `master` is deploy-scope.
+name: Scripts test
+
+on:
+  pull_request:
+    paths:
+      - '.github/**'
+      - 'deployments/**'
+      - 'projects/*/*/manifests/overlays/dev/kustomization.yaml'
+      - 'core/argocd/applicationset.yaml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: node --test '.github/**/*.test.mjs' 'deployments/*.test.mjs'

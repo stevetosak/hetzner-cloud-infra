@@ -15,14 +15,17 @@ function shaCell(row, apps) {
 const line = (row, apps) =>
   `| ${row.app} | ${row.version} | ${shaCell(row, apps)} | ${row.env} | ${row.deployed_at} |`
 
+export const NOTICE =
+  '_Generated from `history.jsonl` on this branch by `deployments/render-catalog.mjs` on `master`. Do not edit by hand._'
+
 const HEAD =
   '| App | Version | Commit | Env | Deployed (UTC) |\n| --- | --- | --- | --- | --- |'
 
 /** rows: chronological (file order). Returns the full CATALOG.md body. */
 export function renderCatalog(rows, apps) {
   // Dedup on app+sha, keeping the first occurrence. A `history.jsonl` line can be
-  // doubled by a `merge=union` resolution, a manual replay, or two parallel workflow
-  // runs -- none of those should show twice here or double-count "Current".
+  // doubled by an old `merge=union` resolution, a manual replay, or two parallel
+  // workflow runs -- none of those should show twice here or double-count "Current".
   const seen = new Set()
   const deduped = []
   for (const r of rows) {
@@ -46,7 +49,7 @@ export function renderCatalog(rows, apps) {
   return [
     '# Deployment catalog',
     '',
-    '_Generated from `deployments/history.jsonl` by `deployments/render-catalog.mjs`. Do not edit by hand._',
+    NOTICE,
     '',
     '## Current',
     '',
@@ -65,13 +68,16 @@ export function renderCatalog(rows, apps) {
   ].join('\n')
 }
 
+// node render-catalog.mjs <data-dir>   (a checkout of the `deploy-catalog` branch)
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const [dataDir] = process.argv.slice(2)
+  if (!dataDir) throw new Error('usage: render-catalog.mjs <data-dir>')
   const here = dirname(fileURLToPath(import.meta.url))
-  const rows = readFileSync(join(here, 'history.jsonl'), 'utf8')
+  const rows = readFileSync(join(dataDir, 'history.jsonl'), 'utf8')
     .split('\n')
     .filter((l) => l.trim())
     .map((l) => JSON.parse(l))
   const apps = JSON.parse(readFileSync(join(here, 'apps.json'), 'utf8'))
-  writeFileSync(join(here, 'CATALOG.md'), renderCatalog(rows, apps))
+  writeFileSync(join(dataDir, 'CATALOG.md'), renderCatalog(rows, apps))
   console.log(`Wrote CATALOG.md (${rows.length} rows)`)
 }

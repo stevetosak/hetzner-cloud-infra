@@ -1,0 +1,109 @@
+name: tag-bump
+description: >-
+  Sets one overlay's newTag in the infra repo through a pull request that only
+  the required check deploy-scope can let merge, and waits until it is merged.
+  Logic and the reasons for it: tag-bump.mjs.
+
+# Call it from an app repo's deploy job, with one concurrency group per
+# Application, so two runs for the same overlay never race:
+#
+#   concurrency:
+#     group: tag-bump-doma-web
+#     cancel-in-progress: false
+#   steps:
+#     - uses: stevetosak/hetzner-cloud-infra/.github/actions/tag-bump@master
+#       with:
+#         private-key: ${{ secrets.TAG_BUMP_APP_KEY }}
+#         overlay-dir: projects/doma/web/manifests/overlays/dev
+#         image: stevetosak/doma
+#         tag: alpha-${{ github.sha }}
+#
+# `@master` on purpose: whoever can write `master` already has more than this
+# action can leak, and a pinned sha would need a pull request in every app
+# repo per change.
+
+inputs:
+  private-key:
+    description: The tosak-tag-bump private key (secret TAG_BUMP_APP_KEY)
+    required: true
+  overlay-dir:
+    description: The overlay directory, projects/<project>/<component>/manifests/overlays/dev
+    required: true
+  image:
+    description: The images[].name whose newTag changes, e.g. stevetosak/doma
+    required: true
+  tag:
+    description: The new tag, e.g. alpha-<sha>
+    required: true
+  client-id:
+    description: The tosak-tag-bump Client ID (not a secret)
+    default: Iv23liNlAONPbKagrZJF
+  infra-repo:
+    description: owner/name of the infra repo
+    default: stevetosak/hetzner-cloud-infra
+  base:
+    description: The branch ArgoCD syncs
+    default: master
+  timeout-seconds:
+    description: How long to wait for the merge before the run fails
+    default: '600'
+
+outputs:
+  result:
+    description: '`merged` or `unchanged` (the overlay already had the tag)'
+    value: ${{ steps.bump.outputs.result }}
+  pull-request:
+    description: URL of the merged pull request
+    value: ${{ steps.bump.outputs.pull-request }}
+
+runs:
+  using: composite
+  steps:
+    - id: infra
+      shell: bash
+      env:
+        INFRA_REPO: ${{ inputs.infra-repo }}
+      run: |
+        echo "owner=${INFRA_REPO%%/*}" >> "$GITHUB_OUTPUT"
+        echo "name=${INFRA_REPO#*/}" >> "$GITHUB_OUTPUT"
+
+    # A one-hour token for the infra repo only, with only what a bump needs.
+    - id: token
+      uses: actions/create-github-app-token@v3
+      with:
+        client-id: ${{ inputs.client-id }}
+        private-key: ${{ inputs.private-key }}
+        owner: ${{ steps.infra.outputs.owner }}
+        repositories: ${{ steps.infra.outputs.name }}
+        permission-contents: write
+        permission-pull-requests: write
+
+    - id: bump
+      uses: actions/github-script@v9
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+        OWNER: ${{ steps.infra.outputs.owner }}
+        REPO: ${{ steps.infra.outputs.name }}
+        BASE: ${{ inputs.base }}
+        OVERLAY_DIR: ${{ inputs.overlay-dir }}
+        IMAGE: ${{ inputs.image }}
+        TAG: ${{ inputs.tag }}
+        TIMEOUT_SECONDS: ${{ inputs.timeout-seconds }}
+      with:
+        github-token: ${{ steps.token.outputs.token }}
+        script: |
+          const e = process.env
+          const { bump } = await import(`${e.ACTION_PATH}/tag-bump.mjs`)
+          const out = await bump({
+            github,
+            core,
+            repo: { owner: e.OWNER, repo: e.REPO },
+            base: e.BASE,
+            overlayDir: e.OVERLAY_DIR,
+            image: e.IMAGE,
+            tag: e.TAG,
+            source: { repository: e.GITHUB_REPOSITORY, sha: e.GITHUB_SHA },
+            timeoutMs: Number(e.TIMEOUT_SECONDS) * 1000,
+          })
+          core.setOutput('result', out.result)
+          core.setOutput('pull-request', out.pullRequest ?? '')
