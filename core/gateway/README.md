@@ -12,6 +12,8 @@ Envoy Gateway and the one shared `Gateway` that every public host attaches to
 | `render.sh` | Renders `envoy-gateway.yaml`. |
 | `strip-gatewayapi-crds.py` | The filter `render.sh` pipes through. Read the next section before deleting it. |
 | `certificate.yaml` | The one wildcard certificate the listeners serve. |
+| `crds.yaml` | Envoy Gateway's own CRDs, split from the render. The kluster seed applies them. |
+| `kustomization.yaml` | What the Application `core-gateway` syncs. |
 
 ## 🔴 The chart installs the EXPERIMENTAL Gateway API channel by default
 
@@ -57,7 +59,8 @@ The order is not free (ADR 0008):
 kubectl apply --server-side --field-manager=cloud-infra -f core/gateway-api/crds.yaml
 kubectl apply --server-side --field-manager=cloud-infra -f core/gateway/namespaces.yaml
 kubectl apply --server-side --field-manager=cloud-infra -f core/gateway/crds.yaml
-kubectl apply --server-side --field-manager=cloud-infra -f core/gateway/envoy-gateway.yaml
+# certificate.yaml is a cert-manager kind: core/cert-manager/crds.yaml first
+kubectl apply --server-side --field-manager=cloud-infra -k core/gateway
 # then cert-manager, which refuses its Gateway API feature without the CRDs
 ```
 

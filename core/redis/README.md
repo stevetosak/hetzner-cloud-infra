@@ -99,7 +99,7 @@ The Secret must exist before the Deployment, or the pod stops at
 ```
 kubectl apply -f core/redis/namespace.yaml
 # the `redis` Secret, from tools/kluster:  go run . secrets apply --apply redis/redis
-kubectl apply -f core/redis/service.yaml -f core/redis/deployment.yaml
+kubectl apply --server-side -k core/redis
 ```
 
 Then check the password is 40 bytes and nothing else, which the base64 in the

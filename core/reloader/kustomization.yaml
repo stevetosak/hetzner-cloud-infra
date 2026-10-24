@@ -1,0 +1,9 @@
+# Synced by the Application core-reloader (ADR 0010, Amendment 2026-10-22).
+# NOT listed, and never to be: namespace.yaml (the seed), reloader-values.yaml
+# (render input).
+# `kluster services check` refuses a kustomization that names a *.enc.yaml,
+# pg-cluster.yaml, a values file, a crds.yaml or a Namespace.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - reloader.yaml

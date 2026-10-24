@@ -7,7 +7,7 @@ Amendment 2026-10-06). Stakater Reloader, a pinned helm render, applied by hand.
 ```
 ./core/reloader/render.sh                         # after a values change
 kubectl apply -f core/reloader/namespace.yaml
-kubectl apply -f core/reloader/reloader.yaml
+kubectl apply --server-side -k core/reloader
 ```
 
 - **Opt-in.** A Deployment carries `secret.reloader.stakater.com/auto: "true"`

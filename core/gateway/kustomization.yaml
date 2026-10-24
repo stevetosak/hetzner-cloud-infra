@@ -1,0 +1,16 @@
+# Synced by the Application core-gateway (ADR 0010, Amendment 2026-10-22).
+# NOT listed, and never to be: namespaces.yaml (the seed owns every
+# Namespace), crds.yaml (the seed applies CRDs), envoy-gateway-values.yaml
+# (render input).
+# `kluster services check` refuses a kustomization that names a *.enc.yaml,
+# pg-cluster.yaml, a values file, a crds.yaml or a Namespace.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - envoy-gateway.yaml
+  - gatewayclass.yaml
+  - envoyproxy.yaml
+  - client-traffic-policy.yaml
+  - gateway.yaml
+  - certificate.yaml
+  - http-redirect.yaml

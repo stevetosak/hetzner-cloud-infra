@@ -52,22 +52,20 @@ token (or the instances have no archiver). The plugin needs cert-manager.
 ```sh
 kubectl apply --server-side --field-manager=cloud-infra -f core/cnpg/crds.yaml
 kubectl apply -f core/cnpg/namespace.yaml
-kubectl apply --server-side --field-manager=cloud-infra -f core/cnpg/operator.yaml
-kubectl apply --server-side --field-manager=cloud-infra -f core/cnpg/plugin-barman-cloud.yaml
-kubectl apply -f core/cnpg/storageclass-retain.yaml
-# then the two Secrets (from tools/kluster; drop --apply for the diff first)
+# the two Secrets (from tools/kluster; drop --apply for the diff first)
 #   go run . secrets apply --apply pg-cluster/db-credentials pg-cluster/r2-backup-credentials
-kubectl apply -f core/cnpg/objectstore.yaml
+# the operator, the plugin, the StorageClass, the ObjectStore, the
+# ScheduledBackup and doma's Database: what the Application core-cnpg syncs.
+# Run it again if it fails on a webhook: the operator starts first.
+kubectl apply --server-side --field-manager=cloud-infra -k core/cnpg
 kubectl apply -f core/cnpg/pg-cluster.yaml
-kubectl apply -f core/cnpg/databases/doma.yaml
-kubectl apply -f core/cnpg/scheduled-backup.yaml
 ```
 
 🔴 **After a real recovery this order is not enough** — the `serverName`
 generation and its lock rule change first, and `pg-cluster.yaml` is replaced
 by a manifest rendered from it with the patches in `recovery/`. Follow
 [the PostgreSQL recovery runbook](../../docs/runbook/pg-recovery.md) instead
-of the last four lines.
+of the `pg-cluster.yaml` line.
 
 🔴 **`--server-side` is not optional for `crds.yaml`**, for the same reason
 as the Gateway API CRDs. The `clusters.postgresql.cnpg.io` CRD alone is about

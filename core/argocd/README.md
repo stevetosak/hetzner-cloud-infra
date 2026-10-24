@@ -9,6 +9,8 @@
 | `argocd-values.yaml` | every value overridden, each with its reason |
 | `render.sh` | pulls the pinned chart to a temp dir and renders |
 | `argocd.yaml` | **generated. Do not edit.** Header carries version and digest |
+| `crds.yaml` | **generated.** ArgoCD's three CRDs, split from the render; the kluster seed applies them |
+| `kustomization.yaml` | what the Application `core-argocd` syncs |
 | `argocd-notifications-secret.enc.yaml` | the one Secret nothing creates, SOPS-encrypted; `secrets.yaml` describes it |
 | `httproute.yaml` | the public route, two rules |
 | `appprojects.yaml` | one AppProject per deployed project, each scoped to its own namespace |
@@ -35,18 +37,17 @@ The namespace and the CRDs first, then everything else.
 
     kubectl apply -f core/argocd/namespace.yaml
     kubectl apply --server-side -f core/argocd/crds.yaml
-    kubectl apply --server-side -f core/argocd/argocd.yaml
 
     # The one Secret nothing creates (secrets.yaml), from tools/kluster:
     go run . secrets apply --apply argocd/argocd-notifications-secret
 
-    kubectl apply -f core/argocd/httproute.yaml
-
-    # The declaration of everything ArgoCD deploys. Namespaces first: the
-    # AppProjects deny cluster-scoped resources, so ArgoCD cannot make them.
+    # Namespaces first: the AppProjects deny Namespaces, so ArgoCD cannot
+    # make them.
     kubectl apply -f projects/authos/namespace.yaml -f projects/doma/namespace.yaml
-    kubectl apply -f core/argocd/appprojects.yaml
-    kubectl apply -f core/argocd/applicationset.yaml
+
+    # The install, the route, the AppProjects and the ApplicationSets: what
+    # the Application core-argocd syncs.
+    kubectl apply --server-side -k core/argocd
 
 🔴 **`--server-side` is mandatory, not a preference.** The
 `applicationsets.argoproj.io` CRD alone is about 23,000 lines, far over the
