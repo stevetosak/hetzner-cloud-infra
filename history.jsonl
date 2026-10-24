@@ -16,3 +16,4 @@
 {"app":"core-cnpg","version":"unknown","sha":"","image":"ghcr.io/cloudnative-pg/cloudnative-pg:1.30.0","env":"dev","argocd_revision":"429ef3292af71cd464d442e6d6796877c15db3fb","deployed_at":"2026-10-24T14:12:50Z"}
 {"app":"core-redis","version":"unknown","sha":"","image":"redis:8.10.2-alpine","env":"dev","argocd_revision":"429ef3292af71cd464d442e6d6796877c15db3fb","deployed_at":"2026-10-24T14:12:41Z"}
 {"app":"core-gateway","version":"unknown","sha":"","image":"docker.io/envoyproxy/envoy:distroless-v1.39.1@sha256:eb2c01c13125d1629637cb4e4cce7207009fb7cc2c8027f9742758549d15b6f4","env":"dev","argocd_revision":"429ef3292af71cd464d442e6d6796877c15db3fb","deployed_at":"2026-10-24T14:13:03Z"}
+{"app":"core-cert-manager","version":"unknown","sha":"","image":"quay.io/jetstack/cert-manager-cainjector:v1.21.2","env":"dev","argocd_revision":"429ef3292af71cd464d442e6d6796877c15db3fb","deployed_at":"2026-10-24T14:13:04Z"}
