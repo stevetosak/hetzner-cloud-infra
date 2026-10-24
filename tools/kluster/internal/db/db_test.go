@@ -317,10 +317,21 @@ func TestFirstBackupIsProvenInTheBucket(t *testing.T) {
 				s = x
 			}
 		}
-		st, err := s.Probe(context.Background(), host(&cp{backups: backups}))
+		st, err := s.Probe(context.Background(), host(&cp{backups: backups, cluster: `{}`}))
 		if st.Done != tc.done || (err == nil) != tc.done {
 			t.Errorf("%v: %+v %v", tc.keys, st, err)
 		}
+	}
+}
+
+func TestFirstBackupLeavesOutADeletedClustersBackup(t *testing.T) {
+	backups := `{"items":[{"metadata":{"name":"tosak-pg-cluster-first-20261024-120000","creationTimestamp":"2026-10-24T12:00:00Z"},
+		"spec":{"cluster":{"name":"tosak-pg-cluster"}},"status":{"phase":"completed","backupId":"20261024T120001"}}]}`
+	p, _ := preflight(t, Inputs{Mode: Recover, Archive: newBucket("rehearsal"), Source: sourceG1()})
+	s := p.Stages[len(p.Stages)-1]
+	st, err := s.Probe(context.Background(), host(&cp{backups: backups, cluster: `{"metadata":{"creationTimestamp":"2026-10-24T13:00:00Z"}}`}))
+	if err != nil || st.Done || st.Detail != "no first base backup" {
+		t.Fatalf("%+v %v", st, err)
 	}
 }
 
@@ -328,7 +339,7 @@ func TestFirstBackupRefusesAFailedOne(t *testing.T) {
 	backups := `{"items":[{"metadata":{"name":"tosak-pg-cluster-first-x"},
 		"spec":{"cluster":{"name":"tosak-pg-cluster"}},"status":{"phase":"failed","error":"boom"}}]}`
 	p, _ := preflight(t, Inputs{Mode: Fresh, Archive: newBucket("rehearsal")})
-	_, err := p.Stages[len(p.Stages)-1].Probe(context.Background(), host(&cp{backups: backups}))
+	_, err := p.Stages[len(p.Stages)-1].Probe(context.Background(), host(&cp{backups: backups, cluster: `{}`}))
 	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("%v", err)
 	}

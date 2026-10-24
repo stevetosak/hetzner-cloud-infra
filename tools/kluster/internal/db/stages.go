@@ -69,6 +69,9 @@ func kubectl(args ...string) string {
 
 // liveCluster is what the Stages read of the Cluster's status.
 type liveCluster struct {
+	Metadata struct {
+		CreationTimestamp time.Time `json:"creationTimestamp"`
+	} `json:"metadata"`
 	Spec struct {
 		Instances int `json:"instances"`
 	} `json:"spec"`
@@ -568,15 +571,28 @@ type backup struct {
 	Error string
 }
 
+// firstBackups are the first backups of the Cluster that exists now. A Backup
+// has no owner, so one of a deleted Cluster stays behind; only those created
+// after this Cluster count.
 func firstBackups(ctx context.Context, h *stage.Host) ([]backup, error) {
+	c, err := getCluster(ctx, h)
+	if err != nil {
+		return nil, err
+	}
+	if c == nil {
+		return nil, errors.New("no Cluster")
+	}
 	out, err := h.Exec.Run(ctx, kubectl("get", "backups.postgresql.cnpg.io", "-n", Namespace, "-o", "json"))
 	if err != nil {
 		return nil, err
 	}
 	var list struct {
 		Items []struct {
-			Metadata struct{ Name string } `json:"metadata"`
-			Spec     struct {
+			Metadata struct {
+				Name              string    `json:"name"`
+				CreationTimestamp time.Time `json:"creationTimestamp"`
+			} `json:"metadata"`
+			Spec struct {
 				Cluster struct{ Name string } `json:"cluster"`
 			} `json:"spec"`
 			Status struct {
@@ -591,7 +607,8 @@ func firstBackups(ctx context.Context, h *stage.Host) ([]backup, error) {
 	}
 	var bs []backup
 	for _, it := range list.Items {
-		if strings.HasPrefix(it.Metadata.Name, FirstBackupPrefix) && it.Spec.Cluster.Name == ClusterName {
+		if strings.HasPrefix(it.Metadata.Name, FirstBackupPrefix) && it.Spec.Cluster.Name == ClusterName &&
+			!it.Metadata.CreationTimestamp.Before(c.Metadata.CreationTimestamp) {
 			bs = append(bs, backup{Name: it.Metadata.Name, Phase: it.Status.Phase, ID: it.Status.BackupID, Error: it.Status.Error})
 		}
 	}
