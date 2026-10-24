@@ -30,6 +30,14 @@ jobs:
       - name: kluster services check
         working-directory: tools/kluster
         run: go run . services check
+      # The runner image ships kubectl, and with it kustomize.
+      - name: every synced directory and rehearsal cut builds
+        run: |
+          set -euo pipefail
+          for k in core/*/kustomization.yaml core/rehearsal/*/kustomization.yaml; do
+            kubectl kustomize "$(dirname "$k")" > /dev/null
+            echo "built $(dirname "$k")"
+          done
       - name: coreset tests
         working-directory: tools/kluster
         run: go test ./internal/coreset
