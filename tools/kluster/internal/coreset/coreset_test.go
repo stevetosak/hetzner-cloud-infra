@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/catalog"
 )
 
 // repoRoot is the top of the repository, from this package's directory.
@@ -31,11 +33,13 @@ func repoFS(t *testing.T) fstest.MapFS {
 			t.Fatal(err)
 		}
 	}
-	data, err := fs.ReadFile(src, AppsFile)
-	if err != nil {
-		t.Fatal(err)
+	for _, f := range []string{AppsFile, catalog.FileName} {
+		data, err := fs.ReadFile(src, f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m[f] = &fstest.MapFile{Data: data}
 	}
-	m[AppsFile] = &fstest.MapFile{Data: data}
 	return m
 }
 
@@ -152,6 +156,20 @@ func TestEachRuleFires(t *testing.T) {
 		{"a reloaded project outside the core AppProject", func(t *testing.T, m fstest.MapFS) {
 			edit(t, m, AppProjectsFile, "    - {server: https://kubernetes.default.svc, namespace: doma}\n", "")
 		}, "doma has a Deployment Reloader restarts, but is not a destination"},
+		{"an element namespace no namespace file makes", func(t *testing.T, m fstest.MapFS) {
+			delete(m, "core/redis/namespace.yaml")
+		}, "namespace redis of core-redis is in no namespace file"},
+		{"an issued key a rehearsal would make fresh", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, catalog.FileName, "    file: core/cert-manager/cloudflare-dns-token.enc.yaml\n    rehearsal: omit\n",
+				"    file: core/cert-manager/cloudflare-dns-token.enc.yaml\n")
+		}, "cert-manager/cloudflare-dns-token.api-token is issued"},
+		{"a fresh copy of an omitted Secret", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, catalog.FileName, "        kind: literal\n        value: tosak\n",
+				"        kind: copy\n        from: pg-cluster/r2-backup-credentials.ACCESS_KEY_ID\n")
+		}, "copies pg-cluster/r2-backup-credentials.ACCESS_KEY_ID, which a rehearsal does not make"},
+		{"an omit no rehearsal needs", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, catalog.FileName, "    file: core/pg-drill/telegram.enc.yaml\n", "    file: core/pg-drill/telegram.enc.yaml\n    rehearsal: omit\n")
+		}, "pg-drill/telegram has rehearsal: omit, but no rehearsal namespace holds it"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

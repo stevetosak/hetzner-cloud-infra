@@ -7,6 +7,8 @@ import (
 	"path"
 	"slices"
 	"strings"
+
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/catalog"
 )
 
 // reloaderAnnotation marks a Deployment Reloader restarts; any key in its
@@ -44,6 +46,73 @@ func Check(fsys fs.FS) []error {
 	errs = append(errs, orphans(fsys, "core", core, func(e Element) string { return e.Path })...)
 	errs = append(errs, checkRehearsal(fsys, core)...)
 	errs = append(errs, checkProjects(fsys, dests)...)
+	for _, rehearsal := range []bool{false, true} {
+		s, err := SeedFor(fsys, rehearsal)
+		if err == nil {
+			_, err = s.Namespaces(fsys)
+		}
+		add(err)
+	}
+	errs = append(errs, checkRehearsalSecrets(fsys)...)
+	return errs
+}
+
+// FreshSecrets returns the Secrets a rehearsal makes fresh: each one in a
+// rehearsal namespace that is not marked rehearsal: omit.
+func FreshSecrets(cat *catalog.Catalog, namespaces []string) []*catalog.Secret {
+	var out []*catalog.Secret
+	for _, s := range cat.Secrets {
+		if slices.Contains(namespaces, s.Ref.Namespace) && !s.OmittedInRehearsal() {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// checkRehearsalSecrets proves a rehearsal can make each of its Secrets
+// fresh in memory (ADR 0009, Amendment 2026-10-22): no issued key, because
+// only a live value exists for it, and no copy of a Secret the rehearsal does
+// not make. A rehearsal: omit on a Secret no rehearsal makes is stale.
+func checkRehearsalSecrets(fsys fs.FS) []error {
+	data, err := fs.ReadFile(fsys, catalog.FileName)
+	if err != nil {
+		return []error{err}
+	}
+	cat, err := catalog.Parse(data, ".")
+	if err != nil {
+		return []error{fmt.Errorf("%s: %w", catalog.FileName, err)}
+	}
+	s, err := SeedFor(fsys, true)
+	if err != nil {
+		return []error{err}
+	}
+	nss, err := s.Namespaces(fsys)
+	if err != nil {
+		return []error{err}
+	}
+	fresh := FreshSecrets(cat, nss)
+	made := map[catalog.Ref]bool{}
+	for _, f := range fresh {
+		made[f.Ref] = true
+	}
+	var errs []error
+	for _, f := range fresh {
+		for _, name := range f.KeyNames() {
+			k := f.Keys[name]
+			switch {
+			case k.Kind == catalog.Issued:
+				errs = append(errs, fmt.Errorf("%s: %s.%s is issued and a rehearsal makes the Secret fresh: set rehearsal: %s, with the reason in its note",
+					catalog.FileName, f.Ref, name, catalog.RehearsalOmit))
+			case k.Kind == catalog.Copy && !made[k.Source().Secret]:
+				errs = append(errs, fmt.Errorf("%s: %s.%s copies %s, which a rehearsal does not make", catalog.FileName, f.Ref, name, k.Source()))
+			}
+		}
+	}
+	for _, sec := range cat.Secrets {
+		if sec.OmittedInRehearsal() && !slices.Contains(nss, sec.Ref.Namespace) {
+			errs = append(errs, fmt.Errorf("%s: %s has rehearsal: %s, but no rehearsal namespace holds it", catalog.FileName, sec.Ref, catalog.RehearsalOmit))
+		}
+	}
 	return errs
 }
 

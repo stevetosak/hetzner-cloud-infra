@@ -111,6 +111,7 @@ func TestParseRefuses(t *testing.T) {
 		{"copy format", "secrets:\n" + src + "  d/d:\n    file: x/d.enc.yaml\n    keys:\n      k: {kind: copy, from: r/r.p, format: nothing}\n", "exactly once"},
 		{"copy of copy", "secrets:\n" + src + "  d/d:\n    file: x/d.enc.yaml\n    keys:\n      k: {kind: copy, from: c/c.k}\n", "a copy key"},
 		{"copy of literal", "secrets:\n" + src + "  d/d:\n    file: x/d.enc.yaml\n    keys:\n      k: {kind: copy, from: r/r.l}\n", "a literal key"},
+		{"rehearsal value", "secrets:\n  a/b:\n    file: x/b.enc.yaml\n    rehearsal: skip\n    keys:\n      k: {kind: generated}\n", `rehearsal: "skip"`},
 		{"same file", "secrets:\n  a/b:\n    file: x/b.enc.yaml\n    keys:\n      k: {kind: generated}\n  c/b:\n    file: x/b.enc.yaml\n    keys:\n      k: {kind: generated}\n", "is also the file of"},
 	}
 	for _, tt := range tests {

@@ -67,7 +67,17 @@ type Secret struct {
 	Labels map[string]string `yaml:"labels"`
 	Note   string            `yaml:"note"`
 	Keys   map[string]*Key   `yaml:"keys"`
+	// Rehearsal is RehearsalOmit when a rehearsal makes no copy of this
+	// Secret, with the reason in Note. Every other Secret in a rehearsal
+	// namespace is made fresh in memory (ADR 0009, Amendment 2026-10-22).
+	Rehearsal string `yaml:"rehearsal"`
 }
+
+// RehearsalOmit is the one value Secret.Rehearsal takes.
+const RehearsalOmit = "omit"
+
+// OmittedInRehearsal reports whether a rehearsal leaves the Secret out.
+func (s *Secret) OmittedInRehearsal() bool { return s.Rehearsal == RehearsalOmit }
 
 // KeyNames returns the Secret's key names in order.
 func (s *Secret) KeyNames() []string {
@@ -222,6 +232,9 @@ func (c *Catalog) validate() error {
 			fail("file %q is also the file of %s", s.File, other)
 		}
 		files[s.File] = s.Ref
+		if s.Rehearsal != "" && s.Rehearsal != RehearsalOmit {
+			fail("rehearsal: %q; the one value is %s", s.Rehearsal, RehearsalOmit)
+		}
 		if len(s.Keys) == 0 {
 			fail("keys: at least one key is required")
 		}
