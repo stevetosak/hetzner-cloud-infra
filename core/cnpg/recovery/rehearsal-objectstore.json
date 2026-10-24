@@ -1,5 +1,0 @@
-[
-  { "op": "test", "path": "/metadata/name", "value": "tosak-pg-backups" },
-  { "op": "replace", "path": "/metadata/namespace", "value": "pg-rehearsal" },
-  { "op": "remove", "path": "/spec/retentionPolicy" }
-]

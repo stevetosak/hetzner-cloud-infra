@@ -1,0 +1,27 @@
+# The rehearsal cut of core/cnpg (ADR 0009, Amendment 2026-10-24). In a
+# rehearsal the Application core-cnpg points here.
+#
+#   archive store tosak-pg-backups   archives to the rehearsal bucket
+#                                    tosak-pg-backups-rehearsal. Its Secret
+#                                    r2-backup-credentials holds the rehearsal
+#                                    token there (secrets.yaml, rehearsalItem),
+#                                    which cannot reach the live bucket.
+#
+# Nothing else changes: the rehearsal Cluster is the live Cluster, and the
+# source store reads the live backups read-only in both environments.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../cnpg
+patches:
+  - target:
+      group: barmancloud.cnpg.io
+      kind: ObjectStore
+      name: tosak-pg-backups
+    patch: |-
+      - op: test
+        path: /spec/configuration/destinationPath
+        value: s3://tosak-pg-backups/
+      - op: replace
+        path: /spec/configuration/destinationPath
+        value: s3://tosak-pg-backups-rehearsal/

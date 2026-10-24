@@ -17,6 +17,7 @@ export const LIMITS = {
   walMaxAgeMinutes: 60,
   drillMaxAgeDays: 35,
   rehearsalMaxAgeHours: 6,
+  lockMinDays: 30,
 }
 
 const HOUR = 3600 * 1000
@@ -130,6 +131,43 @@ export function checkDrill(results, now) {
   return null
 }
 
+// --- Bucket lock rules ------------------------------------------------------
+
+// The next generation's name: tosak-pg-cluster-g1 → tosak-pg-cluster-g2.
+export function nextGeneration(server) {
+  const m = /^(.*-g)([1-9][0-9]*)$/.exec(server ?? '')
+  if (!m) throw new Error(`serverName ${server} is not <name>-g<N>`)
+  return `${m[1]}${Number(m[2]) + 1}`
+}
+
+// The WAL of the current generation and of the next one must each be held
+// by an enabled lock rule of at least LIMITS.lockMinDays (ADR 0009, Amendment
+// 2026-10-24): the next one is made AHEAD of a recovery, which archives to it
+// at once. `response` is GET /accounts/<id>/r2/buckets/<bucket>/lock. A rule's
+// prefix is literal, so it holds a path only as a prefix of it. Returns what
+// is wrong, or null.
+export function checkLocks(response, server) {
+  if (!response?.success) throw new Error('cloudflare: the lock rules could not be read')
+  const rules = response.result?.rules ?? []
+  const min = LIMITS.lockMinDays * 24 * 3600
+  const holds = (path) =>
+    rules.some(
+      (r) =>
+        r.enabled &&
+        path.startsWith(r.prefix ?? '') &&
+        (r.condition?.type === 'Indefinite' ||
+          (r.condition?.type === 'Age' && r.condition.maxAgeSeconds >= min)),
+    )
+  const missing = [server, nextGeneration(server)]
+    .map((g) => `${g}/wals/`)
+    .filter((path) => !holds(path))
+  if (missing.length === 0) return null
+  return (
+    `no enabled lock rule of ${LIMITS.lockMinDays} days or more for ${missing.join(' and ')}. ` +
+    'Add it in the Cloudflare dashboard, bucket settings, before a recovery needs it'
+  )
+}
+
 // --- Rehearsal project ------------------------------------------------------
 
 // The billable kinds, each read as `GET /v1/<kind>`. A rehearsal run builds
@@ -184,6 +222,7 @@ export function composeMessage(findings) {
   if (findings.backups) lines.push(`🔴 Base backups: ${findings.backups}.`)
   if (findings.wal) lines.push(`🔴 WAL: ${findings.wal}.`)
   if (findings.drill) lines.push(`🔴 Restore Drill: ${findings.drill}.`)
+  if (findings.locks) lines.push(`🔴 Bucket lock: ${findings.locks}.`)
   if (findings.rehearsal) lines.push(`🟠 Rehearsal project: ${findings.rehearsal}.`)
   for (const v of findings.orphans ?? []) {
     lines.push(
@@ -216,6 +255,8 @@ function readIf(path) {
 //   drill-armed               present once core/pg-drill/ exists
 //   drill/*.json              the drill results
 //   rehearsal/<kind>.json     GET /v1/<kind> in the rehearsal project
+//   server                    the serverName the repository names
+//   locks.json                GET …/r2/buckets/<bucket>/lock
 export function evaluate(dir, now) {
   const errors = existsSync(join(dir, 'errors'))
     ? readdirSync(join(dir, 'errors')).map(
@@ -258,6 +299,9 @@ export function evaluate(dir, now) {
           .map((f) => readJson(join(d, f)))
       : []
     findings.drill = checkDrill(results, now)
+  })
+  guard('locks', () => {
+    findings.locks = checkLocks(readJson(join(dir, 'locks.json')), readIf(join(dir, 'server')))
   })
   guard('rehearsal', () => {
     const d = join(dir, 'rehearsal')

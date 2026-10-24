@@ -1,0 +1,28 @@
+# The Source Store: the live backups, READ-ONLY, in pg-cluster (ADR 0009,
+# Amendment 2026-10-24). Every recovery reads through it, in every
+# environment: cluster/recover names it in externalClusters. The Cluster
+# writes only to the archive store (objectstore.yaml), so a recovery cannot
+# write the generation it reads.
+#
+# The same bucket and endpoint as objectstore.yaml in both environments; a
+# rehearsal cuts only the archive store. Its token, r2-source-credentials,
+# cannot write or delete.
+#
+# No `retentionPolicy`, no `wal`/`data` settings: nothing archives here, and
+# barman detects compression from the object name when it restores.
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: tosak-pg-backups-source
+  namespace: pg-cluster
+spec:
+  configuration:
+    destinationPath: s3://tosak-pg-backups/
+    endpointURL: https://5621ce9e64f6881e8e6229573adf3b36.r2.cloudflarestorage.com
+    s3Credentials:
+      accessKeyId:
+        name: r2-source-credentials
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: r2-source-credentials
+        key: ACCESS_SECRET_KEY

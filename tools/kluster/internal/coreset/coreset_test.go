@@ -22,7 +22,7 @@ func repoFS(t *testing.T) fstest.MapFS {
 	m := fstest.MapFS{}
 	for _, top := range []string{"core", "projects"} {
 		err := fs.WalkDir(src, top, func(p string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() || !strings.HasSuffix(p, ".yaml") {
+			if err != nil || d.IsDir() || !(strings.HasSuffix(p, ".yaml") || strings.HasSuffix(p, ".json")) {
 				return err
 			}
 			data, err := fs.ReadFile(src, p)
@@ -108,6 +108,12 @@ func TestEachRuleFires(t *testing.T) {
 		{"the database Cluster in a build", func(t *testing.T, m fstest.MapFS) {
 			edit(t, m, "core/cnpg/kustomization.yaml", "  - objectstore.yaml\n", "  - objectstore.yaml\n  - pg-cluster.yaml\n")
 		}, "kluster db create owns it"},
+		{"the Cluster's directory in a build", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, "core/cnpg/kustomization.yaml", "  - objectstore.yaml\n", "  - objectstore.yaml\n  - cluster/fresh\n")
+		}, "kluster db create owns it"},
+		{"a recovery overlay behind the Cluster", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, "core/cnpg/cluster/fresh/pg-cluster.yaml", "serverName: tosak-pg-cluster-g1\n", "serverName: tosak-pg-cluster-g2\n")
+		}, "tests serverName"},
 		{"CRDs in a build", func(t *testing.T, m fstest.MapFS) {
 			edit(t, m, "core/gateway/kustomization.yaml", "  - gateway.yaml\n", "  - gateway.yaml\n  - crds.yaml\n")
 		}, "CRDs: the seed owns them"},

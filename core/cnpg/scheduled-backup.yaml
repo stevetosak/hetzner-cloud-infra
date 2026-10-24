@@ -11,8 +11,9 @@ spec:
   # Six fields, seconds first — CloudNativePG's cron, not the five-field
   # Kubernetes CronJob form.
   schedule: "0 0 3 * * *"
-  # Take the first backup now, not at the next 03:00.
-  immediate: true
+  # No `immediate`: `kluster db create` takes the first base backup itself,
+  # once the Cluster is healthy, and proves it in the bucket (ADR 0009,
+  # Amendment 2026-10-24).
   cluster:
     name: tosak-pg-cluster
   # The default, written out. A standby's backup does not load the primary —
