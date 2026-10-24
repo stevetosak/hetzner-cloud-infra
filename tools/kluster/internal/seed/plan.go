@@ -96,6 +96,9 @@ func Build(in Inputs) (*Plan, error) {
 		if err != nil {
 			return nil, err
 		}
+		if err := inNamespaces(app, m, namespaces); err != nil {
+			return nil, err
+		}
 		p.Elements = append(p.Elements, Element{App: app, Manifest: m, Target: Target{Manager: ManagerArgoCD}})
 		if e.Dir == "argocd" {
 			argocd = &p.Elements[len(p.Elements)-1]
@@ -161,6 +164,32 @@ func concat(fsys fs.FS, files []string) ([]byte, error) {
 		}
 	}
 	return b.Bytes(), nil
+}
+
+// inNamespaces refuses a build that puts an object into a namespace the
+// environment makes no Namespace for: ArgoCD would retry its sync for ever. A
+// rehearsal syncs no project, so a core object in a project's namespace needs
+// a rehearsal cut (core/rehearsal/reloader is one).
+func inNamespaces(app string, manifest []byte, namespaces []string) error {
+	dec := yaml.NewDecoder(bytes.NewReader(manifest))
+	for {
+		var o struct {
+			Kind     string `yaml:"kind"`
+			Metadata struct {
+				Name      string `yaml:"name"`
+				Namespace string `yaml:"namespace"`
+			} `yaml:"metadata"`
+		}
+		if err := dec.Decode(&o); err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
+		if ns := o.Metadata.Namespace; ns != "" && !slices.Contains(namespaces, ns) {
+			return fmt.Errorf("%s puts %s %s/%s into a namespace this environment makes no Namespace for", app, o.Kind, ns, o.Metadata.Name)
+		}
+	}
 }
 
 // hostnames returns every hostname of the HTTPRoutes in docs, sorted.

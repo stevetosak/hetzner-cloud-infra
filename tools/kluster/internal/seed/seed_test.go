@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/catalog"
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/coreset"
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/kbuild"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/stage"
 )
 
@@ -81,6 +83,34 @@ func TestBuildReadsTheRepository(t *testing.T) {
 		healthy := p.Stages[4].(*Healthy)
 		if slices.Contains(healthy.Applications, "core-pg-drill") == tc.rehearsal {
 			t.Errorf("rehearsal %t: Applications %v", tc.rehearsal, healthy.Applications)
+		}
+	}
+}
+
+// Found in the rehearsal of 2026-10-24: core/reloader holds Roles in the
+// projects' namespaces, which a rehearsal does not make, so core-reloader
+// retried its sync for ever. Its rehearsal cut drops them; the uncut build
+// is refused.
+func TestBuildRefusesAnObjectOutsideTheNamespaces(t *testing.T) {
+	ws, err := coreset.SeedFor(os.DirFS(repoRoot), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	namespaces, err := ws.Namespaces(os.DirFS(repoRoot))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for dir, refused := range map[string]bool{"core/reloader": true, "core/rehearsal/reloader": false} {
+		m, err := kbuild.YAML(filepath.Join(repoRoot, dir), "core-reloader", "reloader")
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = inNamespaces("core-reloader", m, namespaces)
+		if (err != nil) != refused {
+			t.Errorf("%s in a rehearsal: %v, want refused %t", dir, err, refused)
+		}
+		if refused && err != nil && !strings.Contains(err.Error(), "Role authos/reloader-reloader-role") {
+			t.Errorf("%s: %v does not name the object", dir, err)
 		}
 	}
 }
