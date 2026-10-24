@@ -15,6 +15,7 @@ import (
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/config"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/intent"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/provision"
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/r2"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/remote"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/sshgate"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/stage"
@@ -97,7 +98,7 @@ var sshOpenCmd = &cobra.Command{
 
 var downCmd = &cobra.Command{
 	Use:   "down",
-	Short: "Delete every resource in the rehearsal project (refused for live)",
+	Short: "Delete every resource in the rehearsal project, then empty the rehearsal bucket (refused for live)",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return run(cmd, func(ctx context.Context, a *app) error {
@@ -110,21 +111,39 @@ var downCmd = &cobra.Command{
 			}
 			fmt.Fprintln(a.out, "rehearsal project:")
 			inv.Print(a.out)
-			if inv.Empty() || !a.mode.Apply {
-				return nil
-			}
-			if err := a.api.DeleteAll(ctx, inv, a.out); err != nil {
-				return err
-			}
-			after, err := a.api.Inventory(ctx)
+			bucket, err := a.rehearsalBucket(ctx, cmd)
 			if err != nil {
 				return err
 			}
-			if !after.Empty() {
-				after.Print(a.out)
-				return errors.New("the rehearsal project is not empty after down")
+			objs, err := bucket.List(ctx, "")
+			if err != nil {
+				return err
 			}
-			fmt.Fprintln(a.out, "read back: the rehearsal project is empty")
+			fmt.Fprintf(a.out, "rehearsal bucket %s: %d object(s), emptied after the project\n", bucket.Name(), len(objs))
+			if !a.mode.Apply {
+				return nil
+			}
+			if !inv.Empty() {
+				if err := a.api.DeleteAll(ctx, inv, a.out); err != nil {
+					return err
+				}
+				after, err := a.api.Inventory(ctx)
+				if err != nil {
+					return err
+				}
+				if !after.Empty() {
+					after.Print(a.out)
+					return errors.New("the rehearsal project is not empty after down")
+				}
+				fmt.Fprintln(a.out, "read back: the rehearsal project is empty")
+			}
+			// Only now: a Cluster still running would archive into the
+			// bucket again (ADR 0009, Amendment 2026-10-24, decision 10).
+			n, err := r2.Empty(ctx, bucket, bucket.Name())
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(a.out, "read back: rehearsal bucket %s is empty (%d object(s) deleted)\n", bucket.Name(), n)
 			return a.pins.Reset()
 		})
 	},

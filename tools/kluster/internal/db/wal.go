@@ -24,9 +24,18 @@ type walFile struct {
 	Partial bool
 }
 
+// isHex reports whether s is upper- or lower-case hex. A segment name has 24
+// digits, more than a uint64 holds, so it is not parsed as a number.
 func isHex(s string) bool {
-	_, err := strconv.ParseUint(s, 16, 64)
-	return err == nil
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if !strings.ContainsRune("0123456789ABCDEFabcdef", c) {
+			return false
+		}
+	}
+	return true
 }
 
 // parseWAL reads a key; ok is false for anything else under wals/ (a

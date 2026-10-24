@@ -148,3 +148,24 @@ func TestCheckOverlayRefuses(t *testing.T) {
 		})
 	}
 }
+
+func TestStoresFromTheRepository(t *testing.T) {
+	for _, tc := range []struct {
+		live    bool
+		archive string
+	}{{true, "tosak-pg-backups"}, {false, "tosak-pg-backups-rehearsal"}} {
+		a, s, err := Stores(repoTop, tc.live)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if a.Bucket != tc.archive || a.Secret != "r2-backup-credentials" {
+			t.Errorf("live=%v archive = %+v", tc.live, a)
+		}
+		if s.Bucket != "tosak-pg-backups" || s.Secret != "r2-source-credentials" {
+			t.Errorf("live=%v source = %+v", tc.live, s)
+		}
+		if a.AccessKey != "ACCESS_KEY_ID" || a.SecretKey != "ACCESS_SECRET_KEY" || len(a.Account()) != 32 {
+			t.Errorf("live=%v keys or account: %+v %q", tc.live, a, a.Account())
+		}
+	}
+}

@@ -330,10 +330,13 @@ func (s *Archive) Probe(ctx context.Context, _ *stage.Host) (stage.Status, error
 		d += "; replay stopped at the target time, so the end of the WAL is not compared"
 	case s.sourceNewest == nil:
 		d += "; not compared with the source (a resumed run has no preflight reading)"
-	case first.Pos <= s.sourceNewest.Pos:
+	case first.Pos < s.sourceNewest.Pos:
 		return stage.Status{}, fmt.Errorf("%s, but the source's newest segment was %s: replay did not reach the end of the WAL", d, s.sourceNewest.Pos)
 	default:
-		d += ", after the source's newest segment " + s.sourceNewest.Pos
+		// The new timeline opens in the segment that holds the end of
+		// replay: the newest one when its last record ran past it, the
+		// one after when it ended on a boundary (a WAL switch).
+		d += ", at or after the source's newest segment " + s.sourceNewest.Pos
 	}
 	return stage.Status{Done: true, Detail: d}, nil
 }
