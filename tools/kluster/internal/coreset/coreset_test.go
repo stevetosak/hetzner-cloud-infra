@@ -1,0 +1,169 @@
+package coreset
+
+import (
+	"io/fs"
+	"os"
+	"slices"
+	"strings"
+	"testing"
+	"testing/fstest"
+)
+
+// repoRoot is the top of the repository, from this package's directory.
+const repoRoot = "../../../.."
+
+// repoFS copies the files the check reads out of the real repository, so a
+// test can break one of them and leave the rest as they are on the branch.
+func repoFS(t *testing.T) fstest.MapFS {
+	t.Helper()
+	src := os.DirFS(repoRoot)
+	m := fstest.MapFS{}
+	for _, top := range []string{"core", "projects"} {
+		err := fs.WalkDir(src, top, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(p, ".yaml") {
+				return err
+			}
+			data, err := fs.ReadFile(src, p)
+			m[p] = &fstest.MapFile{Data: data}
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, err := fs.ReadFile(src, AppsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m[AppsFile] = &fstest.MapFile{Data: data}
+	return m
+}
+
+func edit(t *testing.T, m fstest.MapFS, file, old, new string) {
+	t.Helper()
+	f, ok := m[file]
+	if !ok {
+		t.Fatalf("%s is not in the repository", file)
+	}
+	s := string(f.Data)
+	if strings.Count(s, old) != 1 {
+		t.Fatalf("%s: %q occurs %d times, want once", file, old, strings.Count(s, old))
+	}
+	m[file] = &fstest.MapFile{Data: []byte(strings.Replace(s, old, new, 1))}
+}
+
+func TestTheRepositoryPasses(t *testing.T) {
+	if errs := Check(os.DirFS(repoRoot)); len(errs) > 0 {
+		t.Fatalf("the branch fails its own check: %v", errs)
+	}
+}
+
+func TestListsAreRead(t *testing.T) {
+	fsys := os.DirFS(repoRoot)
+	core, err := Core(fsys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(core, func(e Element) bool {
+		return e == Element{Dir: "cnpg", Path: "core/cnpg", Namespace: "cnpg-system"}
+	}) {
+		t.Errorf("core list lacks cnpg: %+v", core)
+	}
+	reh, err := Rehearsal(fsys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.ContainsFunc(reh, func(e Element) bool { return e.Dir == "pg-drill" }) {
+		t.Errorf("the rehearsal list must leave the Restore Drill out: %+v", reh)
+	}
+	projects, err := Projects(fsys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(projects, []string{"authos", "doma"}) {
+		t.Errorf("projects = %v", projects)
+	}
+}
+
+// Each case breaks the repository in one place and names the refusal it
+// must cause, so a rule that stops firing fails here.
+func TestEachRuleFires(t *testing.T) {
+	cases := []struct {
+		name string
+		mut  func(t *testing.T, m fstest.MapFS)
+		want string
+	}{
+		{"a Secret in a build", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, "core/argocd/kustomization.yaml", "  - httproute.yaml\n", "  - httproute.yaml\n  - argocd-notifications-secret.enc.yaml\n")
+		}, "a Secret: kluster secrets apply owns it"},
+		{"the database Cluster in a build", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, "core/cnpg/kustomization.yaml", "  - objectstore.yaml\n", "  - objectstore.yaml\n  - pg-cluster.yaml\n")
+		}, "kluster db create owns it"},
+		{"CRDs in a build", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, "core/gateway/kustomization.yaml", "  - gateway.yaml\n", "  - gateway.yaml\n  - crds.yaml\n")
+		}, "CRDs: the seed owns them"},
+		{"a namespace file in a build", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, "core/redis/kustomization.yaml", "  - service.yaml\n", "  - service.yaml\n  - namespace.yaml\n")
+		}, "Namespaces: the seed owns them"},
+		{"a values file in a build", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, "core/cert-manager/kustomization.yaml", "  - clusterissuer.yaml\n", "  - clusterissuer.yaml\n  - cert-manager-values.yaml\n")
+		}, "Helm values"},
+		{"a Namespace under another name", func(t *testing.T, m fstest.MapFS) {
+			m["core/redis/service.yaml"] = &fstest.MapFile{Data: append(m["core/redis/service.yaml"].Data,
+				[]byte("\n---\napiVersion: v1\nkind: Namespace\nmetadata:\n  name: sneaky\n")...)}
+		}, "holds Namespace sneaky"},
+		{"a missing resource", func(t *testing.T, m fstest.MapFS) {
+			delete(m, "core/redis/service.yaml")
+		}, "service.yaml, which does not exist"},
+		{"a remote resource", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, "core/redis/kustomization.yaml", "  - service.yaml\n", "  - service.yaml\n  - https://example.com/x.yaml\n")
+		}, "remote resource"},
+		{"an unsynced core kustomization", func(t *testing.T, m fstest.MapFS) {
+			m["core/monitoring/kustomization.yaml"] = &fstest.MapFile{Data: []byte("resources: []\n")}
+		}, "core/monitoring/kustomization.yaml: no Application syncs it"},
+		{"a core namespace outside the AppProject", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, AppProjectsFile, "    - {server: https://kubernetes.default.svc, namespace: cnpg-system}\n", "")
+		}, "namespace cnpg-system of cnpg is not a destination"},
+		{"a rehearsal element not in the main list", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, RehearsalArgoCDFile, "          - {dir: redis, path: core/redis, namespace: redis}\n",
+				"          - {dir: redis, path: core/redis, namespace: redis}\n          - {dir: extra, path: core/extra, namespace: extra}\n")
+		}, "dir extra is not in the main list"},
+		{"a rehearsal element pointing elsewhere", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, RehearsalArgoCDFile, "path: core/rehearsal/cert-manager,", "path: core/gateway,")
+		}, "dir cert-manager syncs core/gateway"},
+		{"a project without an AppProject", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, AppProjectsFile, "  name: doma\n", "  name: doma-old\n")
+		}, `no AppProject "doma"`},
+		{"a project without a namespace file", func(t *testing.T, m fstest.MapFS) {
+			delete(m, "projects/doma/namespace.yaml")
+		}, "projects/doma/namespace.yaml"},
+		{"a project missing from a listener", func(t *testing.T, m fstest.MapFS) {
+			// The first listener only: the check reads each one.
+			s := string(m[GatewayFile].Data)
+			m[GatewayFile] = &fstest.MapFile{Data: []byte(strings.Replace(s,
+				"values: [gateway, argocd, authos, doma]", "values: [gateway, argocd, authos]", 1))}
+		}, "does not admit routes from doma"},
+		{"a component missing from the deploy catalog", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, AppsFile, `"doma-web"`, `"doma"`)
+		}, "no entry doma-web"},
+		{"a reloaded project outside Reloader's scope", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, ReloaderFile, "--namespaces=authos,doma,redis,reloader", "--namespaces=authos,redis,reloader")
+		}, "--namespaces does not name doma"},
+		{"a reloaded project outside the core AppProject", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, AppProjectsFile, "    - {server: https://kubernetes.default.svc, namespace: doma}\n", "")
+		}, "doma has a Deployment Reloader restarts, but is not a destination"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m := repoFS(t)
+			c.mut(t, m)
+			errs := Check(m)
+			for _, e := range errs {
+				if strings.Contains(e.Error(), c.want) {
+					return
+				}
+			}
+			t.Fatalf("want a refusal containing %q, got %v", c.want, errs)
+		})
+	}
+}

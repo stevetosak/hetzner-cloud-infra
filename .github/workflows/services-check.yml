@@ -1,0 +1,35 @@
+# Proves the files ArgoCD syncs agree with each other, with
+# `kluster services check` (ADR 0010, Amendment 2026-10-22): no core
+# kustomization lists what only the seed or kluster applies, the rehearsal
+# list is a cut of the main core list, and every project in the projects
+# generator has its AppProject, namespace file, Gateway listeners, deploy
+# catalog entry and, when Reloader restarts it, Reloader's scope. It reads the
+# files only: no cluster, no key.
+name: Services check
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: tools/kluster/go.mod
+          cache-dependency-path: tools/kluster/go.sum
+      - name: kluster services check
+        working-directory: tools/kluster
+        run: go run . services check
+      - name: coreset tests
+        working-directory: tools/kluster
+        run: go test ./internal/coreset

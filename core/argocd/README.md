@@ -104,6 +104,12 @@ Four edits, all deliberate:
    `core/gateway/gateway.yaml`, or the project's route is refused with
    `NotAllowedByListeners`.
 
+Plus one entry per component in `deployments/apps.json`, and, when a
+Deployment carries a Reloader annotation, the namespace in Reloader's scope
+(`core/reloader`) and in the `core` AppProject's destinations. `kluster
+services check`, run in CI by `services-check.yml`, takes the generator list
+as the source of truth and refuses a project that misses any of these.
+
 ### What the AppProject actually stops
 
 Each project permits this repository only, its own namespace only, and **no
