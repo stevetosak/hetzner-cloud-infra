@@ -34,6 +34,7 @@ would break that — see the warning at the top of `argocd-values.yaml`.
 The namespace and the CRDs first, then everything else.
 
     kubectl apply -f core/argocd/namespace.yaml
+    kubectl apply --server-side -f core/argocd/crds.yaml
     kubectl apply --server-side -f core/argocd/argocd.yaml
 
     # The one Secret nothing creates (secrets.yaml), from tools/kluster:

@@ -24,3 +24,13 @@ config:
   # refuses the feature. core/gateway-api/crds.yaml is applied first.
   gatewayAPI:
     enabled: true
+
+# The chart puts its leader-election Roles, RoleBindings and leases in
+# kube-system by default. The `core` AppProject does not admit kube-system
+# (services seed, Q2), so the leases live in cert-manager's own namespace.
+# On adoption the old lease in kube-system is no longer read: for a short time
+# two controllers can both lead, which is harmless because issuance is
+# idempotent. The four old objects in kube-system are deleted by hand.
+global:
+  leaderElection:
+    namespace: cert-manager

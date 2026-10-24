@@ -56,6 +56,7 @@ The order is not free (ADR 0008):
 ```sh
 kubectl apply --server-side --field-manager=cloud-infra -f core/gateway-api/crds.yaml
 kubectl apply --server-side --field-manager=cloud-infra -f core/gateway/namespaces.yaml
+kubectl apply --server-side --field-manager=cloud-infra -f core/gateway/crds.yaml
 kubectl apply --server-side --field-manager=cloud-infra -f core/gateway/envoy-gateway.yaml
 # then cert-manager, which refuses its Gateway API feature without the CRDs
 ```

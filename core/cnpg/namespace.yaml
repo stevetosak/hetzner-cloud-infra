@@ -1,8 +1,19 @@
-# The namespace that holds the PostgreSQL cluster, NOT the operator.
+# The two CloudNativePG namespaces. The kluster seed owns every Namespace
+# (ADR 0010, Amendment 2026-10-22); ArgoCD owns none.
 #
-# The operator installs itself into `cnpg-system`, which `operator.yaml`
-# declares. This namespace holds `tosak-pg-cluster`, its `Database` objects and
-# the `db-credentials` Secret, and nothing declares it, so it is declared here.
+# `cnpg-system` holds the operator and the barman-cloud plugin. The upstream
+# release declares it, and core/cnpg/render.sh cuts it out so it lives here;
+# the labels are the upstream ones, so the live object does not change.
+#
+# `pg-cluster` holds `tosak-pg-cluster`, its `Database` objects and the
+# `db-credentials` Secret. Nothing upstream declares it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    app.kubernetes.io/name: cloudnative-pg
+  name: cnpg-system
+---
 apiVersion: v1
 kind: Namespace
 metadata:
