@@ -38,6 +38,8 @@ jobs:
             kubectl kustomize "$(dirname "$k")" > /dev/null
             echo "built $(dirname "$k")"
           done
-      - name: coreset tests
+      # The seed's own build (kustomize v5.8.1, ArgoCD's) of every synced
+      # directory, and its Stages against a fake Control Plane.
+      - name: coreset, kbuild and seed tests
         working-directory: tools/kluster
-        run: go test ./internal/coreset
+        run: go test ./internal/coreset ./internal/kbuild ./internal/seed ./internal/catalog

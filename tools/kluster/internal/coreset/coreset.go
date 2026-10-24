@@ -33,6 +33,8 @@ const (
 
 	// elementsPath is the JSON pointer the rehearsal cut replaces.
 	elementsPath = "/spec/generators/0/list/elements"
+	// revisionPath is the JSON pointer of the template's git revision.
+	revisionPath = "/spec/template/spec/source/targetRevision"
 )
 
 // Element is one entry of the core ApplicationSet's list: the Application
@@ -125,6 +127,61 @@ func Core(fsys fs.FS) ([]Element, error) {
 // Rehearsal returns the list the rehearsal cut of core/argocd puts in place
 // of the core list: the value of its JSON6902 replace on elementsPath.
 func Rehearsal(fsys fs.FS) ([]Element, error) {
+	v, err := rehearsalReplace(fsys, elementsPath)
+	if err != nil {
+		return nil, err
+	}
+	var els []Element
+	if err := v.Decode(&els); err != nil {
+		return nil, fmt.Errorf("%s: %s: %w", RehearsalArgoCDFile, elementsPath, err)
+	}
+	return checkElements(RehearsalArgoCDFile, els)
+}
+
+// TargetRevision returns the git revision the core Applications of one
+// environment sync: the template's on live, the rehearsal cut's replace in a
+// rehearsal. The seed builds what ArgoCD owns from that revision, never from
+// the working tree, so the two never fight (ADR 0010, Amendment 2026-10-22).
+func TargetRevision(fsys fs.FS, rehearsal bool) (string, error) {
+	var rev string
+	if rehearsal {
+		v, err := rehearsalReplace(fsys, revisionPath)
+		if err != nil {
+			return "", err
+		}
+		if err := v.Decode(&rev); err != nil {
+			return "", fmt.Errorf("%s: %s: %w", RehearsalArgoCDFile, revisionPath, err)
+		}
+	} else {
+		o, err := find(fsys, CoreAppSetFile, "ApplicationSet", "core")
+		if err != nil {
+			return "", err
+		}
+		var as struct {
+			Spec struct {
+				Template struct {
+					Spec struct {
+						Source struct {
+							TargetRevision string `yaml:"targetRevision"`
+						} `yaml:"source"`
+					} `yaml:"spec"`
+				} `yaml:"template"`
+			} `yaml:"spec"`
+		}
+		if err := o.Node.Decode(&as); err != nil {
+			return "", fmt.Errorf("%s: %w", CoreAppSetFile, err)
+		}
+		rev = as.Spec.Template.Spec.Source.TargetRevision
+	}
+	if rev == "" {
+		return "", fmt.Errorf("no targetRevision for the core Applications (rehearsal %t)", rehearsal)
+	}
+	return rev, nil
+}
+
+// rehearsalReplace returns the value of the rehearsal cut's JSON6902 replace
+// on path, in the patch that targets the core ApplicationSet.
+func rehearsalReplace(fsys fs.FS, path string) (*yaml.Node, error) {
 	data, err := fs.ReadFile(fsys, RehearsalArgoCDFile)
 	if err != nil {
 		return nil, err
@@ -141,19 +198,19 @@ func Rehearsal(fsys fs.FS) ([]Element, error) {
 		var ops []struct {
 			Op    string    `yaml:"op"`
 			Path  string    `yaml:"path"`
-			Value []Element `yaml:"value"`
+			Value yaml.Node `yaml:"value"`
 		}
 		// A strategic-merge patch is a mapping, not a list of operations.
 		if yaml.Unmarshal([]byte(p.Patch), &ops) != nil {
 			continue
 		}
 		for _, op := range ops {
-			if op.Op == "replace" && op.Path == elementsPath {
-				return checkElements(RehearsalArgoCDFile, op.Value)
+			if op.Op == "replace" && op.Path == path {
+				return &op.Value, nil
 			}
 		}
 	}
-	return nil, fmt.Errorf("%s: no replace of %s", RehearsalArgoCDFile, elementsPath)
+	return nil, fmt.Errorf("%s: no replace of %s", RehearsalArgoCDFile, path)
 }
 
 func checkElements(file string, els []Element) ([]Element, error) {

@@ -7,7 +7,10 @@
 #   projects ApplicationSet    removed: no application runs in a rehearsal.
 #   core ApplicationSet        the rehearsal list: pg-drill out (it restores
 #                              live's backups), cert-manager and argocd
-#                              pointed at their rehearsal cuts.
+#                              pointed at their rehearsal cuts; and branch
+#                              `rehearsal` instead of master, so a change is
+#                              rehearsed before it merges. Put it there with
+#                              `git push -f origin HEAD:rehearsal`.
 #
 # The list below replaces the whole list in core-applicationset.yaml. Keep the
 # two in step; `kluster services check` refuses a rehearsal element that is
@@ -46,3 +49,6 @@ patches:
           - {dir: gateway, path: core/gateway, namespace: envoy-gateway-system}
           - {dir: redis, path: core/redis, namespace: redis}
           - {dir: reloader, path: core/reloader, namespace: reloader}
+      - op: replace
+        path: /spec/template/spec/source/targetRevision
+        value: rehearsal
