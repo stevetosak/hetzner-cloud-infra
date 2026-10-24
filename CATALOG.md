@@ -6,6 +6,7 @@ _Generated from `history.jsonl` on this branch by `deployments/render-catalog.mj
 
 | App | Version | Commit | Env | Deployed (UTC) |
 | --- | --- | --- | --- | --- |
+| core-gateway | unknown | - | dev | 2026-10-24T14:13:03Z |
 | core-cnpg | unknown | - | dev | 2026-10-24T14:12:50Z |
 | core-pg-drill | unknown | - | dev | 2026-10-24T14:12:44Z |
 | core-redis | unknown | - | dev | 2026-10-24T14:12:41Z |
@@ -22,6 +23,7 @@ _Generated from `history.jsonl` on this branch by `deployments/render-catalog.mj
 
 | App | Version | Commit | Env | Deployed (UTC) |
 | --- | --- | --- | --- | --- |
+| core-gateway | unknown | - | dev | 2026-10-24T14:13:03Z |
 | core-cnpg | unknown | - | dev | 2026-10-24T14:12:50Z |
 | core-pg-drill | unknown | - | dev | 2026-10-24T14:12:44Z |
 | core-redis | unknown | - | dev | 2026-10-24T14:12:41Z |
