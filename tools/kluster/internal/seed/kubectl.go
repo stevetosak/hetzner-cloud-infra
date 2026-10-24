@@ -28,20 +28,17 @@ const workDir = "/var/lib/kluster/seed"
 
 const adminEnv = "KUBECONFIG=" + kube.AdminConf + " "
 
-// Target is how one manifest goes to the cluster.
+// Target is how one manifest goes to the cluster. It passes no -n: kubectl
+// then refuses every object of another namespace, and a build spans several
+// (core-cnpg writes into pg-cluster, core-reloader into each project). Every
+// namespaced object of a core build names its namespace; only cluster-scoped
+// ones (ClusterIssuer, GatewayClass) name none.
 type Target struct {
 	Manager string
-	// Namespace is given to an object that names none, as ArgoCD gives an
-	// Application's destination; empty for cluster-scoped files.
-	Namespace string
 }
 
 func (t Target) flags() string {
-	f := "--server-side --force-conflicts --field-manager=" + t.Manager
-	if t.Namespace != "" {
-		f += " -n " + t.Namespace
-	}
-	return f
+	return "--server-side --force-conflicts --field-manager=" + t.Manager
 }
 
 // put writes manifest to the Control Plane for one kubectl call.

@@ -68,7 +68,7 @@ func TestBuildReadsTheRepository(t *testing.T) {
 			t.Errorf("live seeds %d of %d Secrets", len(refs), len(repoCatalog(t).Secrets))
 		}
 		argocd := p.Stages[3].(*Apply)
-		if argocd.Target != (Target{Manager: ManagerArgoCD, Namespace: "argocd"}) {
+		if argocd.Target != (Target{Manager: ManagerArgoCD}) {
 			t.Errorf("seed-argocd target %+v", argocd.Target)
 		}
 		if !bytes.Contains(argocd.Manifest, []byte("argocd.argoproj.io/tracking-id: core-argocd:apps/Deployment:argocd/argocd-server")) {

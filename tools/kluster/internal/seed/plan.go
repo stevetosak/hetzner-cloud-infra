@@ -96,7 +96,7 @@ func Build(in Inputs) (*Plan, error) {
 		if err != nil {
 			return nil, err
 		}
-		p.Elements = append(p.Elements, Element{App: app, Manifest: m, Target: Target{Manager: ManagerArgoCD, Namespace: e.Namespace}})
+		p.Elements = append(p.Elements, Element{App: app, Manifest: m, Target: Target{Manager: ManagerArgoCD}})
 		if e.Dir == "argocd" {
 			argocd = &p.Elements[len(p.Elements)-1]
 		}
