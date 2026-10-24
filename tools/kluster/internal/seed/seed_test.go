@@ -168,8 +168,8 @@ func TestApplyIsDoneWhenTheDiffIsEmpty(t *testing.T) {
 	}
 
 	cp.diffRC, cp.diffOut = 2, "error: no matches for kind\n"
-	if _, err := a.Probe(context.Background(), h); err == nil || !strings.Contains(err.Error(), "exit 2") {
-		t.Errorf("a failed diff: %v", err)
+	if st, err := a.Probe(context.Background(), h); err != nil || st.Done || !strings.Contains(st.Detail, "exit 2") {
+		t.Errorf("a diff before the CRDs exist: %+v, %v", st, err)
 	}
 }
 

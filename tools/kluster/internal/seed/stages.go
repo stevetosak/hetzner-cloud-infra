@@ -39,7 +39,10 @@ func (a *Apply) Runbook() string { return Runbook + "#" + a.StageName }
 func (a *Apply) Probe(ctx context.Context, h *stage.Host) (stage.Status, error) {
 	d, err := diff(ctx, h, a.StageName, a.Manifest, a.Target)
 	if err != nil {
-		return stage.Status{}, err
+		// Before seed-crds has run, a kind the manifest holds is unknown
+		// and nothing can be diffed. Act's own error is the one that counts.
+		a.last = nil
+		return stage.Status{Detail: "cannot be diffed yet: " + firstLine(err.Error())}, nil
 	}
 	a.last = &d
 	if d.Empty() {
@@ -164,4 +167,9 @@ func (s *Secrets) Act(ctx context.Context, h *stage.Host) error {
 		}
 	}
 	return nil
+}
+
+func firstLine(s string) string {
+	l, _, _ := strings.Cut(s, "\n")
+	return l
 }

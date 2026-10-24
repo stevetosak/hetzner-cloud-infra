@@ -76,6 +76,13 @@ secrets:
   catalog: ../../secrets.yaml
   sopsConfig: ../../.sops.yaml
 
+# `kluster services seed` reads the zone's A records with a read-only token
+# (Zone:Read and DNS:Read on tosak.net), in both environments.
+services:
+  zone: tosak.net
+  zoneTokenItem: kluster/cloudflare-zone-read
+  zoneTokenField: api_token
+
 # Applied on the Control Plane by `kluster cp init`, relative to this file.
 manifests:
   flannel: ../../core/cni/flannel.yaml

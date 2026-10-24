@@ -38,6 +38,7 @@ type Config struct {
 	Versions     Versions       `yaml:"versions"`
 	Manifests    Manifests      `yaml:"manifests"`
 	Secrets      Secrets        `yaml:"secrets"`
+	Services     Services       `yaml:"services"`
 	Terraform    Terraform      `yaml:"terraform"`
 	Envs         map[string]Env `yaml:"envs"`
 	SSH          SSH            `yaml:"ssh"`
@@ -116,6 +117,17 @@ type Versions struct {
 type Secrets struct {
 	Catalog    string `yaml:"catalog"`
 	SopsConfig string `yaml:"sopsConfig"`
+}
+
+// Services is what `kluster services seed` reads besides the repository.
+type Services struct {
+	// Zone is the Cloudflare zone of the public hosts.
+	Zone string `yaml:"zone"`
+	// ZoneTokenItem and ZoneTokenField hold a read-only token for it
+	// (Zone:Read and DNS:Read on Zone only). Both environments read it: a
+	// rehearsal reads live's records to prove the mismatch report.
+	ZoneTokenItem  string `yaml:"zoneTokenItem"`
+	ZoneTokenField string `yaml:"zoneTokenField"`
 }
 
 // Manifests are the cluster manifests the Control Plane Stages apply, as
@@ -270,6 +282,9 @@ func (c *Config) validate() error {
 		{"versions.sops", c.Versions.Sops},
 		{"secrets.catalog", c.Secrets.Catalog},
 		{"secrets.sopsConfig", c.Secrets.SopsConfig},
+		{"services.zone", c.Services.Zone},
+		{"services.zoneTokenItem", c.Services.ZoneTokenItem},
+		{"services.zoneTokenField", c.Services.ZoneTokenField},
 	}
 	for _, r := range required {
 		if r.v == "" {
