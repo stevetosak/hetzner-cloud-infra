@@ -29,12 +29,20 @@ type Apply struct {
 	Target    Target
 	// What names what the manifest holds, for output.
 	What string
+	// Page is the runbook whose section the Stage carries out; Runbook
+	// when empty.
+	Page string
 
 	last *Diff
 }
 
-func (a *Apply) Name() string    { return a.StageName }
-func (a *Apply) Runbook() string { return Runbook + "#" + a.StageName }
+func (a *Apply) Name() string { return a.StageName }
+func (a *Apply) Runbook() string {
+	if a.Page != "" {
+		return a.Page + "#" + a.StageName
+	}
+	return Runbook + "#" + a.StageName
+}
 
 func (a *Apply) Probe(ctx context.Context, h *stage.Host) (stage.Status, error) {
 	d, err := diff(ctx, h, a.StageName, a.Manifest, a.Target)

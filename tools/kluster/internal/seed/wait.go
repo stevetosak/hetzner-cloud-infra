@@ -20,9 +20,9 @@ type Waiting struct {
 	Sleep func(time.Duration)
 }
 
-// until probes until it says done or the time is up, then returns the last
+// Until probes until it says done or the time is up, then returns the last
 // status.
-func (w Waiting) until(ctx context.Context, probe func() (stage.Status, error)) (stage.Status, error) {
+func (w Waiting) Until(ctx context.Context, probe func() (stage.Status, error)) (stage.Status, error) {
 	sleep := w.Sleep
 	if sleep == nil {
 		sleep = time.Sleep
@@ -98,7 +98,7 @@ func (c *Healthy) Preview(context.Context, *stage.Host) (string, error) {
 }
 
 func (c *Healthy) Act(ctx context.Context, h *stage.Host) error {
-	st, err := c.until(ctx, func() (stage.Status, error) { return c.Probe(ctx, h) })
+	st, err := c.Until(ctx, func() (stage.Status, error) { return c.Probe(ctx, h) })
 	if err != nil {
 		return err
 	}
@@ -164,7 +164,7 @@ func (a *Address) Preview(context.Context, *stage.Host) (string, error) {
 }
 
 func (a *Address) Act(ctx context.Context, h *stage.Host) error {
-	st, err := a.until(ctx, func() (stage.Status, error) { return a.Probe(ctx, h) })
+	st, err := a.Until(ctx, func() (stage.Status, error) { return a.Probe(ctx, h) })
 	if err != nil {
 		return err
 	}

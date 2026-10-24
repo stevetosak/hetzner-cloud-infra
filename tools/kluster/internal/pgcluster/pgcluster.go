@@ -1,11 +1,9 @@
-// Package db is `kluster db create --fresh|--recover` (ADR 0009, Amendment
-// 2026-10-24; runbook docs/runbook/pg-recovery.md). It renders the database
-// Cluster from core/cnpg/cluster, checks the backup buckets before it
-// applies anything, and proves the result by what lands in the bucket.
-//
-// It only creates into an empty slot: it never changes, deletes or replaces a
-// Cluster, and it never deletes a backup.
-package db
+// Package pgcluster reads the database Cluster's files in core/cnpg/cluster
+// (ADR 0009, Amendment 2026-10-24): the Archive Generation they name, the two
+// renders `kluster db create` applies, the check that the recovery overlay
+// agrees with the base, and the bump after a live recovery. It reads and
+// writes files only; package db runs it against a cluster.
+package pgcluster
 
 import (
 	"bytes"

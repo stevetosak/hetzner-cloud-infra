@@ -32,6 +32,9 @@ func Fresh(ctx context.Context, secrets []*catalog.Secret, vault Vault) (map[cat
 				if !k.InRehearsal() {
 					return nil, fmt.Errorf("%s.%s: an issued key has no rehearsal value; name a rehearsalItem or mark the Secret rehearsal: %s", s.Ref, name, catalog.RehearsalOmit)
 				}
+				if vault == nil {
+					return nil, fmt.Errorf("%s.%s: no vault to read its rehearsal item from", s.Ref, name)
+				}
 				b, err := vault.Issued(ctx, k.ForRehearsal())
 				if err != nil {
 					return nil, fmt.Errorf("%s.%s: %w", s.Ref, name, err)

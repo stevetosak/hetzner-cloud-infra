@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/catalog"
-	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/db"
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/pgcluster"
 )
 
 // reloaderAnnotation marks a Deployment Reloader restarts; any key in its
@@ -59,7 +59,7 @@ func Check(fsys fs.FS) []error {
 	errs = append(errs, checkRehearsalSecrets(fsys)...)
 	// The recovery overlay reads the generation the Cluster names and
 	// archives to the next (ADR 0009, Amendment 2026-10-24).
-	errs = append(errs, db.CheckOverlay(fsys)...)
+	errs = append(errs, pgcluster.CheckOverlay(fsys)...)
 	return errs
 }
 
@@ -221,7 +221,7 @@ func forbidden(rel string) string {
 	switch {
 	case strings.HasSuffix(base, ".enc.yaml"):
 		return "a Secret: kluster secrets apply owns it"
-	case base == "pg-cluster.yaml" || rel == db.ClusterDir || strings.HasPrefix(rel, db.ClusterDir+"/"):
+	case base == "pg-cluster.yaml" || rel == pgcluster.ClusterDir || strings.HasPrefix(rel, pgcluster.ClusterDir+"/"):
 		return "the database Cluster: kluster db create owns it, a sync must never change it"
 	case base == "crds.yaml":
 		return "CRDs: the seed owns them"
