@@ -58,10 +58,12 @@ so it works on the first day of a total loss. The patch refuses to run unless
 
 1. **Bring up what the Cluster needs.** After a total loss, rebuild the
    cluster and follow the apply order in
-   [`core/cnpg/README.md`](../../core/cnpg/README.md) up to and including
-   `objectstore.yaml` — the operator, the plugin, the namespace, the Retain
-   storage class, `db-credentials`, `r2-backup-credentials` and the
-   ObjectStore. **Stop before `pg-cluster.yaml`**: applying it would run
+   [`core/cnpg/README.md`](../../core/cnpg/README.md) up to, not including,
+   `pg-cluster.yaml` — the CRDs, the namespaces, `db-credentials`,
+   `r2-backup-credentials`, and then the operator, the plugin, the Retain
+   storage class and the ObjectStore. The last four are what `kubectl apply -k
+   core/cnpg` applies and what the Application `core-cnpg` syncs once
+   [`kluster services seed`](services-seed.md) has run. **Stop before `pg-cluster.yaml`**: applying it would run
    `initdb` and archive an empty database. In the other two cases all of this
    is already in place.
 

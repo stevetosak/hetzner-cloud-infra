@@ -17,8 +17,8 @@ produces three durable records and one ping:
 
 | Output | Where |
 | --- | --- |
-| append-only deploy log | `deployments/history.jsonl` |
-| readable roll-up | `deployments/CATALOG.md` (regenerated, never hand-edited) |
+| append-only deploy log | `history.jsonl` on the branch `deploy-catalog` |
+| readable roll-up | `CATALOG.md` on the branch `deploy-catalog` (regenerated, never hand-edited) |
 | native GitHub Deployment | the app repo's Environments / Deployments tab |
 | "it happened" message | Telegram (infra bot) |
 
@@ -45,7 +45,8 @@ as they always did.
         │
         └─► the app's deploy workflow
               ├─ build   (git describe → APP_VERSION build-arg → image alpha-<sha>)
-              └─ deploy  (kustomize edit set image → commit to THIS repo)
+              └─ deploy  (tag-bump action → PR `deploy/<app>-<sha7>` on THIS repo,
+                          check `deploy-scope`, auto-merge)
                      │
                      ▼
               ArgoCD syncs the app, waits for Healthy
@@ -65,14 +66,14 @@ as they always did.
                                client_payload: { app, project, revision, image } }
                      │
                      ▼
-        .github/workflows/deploy-catalog.yml   (this repo, on master)
-          1. assemble payload; look up apps.json[app].repo
+        .github/workflows/deploy-catalog.yml   (this repo; scripts and apps.json from master, data from deploy-catalog)
+          1. assemble payload (through `env` only); look up apps.json[app].repo
           2. clone the app repo (blobless, no-checkout) for its tags
           3. resolve.mjs  → git describe at the deployed sha → a Row
           4. record.mjs   → append to history.jsonl (idempotent on app+sha)
-                          → regenerate CATALOG.md
-          5. commit  "chore: catalog <app> <version> [skip ci]"  (parallel-safe loop)
-          6. GitHub Deployment on the app repo   (APP_DEPLOY_PAT)
+                          → regenerate CATALOG.md   (both in the `deploy-catalog` branch)
+          5. commit + push to `deploy-catalog` with GITHUB_TOKEN  (parallel-safe loop)
+          6. GitHub Deployment on the app repo   (tosak-deploy-status App token)
           7. Telegram message                    (INFRA_TELEGRAM_*)
 ```
 
@@ -149,9 +150,9 @@ with `node:test` coverage.
 | assemble payload | — | normalize `client_payload` vs the replay input; look up `apps.json[app].repo` |
 | clone app repo (`if repo != ''`) | — | `git clone --filter=blob:none --no-checkout` + `git fetch --tags` — just for `git describe` |
 | build the row | `resolve.mjs` | `parsePayload` → `{app, image, sha, revision}`; `describeVersion` runs `git describe --tags --always --match '<tagPrefix>[0-9]*'` at the sha; append `deployed_at` |
-| record + regenerate | `record.mjs` | `recordRow` appends to `history.jsonl` **idempotent on app+sha**; regenerate `CATALOG.md` via `render-catalog.mjs`; print `appended` / `duplicate` |
-| commit (`if appended`) | — | `chore: catalog <app> <version> [skip ci]` + the parallel-safe push loop |
-| GitHub Deployment (`if repo != ''`) | — | `POST /repos/{app}/deployments` (`environment: dev`, `required_contexts: []`, `auto_merge: false`) + a `success` status → the app repo's Environments tab |
+| record + regenerate | `record.mjs <row> <data-dir>` | `recordRow` appends to `history.jsonl` in the data directory (the checked-out `deploy-catalog` branch), **idempotent on app+sha**; regenerate `CATALOG.md` via `render-catalog.mjs <data-dir>`; print `appended` / `duplicate` |
+| commit (`if appended`) | — | `chore: catalog <app> <version> [skip ci]` + the parallel-safe push loop, pushed to `deploy-catalog` with the workflow's `GITHUB_TOKEN` |
+| GitHub Deployment (`if repo != ''`) | — | a token of the App `tosak-deploy-status` for the one app repo (`permission-deployments: write`); `POST /repos/{app}/deployments` (`environment: dev`, `required_contexts: []`, `auto_merge: false`) + a `success` status → the app repo's Environments tab |
 | Telegram (`if: always() && appended`) | — | `POST .../sendMessage` with `chat_id` + `Deployed: <app> <version> (<sha7>)` |
 
 **`describeVersion` results:** `v0.3.0` on a release commit · `v0.3.0-5-gabc1234`
@@ -163,7 +164,7 @@ deploy block the catalog for another):
 
 ```
 for i in 1..5:
-  git fetch origin master
+  git fetch origin deploy-catalog
   if HEAD^ == FETCH_HEAD:            # upstream unchanged
       git push  → done
   else:                             # upstream moved
@@ -172,13 +173,21 @@ for i in 1..5:
       git commit ; git push  → done
 ```
 
-`CATALOG.md` is derived — never merged, always regenerated. `.gitattributes` marks
-`deployments/history.jsonl merge=union` so even a straight merge of two parallel
-appends keeps both lines.
+`CATALOG.md` is derived — never merged, always regenerated. The data branch has one
+writer (this workflow) and is never merged, so there is no `merge=union` any more; the
+push loop alone keeps parallel appends.
 
-**`APP_DEPLOY_PAT`:** fine-grained, **Deployments: Read and write** on the app repos.
-Unset → the Deployment step warns and skips (catalog + Telegram still run). Expired →
-the step fails (red run) but the catalog commit and Telegram still land.
+The workflow takes **its scripts and `apps.json` from `master`** (a sparse checkout of
+`deployments/`, no credentials) and **its data from the branch `deploy-catalog`**
+(checked out to `_catalog`). The branch is protected by the ruleset
+`deploy-catalog-protection`: no deletion, no force push. The `client_payload` reaches
+the shell only through `env`, re-serialised to one line, and never through `${{ }}`
+inside a script.
+
+**`tosak-deploy-status`:** a GitHub App installed on the app repos
+(`stevetosak/doma`, `stevetosak/authos`) with **Deployments: write** and nothing else.
+The workflow reads the app repo from `apps.json` and mints a token for that one repo.
+A missing key fails the run (it was a skipped step with `APP_DEPLOY_PAT`).
 
 **`chat_id`** is a numeric id, not a username. A bot sends *to* a chat and cannot
 message a user who never pressed Start on it.
@@ -212,11 +221,25 @@ setting *Allow GitHub Actions to create and approve pull requests*.
 
 | Surface | What it is | Written by |
 | --- | --- | --- |
-| `deployments/history.jsonl` | append-only source of truth, one JSON object per deploy, `merge=union` | `record.mjs` only |
-| `deployments/CATALOG.md` | rendered view: "Current" (latest per app) + "Recent history" (last 20) | regenerated, never by hand |
+| `history.jsonl` on `deploy-catalog` | append-only source of truth, one JSON object per deploy | `record.mjs` only |
+| `CATALOG.md` on `deploy-catalog` | rendered view: "Current" (latest per app) + "Recent history" (last 20) | regenerated, never by hand |
 | GitHub Deployments (per app repo) | native GitHub UI, `environment: dev`, links to the live host | `deploy-catalog.yml` |
 
 The Telegram message is the ephemeral ping; the three above are the record.
+
+## How the image tag reaches this repo
+
+The app's deploy job calls the action `.github/actions/tag-bump` (`@master`). It mints
+a token of the App `tosak-tag-bump` (installed on this repository only, Contents and
+Pull requests write), changes only the `newTag:` line of the overlay's
+`kustomization.yaml`, commits through the API on a branch `deploy/<app>-<sha7>`, opens
+a pull request and enables auto-merge. The ruleset `master-protection` requires a pull
+request and the check `deploy-scope`, has an empty bypass list, and forbids force push
+and deletion. `deploy-scope` runs on `pull_request_target` against the base commit and
+accepts a bot pull request only when it changes nothing but `newTag:` in an overlay of
+a project in the generator list; a human pull request must come from the repository
+owner with every commit signed. Proof: doma pull request 84 produced infra pull
+request 48, auto-merged, and ArgoCD rolled the image (2026-10-23).
 
 ## Failure modes
 
@@ -224,10 +247,10 @@ The Telegram message is the ephemeral ping; the three above are the record.
 | --- | --- |
 | ArgoCD `github-token` invalid | `401`; controller marks `notified` anyway, no retry. Fix the token; clear the annotation to replay. |
 | ArgoCD `github-token` lacks `Contents: Read and write` | `403`; same silent `notified` record, same replay. |
-| the record step cannot push to `master` | Branch protection refuses `github-actions[bot]` with `GH006`. The run is red but the notification is already spent, so the row is lost until it is replayed. The checkout uses `INFRA_REPO_TOKEN` for exactly this reason — **do not revert it to the default token**. |
-| Two deploys race on the catalog commit | fetch/reset/re-record loop converges; `merge=union` on `history.jsonl` is the backstop. |
-| `APP_DEPLOY_PAT` unset | Deployment step warns + skips; catalog + Telegram run. |
-| `APP_DEPLOY_PAT` expired | Deployment step fails (red run); catalog commit + Telegram still land. |
+| the record step cannot push to `deploy-catalog` | The run is red but the notification is already spent, so the row is lost until it is replayed. The branch takes pushes from the workflow's `GITHUB_TOKEN`; the ruleset forbids only deletion and force push. |
+| Two deploys race on the catalog commit | fetch/reset/re-record loop converges (record dedupes on app+sha). The loop with parallel runs is not exercised yet. |
+| `tosak-deploy-status` key missing or the App not installed on the app repo | The Deployment step fails (red run); catalog commit + Telegram still land. |
+| a deploy bump is refused by `deploy-scope` | The `tag-bump` action waits for the merge, so the app's CI turns red; nothing deploys. |
 | Telegram secret unset | Telegram step warns + skips; everything else runs. |
 | non-conventional commit subjects | release-please skips them; the version bump still computes. |
 | `git describe` vs release-please tag timing | one commit's version string may read `vX.Y.(Z-1)-N-g<sha>`; self-corrects next commit. |

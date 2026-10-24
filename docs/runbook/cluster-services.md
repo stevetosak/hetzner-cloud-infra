@@ -8,6 +8,8 @@ topics: [kubernetes, ingress, databases, gitops, backups]
 Written verbatim as each command ran, on 2026-09-21 ([ADR 0004](../adr/0004-kluster-safety-model.md)). This file is
 the deliverable of Phase 4.
 
+🔴 **Since 2026-10-24 ArgoCD syncs `core/` and the apply lines below are history.** `kluster services seed` applies the CRDs, Namespaces, Secrets and ArgoCD, and the Applications `core-<dir>` sync the rest, with self-heal on and prune off ([services seed runbook](./services-seed.md), [ADR 0010](../adr/0010-argocd-syncs-core-and-kluster-only-seeds-it.md#amendments)). The steps stay as they ran.
+
 Read [`docs/runbook/rebuild-2026-09-20.md`](./rebuild-2026-09-20.md) for the surrounding plan,
 `docs/adr/0008` for every decision about the Public Entry Point, and
 [`docs/runbook/workers.md`](./workers.md) for the cluster this builds on.

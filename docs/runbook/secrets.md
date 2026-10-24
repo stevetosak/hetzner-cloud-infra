@@ -32,6 +32,14 @@ blank `credentials.yaml` templates no longer exist.
 | `copy` | another key's value, `from: <namespace>/<name>.<key>`, with an optional `format` holding `{value}` |
 | `literal` | a value that is not secret but must be inside a Secret (today only `db-credentials.username`) |
 
+An entry may carry `rehearsal: omit`, with the reason in its note. The services
+seed ([runbook](./services-seed.md)) makes every other Secret of a rehearsal
+namespace fresh, in memory and never in a file, but skips an entry marked
+`omit`: today `cloudflare-dns-token`, `argocd-notifications-secret` and
+`r2-backup-credentials`, which would reach the live outside world. `kluster
+services check` refuses an issued key in a fresh Secret, a copy of an unmade
+Secret and an `omit` that no rehearsal element needs.
+
 Two age keys can decrypt every file. `.sops.yaml` lists both public halves, and
 **either private half alone** decrypts.
 
