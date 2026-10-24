@@ -24,8 +24,8 @@ lock means the old path cannot be cleared. Today the cluster archives to
 `tosak-pg-cluster-g1`, so a recovery reads `g1` and archives to `g2`.
 
 The recovery manifest is not written by hand. It is rendered from
-[`core/cnpg/pg-cluster.yaml`](../../core/cnpg/pg-cluster.yaml) by the JSON
-patches in [`core/cnpg/recovery/`](../../core/cnpg/recovery/README.md), with
+[`core/cnpg/cluster/fresh/pg-cluster.yaml`](../../core/cnpg/cluster/fresh/pg-cluster.yaml) by the JSON
+patch in [`core/cnpg/cluster/recover/`](../../core/cnpg/cluster/README.md), with
 `kubectl patch --local`. That needs no cluster and no tool beyond `kubectl`,
 so it works on the first day of a total loss. The patch refuses to run unless
 `pg-cluster.yaml` is still on `g1`.
