@@ -13,8 +13,9 @@
 | `kustomization.yaml` | what the Application `core-argocd` syncs |
 | `argocd-notifications-secret.enc.yaml` | the one Secret nothing creates, SOPS-encrypted; `secrets.yaml` describes it |
 | `httproute.yaml` | the public route, two rules |
-| `appprojects.yaml` | one AppProject per deployed project, each scoped to its own namespace |
-| `applicationset.yaml` | **the one ApplicationSet** (ADR 0003). One overlay directory is one Application |
+| `appprojects.yaml` | one AppProject per deployed project, each scoped to its own namespace, and the `core` AppProject |
+| `applicationset.yaml` | **the `projects` ApplicationSet** (ADR 0003). One overlay directory is one Application |
+| `core-applicationset.yaml` | **the `core` ApplicationSet** (ADR 0010). One listed `core/` directory is one Application `core-<dir>` |
 
 ## Why this is a render and not an upstream manifest
 

@@ -1,0 +1,102 @@
+# The ApplicationSet for core/ (ADR 0010, Amendment 2026-10-22): one
+# Application `core-<dir>` per directory listed below, in the AppProject
+# `core` (core/argocd/appprojects.yaml). Synced by core-argocd itself, so
+# ArgoCD manages this file too; the kluster seed applies it the first time.
+#
+# A separate file, not a second generator in applicationset.yaml: the
+# `deploy-scope` check parses the `projects` generator out of that file on the
+# base branch, and must keep reading exactly one list there.
+#
+# THE LIST, NOT A SWEEP. Not synced on purpose:
+#
+#   core/hcloud, core/cni   installed by `kluster cp init`, before ArgoCD can run
+#   core/gateway-api        CRDs only; the seed applies it
+#   core/monitoring         parked behind its own grill
+#
+# Each element is {dir, path, namespace}. `path` is separate from `dir` so the
+# rehearsal overlay (core/argocd/rehearsal) can point a directory at its
+# `core/<dir>/rehearsal` overlay and keep the Application name. `namespace` is
+# the destination of objects without one; every namespaced object in a core
+# build names its own.
+#
+# ORDER is not expressed here. The seed applies every crds.yaml and every
+# Namespace first; then each Application converges on its own:
+# SkipDryRunOnMissingResource lets a sync start before another Application's
+# CRD-backed objects can be validated, and `retry` covers a webhook that is not
+# serving yet. No sync waves, no Progressive Syncs (RollingSync turns off
+# auto-sync), no app of apps.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: core
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
+
+  generators:
+    - list:
+        elements:
+          - {dir: argocd, path: core/argocd, namespace: argocd}
+          - {dir: cert-manager, path: core/cert-manager, namespace: cert-manager}
+          - {dir: cnpg, path: core/cnpg, namespace: cnpg-system}
+          - {dir: gateway, path: core/gateway, namespace: envoy-gateway-system}
+          - {dir: pg-drill, path: core/pg-drill, namespace: pg-drill}
+          - {dir: redis, path: core/redis, namespace: redis}
+          - {dir: reloader, path: core/reloader, namespace: reloader}
+
+  # 🔴 Deleting this ApplicationSet must not delete the cluster's services:
+  # the generated Applications carry no resources finalizer while this is true.
+  syncPolicy:
+    preserveResourcesOnDeletion: true
+
+  # A hand change to an Application's syncPolicy sticks: an operator can pause
+  # one core Application (`automated` off) during a repair without this
+  # ApplicationSet putting it back. The cost: a change to the template's
+  # syncPolicy below reaches no existing Application. Change it on each
+  # Application too, or delete the Applications and let them be generated
+  # again (preserveResourcesOnDeletion keeps their objects).
+  ignoreApplicationDifferences:
+    - jsonPointers:
+        - /spec/syncPolicy
+
+  template:
+    metadata:
+      name: 'core-{{.dir}}'
+    spec:
+      project: core
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{.namespace}}'
+      source:
+        repoURL: https://github.com/stevetosak/hetzner-cloud-infra.git
+        targetRevision: HEAD
+        path: '{{.path}}'
+      # The same Reloader rule as the projects ApplicationSet. Here selfHeal is
+      # on, so RespectIgnoreDifferences below keeps a sync from writing the
+      # annotation back as well.
+      ignoreDifferences:
+        - group: apps
+          kind: Deployment
+          jqPathExpressions:
+            - '.spec.template.metadata.annotations."reloader.stakater.com/last-reloaded-from"'
+      syncPolicy:
+        automated:
+          enabled: true
+          # selfHeal on: a hand edit to a core object is reverted to git.
+          # prune off: an object removed from git stays on the cluster until
+          # someone deletes it by hand. A wrong commit can then never delete a
+          # controller or a webhook.
+          selfHeal: true
+          prune: false
+        syncOptions:
+          - ServerSideApply=true
+          - SkipDryRunOnMissingResource=true
+          - RespectIgnoreDifferences=true
+        retry:
+          limit: 10
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 5m

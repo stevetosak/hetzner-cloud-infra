@@ -11,3 +11,4 @@ resources:
   - httproute.yaml
   - appprojects.yaml
   - applicationset.yaml
+  - core-applicationset.yaml

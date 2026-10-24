@@ -63,3 +63,53 @@ spec:
   namespaceResourceWhitelist:
     - group: '*'
       kind: '*'
+---
+# THE CORE PROJECT (ADR 0010, Amendment 2026-10-22)
+#
+# Every Application of core/argocd/core-applicationset.yaml. Wider than a
+# project's AppProject on purpose: core installs controllers, and controllers
+# need cluster-scoped RBAC and webhooks. Two kinds stay out on purpose:
+#
+#   CustomResourceDefinition  only the kluster seed applies CRDs, from each
+#                             core/<dir>/crds.yaml. A sync can never change or
+#                             delete one.
+#   Namespace                 the seed owns every Namespace; ArgoCD owns none.
+#
+# The destinations name each namespace a core build writes to. `authos` and
+# `doma` are there for Reloader's scoped Roles (core/reloader). This list is
+# tidiness, not a security boundary: the whitelist admits ClusterRoleBinding,
+# so a core Application could grant itself anything. The boundary is who can
+# merge to master. `kluster services check` keeps this list in step with the
+# builds.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: core
+  namespace: argocd
+spec:
+  description: core — the cluster services under core/, one Application per directory
+  sourceRepos:
+    - https://github.com/stevetosak/hetzner-cloud-infra.git
+  destinations:
+    - {server: https://kubernetes.default.svc, namespace: argocd}
+    - {server: https://kubernetes.default.svc, namespace: cert-manager}
+    - {server: https://kubernetes.default.svc, namespace: cnpg-system}
+    - {server: https://kubernetes.default.svc, namespace: envoy-gateway-system}
+    - {server: https://kubernetes.default.svc, namespace: gateway}
+    - {server: https://kubernetes.default.svc, namespace: pg-cluster}
+    - {server: https://kubernetes.default.svc, namespace: pg-drill}
+    - {server: https://kubernetes.default.svc, namespace: redis}
+    - {server: https://kubernetes.default.svc, namespace: reloader}
+    - {server: https://kubernetes.default.svc, namespace: authos}
+    - {server: https://kubernetes.default.svc, namespace: doma}
+  clusterResourceWhitelist:
+    - {group: rbac.authorization.k8s.io, kind: ClusterRole}
+    - {group: rbac.authorization.k8s.io, kind: ClusterRoleBinding}
+    - {group: admissionregistration.k8s.io, kind: MutatingWebhookConfiguration}
+    - {group: admissionregistration.k8s.io, kind: ValidatingWebhookConfiguration}
+    - {group: gateway.networking.k8s.io, kind: GatewayClass}
+    - {group: cert-manager.io, kind: ClusterIssuer}
+    - {group: storage.k8s.io, kind: StorageClass}
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
