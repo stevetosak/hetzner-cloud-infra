@@ -1,0 +1,41 @@
+# The rehearsal cut of core/reloader (ADR 0010, Amendment 2026-10-22,
+# decision 14). Reloader watches the projects' namespaces through a Role and
+# a RoleBinding in each. A rehearsal syncs no project, so those namespaces do
+# not exist there, and a sync that carries their Roles fails on every try
+# (`namespaces "doma" not found`). The cut drops them; Reloader itself, and
+# its `--namespaces` argument, stay as on live.
+#
+# A new project in reloader.yaml needs its pair added here too.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../reloader
+patches:
+  - patch: |-
+      $patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: Role
+      metadata:
+        name: reloader-reloader-role
+        namespace: authos
+  - patch: |-
+      $patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      metadata:
+        name: reloader-reloader-role-binding
+        namespace: authos
+  - patch: |-
+      $patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: Role
+      metadata:
+        name: reloader-reloader-role
+        namespace: doma
+  - patch: |-
+      $patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      metadata:
+        name: reloader-reloader-role-binding
+        namespace: doma
