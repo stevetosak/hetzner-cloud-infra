@@ -23,4 +23,12 @@ workers = {
     server_type = "cx23"
     vpn_ip      = "10.100.0.3"
   }
+  k8swk3 = {
+    labels = {
+      role = "worker"
+    }
+    private_ip  = "10.0.2.8"
+    server_type = "cx23"
+    vpn_ip      = "10.100.0.4"
+  }
 }
