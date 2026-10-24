@@ -190,3 +190,55 @@ Fixing the write path after the cutover was weighed and rejected: it would
 leave a personal access token with cluster-admin reach in between. Moving the
 deploy catalog out of git entirely, to GitHub Deployments or R2, is deferred
 until after the rebuild.
+
+**2026-10-24 — the task is built, and the "to be proven" items are proven.**
+The Amendment of 2026-10-22 said the seed was designed and its GitHub and
+rehearsal mechanics unproven. The task is done; this records what changed from
+the design and what the proofs showed. The [Log](../logs/2026-10-24-services-seed-and-the-core-applicationset-built-rehearsed-and-adopted-on-live.md)
+has the evidence, and the [services seed runbook](../runbook/services-seed.md)
+the steps.
+
+**The revision rule.** The seed builds the ArgoCD parts from the revision each
+environment reads: `origin/master` on live, and on a rehearsal the branch
+`rehearsal`, which the rehearsal cut of the core ApplicationSet sets as
+`targetRevision` (the operator pushes it with `git push -f origin HEAD:rehearsal`).
+CRDs, Namespaces and Secrets come from the working tree. A seed-only patch of
+`targetRevision` could not hold, because `core-argocd` syncs the ApplicationSet
+file back from git. Objects that ArgoCD syncs are applied as the manager
+`argocd-controller`, with force, as ArgoCD does, and carry its `tracking-id`
+annotation; the kustomize build is pinned to 5.8.1, the version in ArgoCD v3.5.3.
+
+**The zone token.** The zone Stage reads Cloudflare with a read-only token,
+`kluster/cloudflare-zone-read` (Zone:Read and DNS:Read on `tosak.net`), in both
+environments. A POST to `dns_records` with it gives HTTP 403. The Stage refuses
+success on a mismatched in-scope A record by design, so it also refuses in a
+rehearsal, which proves the report. DNS writes stay deferred.
+
+**Rehearsal cuts** are overlays at `core/rehearsal/<dir>`, not
+`core/<dir>/rehearsal` ([ADR 0009, Amendments](./0009-kluster-builds-the-whole-cluster-and-proves-it-in-a-rehearsal-project.md#amendments)).
+A Secret marked `rehearsal: omit` in `secrets.yaml` is not made in a rehearsal.
+
+**Server-side diff for the core Applications.** ArgoCD's legacy diff kept the
+Gateway and HTTPRoute OutOfSync for ever, because the API fills defaults inside
+list items. The core ApplicationSet template now carries
+`compare-options: ServerSideDiff=true`; an annotation set by hand is stripped
+by the generator, so it has to live in the template.
+
+**Proven in the rehearsal (2026-10-24):** the hook Jobs are idempotent; the
+keys of `argocd-secret` survive repeated server-side applies; a `ScheduledBackup`
+and a `Database` wait for a missing Cluster without error (but `immediate: true`
+leaves a Backup `pending` that starts with the Cluster); a broken ArgoCD
+(`argocd-repo-server` deleted) is repaired by the seed; the LB mismatch report
+works. **Proven on the GitHub proof repository (2026-10-23):** a ruleset with an
+empty bypass binds the owner, a `pull_request_target` check satisfies it, and
+auto-merge works for an App pull request. The write path went further than the
+design: the check also demands signed commits on human pull requests, because
+any token with Contents write could otherwise push to an open human branch. The
+catalog branch is `deploy-catalog`; the two Apps are `tosak-tag-bump` and
+`tosak-deploy-status`.
+
+**Live adoption (2026-10-24):** `kluster services seed --env live --apply`
+left 12 Applications Synced and Healthy. The core Applications self-heal and
+never prune, so the old cert-manager Roles, RoleBindings and Leases in
+`kube-system` were deleted by hand
+([runbook](../runbook/services-seed.md#adopt-the-live-cluster)).

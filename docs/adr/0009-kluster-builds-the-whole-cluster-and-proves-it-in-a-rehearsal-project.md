@@ -227,3 +227,24 @@ archiving to a `rehearsal/` prefix with its own token, and a recovery reading
 the live bucket with a read-only token — stay with the `db create` task.
 Overlays in git also make each cut reviewable in the same pull request as
 the file it changes. Chosen by the operator.
+
+**2026-10-24 — a rehearsal reads the branch `rehearsal`, and a project does not isolate the account's quotas.**
+Three details from the `services seed` rehearsal, each proven there.
+
+A rehearsal's Applications read the branch `rehearsal`, set as `targetRevision`
+by the rehearsal cut of the core ApplicationSet; the operator pushes it with
+`git push -f origin HEAD:rehearsal` before `kluster --env rehearsal services seed`
+([runbook](../runbook/services-seed.md#rehearse-it)). A Secret marked `rehearsal: omit`
+in `secrets.yaml` is not made at all, and every other Secret of a rehearsal
+namespace is made fresh in memory. The rehearsal also needs a cut of Reloader
+(`core/rehearsal/reloader`): its Roles in `authos` and `doma` failed with
+`namespaces "doma" not found`, and the seed now refuses an object in a namespace
+the environment makes no Namespace for.
+
+🔴 The decision said a second Hetzner project isolates the rehearsal. It does
+not isolate quotas: Hetzner counts Primary IPs per account, and a load balancer
+holds two. The rehearsal load balancer was refused with
+`Primary IP limit exceeded (resource_limit_exceeded)` while the account held 9
+of 10; Hetzner raised the limit to 15 the same day. `kluster down` can also race
+the unassign of those Primary IPs, and a second run empties the project
+([rehearsal runbook](../runbook/rehearsal.md)).
