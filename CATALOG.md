@@ -6,6 +6,7 @@ _Generated from `history.jsonl` on this branch by `deployments/render-catalog.mj
 
 | App | Version | Commit | Env | Deployed (UTC) |
 | --- | --- | --- | --- | --- |
+| core-reloader | unknown | - | dev | 2026-10-24T14:12:40Z |
 | authos-duster | duster-v0.0.0+a8d580f | [a8d580f](https://github.com/stevetosak/authos/commit/a8d580fc30e315004afa15ad19fcdb26715d3784) | dev | 2026-10-23T11:15:47Z |
 | authos-api | authos-api-v0.0.0+a8d580f | [a8d580f](https://github.com/stevetosak/authos/commit/a8d580fc30e315004afa15ad19fcdb26715d3784) | dev | 2026-10-23T11:12:44Z |
 | authos-ui | authos-ui-v0.0.0+a8d580f | [a8d580f](https://github.com/stevetosak/authos/commit/a8d580fc30e315004afa15ad19fcdb26715d3784) | dev | 2026-10-23T10:59:33Z |
@@ -18,6 +19,7 @@ _Generated from `history.jsonl` on this branch by `deployments/render-catalog.mj
 
 | App | Version | Commit | Env | Deployed (UTC) |
 | --- | --- | --- | --- | --- |
+| core-reloader | unknown | - | dev | 2026-10-24T14:12:40Z |
 | authos-duster | duster-v0.0.0+a8d580f | [a8d580f](https://github.com/stevetosak/authos/commit/a8d580fc30e315004afa15ad19fcdb26715d3784) | dev | 2026-10-23T11:15:47Z |
 | authos-api | authos-api-v0.0.0+a8d580f | [a8d580f](https://github.com/stevetosak/authos/commit/a8d580fc30e315004afa15ad19fcdb26715d3784) | dev | 2026-10-23T11:12:44Z |
 | authos-ui | authos-ui-v0.0.0+a8d580f | [a8d580f](https://github.com/stevetosak/authos/commit/a8d580fc30e315004afa15ad19fcdb26715d3784) | dev | 2026-10-23T10:59:33Z |
