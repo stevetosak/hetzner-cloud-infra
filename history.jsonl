@@ -14,3 +14,4 @@
 {"app":"core-reloader","version":"unknown","sha":"","image":"ghcr.io/stakater/reloader@sha256:def2480040adc164b3a57340e77674eadfd88fb7f0593df25e93297f29c7fd7c","env":"dev","argocd_revision":"429ef3292af71cd464d442e6d6796877c15db3fb","deployed_at":"2026-10-24T14:12:40Z"}
 {"app":"core-pg-drill","version":"unknown","sha":"","image":"alpine/k8s:1.37.1@sha256:712dc5385d1c1a3f83b747fa9e40f64d433a97f72ff42f9755ff7dd1f62846e4","env":"dev","argocd_revision":"429ef3292af71cd464d442e6d6796877c15db3fb","deployed_at":"2026-10-24T14:12:44Z"}
 {"app":"core-cnpg","version":"unknown","sha":"","image":"ghcr.io/cloudnative-pg/cloudnative-pg:1.30.0","env":"dev","argocd_revision":"429ef3292af71cd464d442e6d6796877c15db3fb","deployed_at":"2026-10-24T14:12:50Z"}
+{"app":"core-redis","version":"unknown","sha":"","image":"redis:8.10.2-alpine","env":"dev","argocd_revision":"429ef3292af71cd464d442e6d6796877c15db3fb","deployed_at":"2026-10-24T14:12:41Z"}
