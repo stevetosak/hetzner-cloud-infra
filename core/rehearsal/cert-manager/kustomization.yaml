@@ -1,0 +1,25 @@
+# The rehearsal cut of core/cert-manager (ADR 0010, Amendment 2026-10-22,
+# decision 14). A rehearsal cluster must not ask Let's Encrypt for
+# certificates: the production rate limits are shared with live, and the
+# rehearsal has no DNS of its own.
+#
+# The issuer keeps its NAME, letsencrypt-prod, and becomes self-signed. Then
+# core/gateway/certificate.yaml needs no rehearsal cut: it asks the same
+# issuer and gets a self-signed wildcard.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../cert-manager
+patches:
+  - target:
+      group: cert-manager.io
+      kind: ClusterIssuer
+      name: letsencrypt-prod
+    patch: |-
+      apiVersion: cert-manager.io/v1
+      kind: ClusterIssuer
+      metadata:
+        name: letsencrypt-prod
+      spec:
+        acme: null
+        selfSigned: {}

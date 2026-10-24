@@ -14,8 +14,9 @@
 #   core/monitoring         parked behind its own grill
 #
 # Each element is {dir, path, namespace}. `path` is separate from `dir` so the
-# rehearsal overlay (core/argocd/rehearsal) can point a directory at its
-# `core/<dir>/rehearsal` overlay and keep the Application name. `namespace` is
+# rehearsal overlay (core/rehearsal/argocd) can point a directory at its
+# rehearsal cut `core/rehearsal/<dir>` and keep the Application name. The cuts
+# live outside core/<dir>/: kustomize refuses an overlay inside its own base. `namespace` is
 # the destination of objects without one; every namespaced object in a core
 # build names its own.
 #
