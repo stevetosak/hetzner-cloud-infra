@@ -1,0 +1,14 @@
+# Synced by the Application core-argocd (ADR 0010, Amendment 2026-10-22).
+# NOT listed, and never to be: namespace.yaml and crds.yaml (the seed),
+# argocd-notifications-secret.enc.yaml (kluster secrets apply), argocd-
+# values.yaml (render input).
+# `kluster services check` refuses a kustomization that names a *.enc.yaml,
+# pg-cluster.yaml, a values file, a crds.yaml or a Namespace.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - argocd.yaml
+  - httproute.yaml
+  - appprojects.yaml
+  - applicationset.yaml
+  - core-applicationset.yaml

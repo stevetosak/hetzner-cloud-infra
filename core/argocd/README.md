@@ -9,10 +9,13 @@
 | `argocd-values.yaml` | every value overridden, each with its reason |
 | `render.sh` | pulls the pinned chart to a temp dir and renders |
 | `argocd.yaml` | **generated. Do not edit.** Header carries version and digest |
+| `crds.yaml` | **generated.** ArgoCD's three CRDs, split from the render; the kluster seed applies them |
+| `kustomization.yaml` | what the Application `core-argocd` syncs |
 | `argocd-notifications-secret.enc.yaml` | the one Secret nothing creates, SOPS-encrypted; `secrets.yaml` describes it |
 | `httproute.yaml` | the public route, two rules |
-| `appprojects.yaml` | one AppProject per deployed project, each scoped to its own namespace |
-| `applicationset.yaml` | **the one ApplicationSet** (ADR 0003). One overlay directory is one Application |
+| `appprojects.yaml` | one AppProject per deployed project, each scoped to its own namespace, and the `core` AppProject |
+| `applicationset.yaml` | **the `projects` ApplicationSet** (ADR 0003). One overlay directory is one Application |
+| `core-applicationset.yaml` | **the `core` ApplicationSet** (ADR 0010). One listed `core/` directory is one Application `core-<dir>` |
 
 ## Why this is a render and not an upstream manifest
 
@@ -34,18 +37,18 @@ would break that — see the warning at the top of `argocd-values.yaml`.
 The namespace and the CRDs first, then everything else.
 
     kubectl apply -f core/argocd/namespace.yaml
-    kubectl apply --server-side -f core/argocd/argocd.yaml
+    kubectl apply --server-side -f core/argocd/crds.yaml
 
     # The one Secret nothing creates (secrets.yaml), from tools/kluster:
     go run . secrets apply --apply argocd/argocd-notifications-secret
 
-    kubectl apply -f core/argocd/httproute.yaml
-
-    # The declaration of everything ArgoCD deploys. Namespaces first: the
-    # AppProjects deny cluster-scoped resources, so ArgoCD cannot make them.
+    # Namespaces first: the AppProjects deny Namespaces, so ArgoCD cannot
+    # make them.
     kubectl apply -f projects/authos/namespace.yaml -f projects/doma/namespace.yaml
-    kubectl apply -f core/argocd/appprojects.yaml
-    kubectl apply -f core/argocd/applicationset.yaml
+
+    # The install, the route, the AppProjects and the ApplicationSets: what
+    # the Application core-argocd syncs.
+    kubectl apply --server-side -k core/argocd
 
 🔴 **`--server-side` is mandatory, not a preference.** The
 `applicationsets.argoproj.io` CRD alone is about 23,000 lines, far over the
@@ -100,6 +103,12 @@ Four edits, all deliberate:
 4. the namespace added to `allowedRoutes` on **both** listeners in
    `core/gateway/gateway.yaml`, or the project's route is refused with
    `NotAllowedByListeners`.
+
+Plus one entry per component in `deployments/apps.json`, and, when a
+Deployment carries a Reloader annotation, the namespace in Reloader's scope
+(`core/reloader`) and in the `core` AppProject's destinations. `kluster
+services check`, run in CI by `services-check.yml`, takes the generator list
+as the source of truth and refuses a project that misses any of these.
 
 ### What the AppProject actually stops
 

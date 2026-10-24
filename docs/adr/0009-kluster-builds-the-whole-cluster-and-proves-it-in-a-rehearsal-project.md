@@ -213,10 +213,13 @@ set over `core/`, applied the way `pg-rehearsal` is, with
 `kubectl patch --local`. [ADR 0010, Amendments](./0010-argocd-syncs-core-and-kluster-only-seeds-it.md#amendments)
 has ArgoCD sync `core/` with self-heal on, so a patch applied beside ArgoCD
 would be reverted on the next sync. Each cut is instead a kustomize overlay
-committed next to what it changes, `core/<dir>/rehearsal/kustomization.yaml`,
-with `..` as its base and the cut as a patch, and the seed writes the core
-ApplicationSet for each environment so that a rehearsal Application points at
-the overlay. The cuts in the `services seed` task are a self-signed
+committed in git, `core/rehearsal/<dir>/kustomization.yaml`, with
+`../../<dir>` as its base and the cut as a patch. 🔴 The first wording put the
+overlay inside the directory it changes, `core/<dir>/rehearsal/` with `..` as
+its base; kustomize refuses that with "cycle detected", because a base may not
+contain its own overlay (found while building it, 2026-10-24). The rehearsal
+overlay of `core/argocd` replaces the core ApplicationSet's list, so that a
+rehearsal Application points at the overlays. The cuts in the `services seed` task are a self-signed
 ClusterIssuer instead of Let's Encrypt, ArgoCD notifications off, the Restore
 Drill and the `projects` ApplicationSet left out, and rehearsal Secrets made
 fresh in memory and never written to an `*.enc.yaml`. The CNPG cuts —

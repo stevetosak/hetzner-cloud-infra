@@ -1,0 +1,48 @@
+# The rehearsal cut of core/argocd (ADR 0010, Amendment 2026-10-22,
+# decision 14). In a rehearsal the Application core-argocd points here, so
+# ArgoCD keeps the cut in place itself.
+#
+#   notifications controller   0 replicas: a rehearsal deploy must not send
+#                              Telegram messages or write the deploy catalog.
+#   projects ApplicationSet    removed: no application runs in a rehearsal.
+#   core ApplicationSet        the rehearsal list: pg-drill out (it restores
+#                              live's backups), cert-manager and argocd
+#                              pointed at their rehearsal cuts.
+#
+# The list below replaces the whole list in core-applicationset.yaml. Keep the
+# two in step; `kluster services check` refuses a rehearsal element that is
+# not in the main list.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../argocd
+patches:
+  - target:
+      group: apps
+      kind: Deployment
+      name: argocd-notifications-controller
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 0
+  - patch: |-
+      $patch: delete
+      apiVersion: argoproj.io/v1alpha1
+      kind: ApplicationSet
+      metadata:
+        name: projects
+        namespace: argocd
+  - target:
+      group: argoproj.io
+      kind: ApplicationSet
+      name: core
+    patch: |-
+      - op: replace
+        path: /spec/generators/0/list/elements
+        value:
+          - {dir: argocd, path: core/rehearsal/argocd, namespace: argocd}
+          - {dir: cert-manager, path: core/rehearsal/cert-manager, namespace: cert-manager}
+          - {dir: cnpg, path: core/cnpg, namespace: cnpg-system}
+          - {dir: gateway, path: core/gateway, namespace: envoy-gateway-system}
+          - {dir: redis, path: core/redis, namespace: redis}
+          - {dir: reloader, path: core/reloader, namespace: reloader}
