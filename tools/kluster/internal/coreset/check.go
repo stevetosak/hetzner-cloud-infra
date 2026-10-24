@@ -72,8 +72,9 @@ func FreshSecrets(cat *catalog.Catalog, namespaces []string) []*catalog.Secret {
 }
 
 // checkRehearsalSecrets proves a rehearsal can make each of its Secrets
-// fresh in memory (ADR 0009, Amendment 2026-10-22): no issued key, because
-// only a live value exists for it, and no copy of a Secret the rehearsal does
+// fresh in memory (ADR 0009, Amendments 2026-10-22 and 2026-10-24): no
+// issued key without a rehearsalItem, because only a live value exists for
+// it, and no copy of a Secret the rehearsal does
 // not make. A rehearsal: omit on a Secret no rehearsal makes is stale.
 func checkRehearsalSecrets(fsys fs.FS) []error {
 	data, err := fs.ReadFile(fsys, catalog.FileName)
@@ -102,8 +103,8 @@ func checkRehearsalSecrets(fsys fs.FS) []error {
 		for _, name := range f.KeyNames() {
 			k := f.Keys[name]
 			switch {
-			case k.Kind == catalog.Issued:
-				errs = append(errs, fmt.Errorf("%s: %s.%s is issued and a rehearsal makes the Secret fresh: set rehearsal: %s, with the reason in its note",
+			case !k.InRehearsal():
+				errs = append(errs, fmt.Errorf("%s: %s.%s is issued and a rehearsal makes the Secret fresh: name a rehearsalItem, or set rehearsal: %s with the reason in its note",
 					catalog.FileName, f.Ref, name, catalog.RehearsalOmit))
 			case k.Kind == catalog.Copy && !made[k.Source().Secret]:
 				errs = append(errs, fmt.Errorf("%s: %s.%s copies %s, which a rehearsal does not make", catalog.FileName, f.Ref, name, k.Source()))

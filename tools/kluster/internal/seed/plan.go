@@ -40,7 +40,9 @@ type Inputs struct {
 	Synced  string
 	Catalog *catalog.Catalog
 	// Store reads the Secret files; live only.
-	Store   *secrets.Store
+	Store *secrets.Store
+	// Vault reads the rehearsal items of issued keys; a rehearsal only.
+	Vault   secrets.Vault
 	Zone    ZoneReader
 	Timeout time.Duration
 	Poll    time.Duration
@@ -139,7 +141,7 @@ func Build(in Inputs) (*Plan, error) {
 			What: fmt.Sprintf("the CRDs of %d file(s)", len(ws.CRDFiles))},
 		&Apply{StageName: "seed-namespaces", Manifest: nsFiles, Target: Target{Manager: ManagerSeed},
 			What: fmt.Sprintf("%d Namespace(s)", len(namespaces))},
-		&Secrets{Rehearsal: in.Rehearsal, Secrets: made, Store: in.Store},
+		&Secrets{Rehearsal: in.Rehearsal, Secrets: made, Store: in.Store, Vault: in.Vault},
 		&Apply{StageName: "seed-argocd", Manifest: argocd.Manifest, Target: argocd.Target,
 			What: "the build of core-argocd at the synced revision"},
 		&Healthy{Applications: ss.Applications(), Waiting: wait},

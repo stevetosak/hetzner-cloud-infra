@@ -71,6 +71,8 @@ type Secrets struct {
 	Secrets   []*catalog.Secret
 	// Store reads the files; live only.
 	Store *secrets.Store
+	// Vault reads the rehearsal items of issued keys; a rehearsal only.
+	Vault secrets.Vault
 
 	diffs  []secrets.LiveDiff
 	absent []*catalog.Secret
@@ -157,7 +159,7 @@ func (s *Secrets) Act(ctx context.Context, h *stage.Host) error {
 		// `kluster secrets apply --force-conflicts`.
 		return secrets.Apply(ctx, s.Store, cl, s.diffs, false)
 	}
-	fresh, err := secrets.Fresh(s.Secrets)
+	fresh, err := secrets.Fresh(ctx, s.Secrets, s.Vault)
 	if err != nil {
 		return err
 	}

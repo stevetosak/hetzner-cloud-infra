@@ -154,6 +154,8 @@ func (a *app) seed(ctx context.Context, cmd *cobra.Command) error {
 			return err
 		}
 		in.Store = secrets.NewStore(cat, bin, secrets.NewBitwarden(bw).AgeKey)
+	} else {
+		in.Vault = secrets.NewBitwarden(bw)
 	}
 	svc := a.cfg.Services
 	item, err := bw.Item(ctx, svc.ZoneTokenItem)

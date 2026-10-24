@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
@@ -30,7 +31,14 @@ secrets:
     rehearsal: omit
     keys:
       api-token: {kind: issued, item: kluster/cloudflare-dns, field: api_token}
+  pg-cluster/r2:
+    file: core/cnpg/r2.enc.yaml
+    keys:
+      KEY: {kind: issued, item: kluster/r2-live, field: access_key_id, rehearsalItem: kluster/r2-rehearsal}
 `
+
+// rehearsalVault holds only the rehearsal item: a read of the live one fails.
+var rehearsalVault = fakeVault{"kluster/r2-rehearsal/access_key_id": "rehearsal-key"}
 
 func TestFreshMakesEveryKind(t *testing.T) {
 	cat, err := catalog.Parse([]byte(freshCatalog), "/repo")
@@ -43,7 +51,7 @@ func TestFreshMakesEveryKind(t *testing.T) {
 			made = append(made, s)
 		}
 	}
-	first, err := Fresh(made)
+	first, err := Fresh(context.Background(), made, rehearsalVault)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,12 +75,15 @@ func TestFreshMakesEveryKind(t *testing.T) {
 		t.Error("the copy does not hold its source's fresh value")
 	}
 
-	again, err := Fresh(made)
+	again, err := Fresh(context.Background(), made, rehearsalVault)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if bytes.Equal(again[catalog.Ref{Namespace: "redis", Name: "redis"}], first[catalog.Ref{Namespace: "redis", Name: "redis"}]) {
 		t.Error("two runs made the same value")
+	}
+	if _, r2 := values("pg-cluster", "r2"); string(r2["KEY"]) != "rehearsal-key" {
+		t.Errorf("issued key with a rehearsalItem = %q, want the rehearsal item's value", r2["KEY"])
 	}
 	urlSecret, _ := cat.Secret(catalog.Ref{Namespace: "redis", Name: "url"})
 	ok, err := HasKeys(first[urlSecret.Ref], urlSecret)
@@ -87,11 +98,11 @@ func TestFreshRefuses(t *testing.T) {
 		t.Fatal(err)
 	}
 	token, _ := cat.Secret(catalog.Ref{Namespace: "cert-manager", Name: "token"})
-	if _, err := Fresh([]*catalog.Secret{token}); err == nil || !strings.Contains(err.Error(), "no rehearsal value") {
+	if _, err := Fresh(context.Background(), []*catalog.Secret{token}, rehearsalVault); err == nil || !strings.Contains(err.Error(), "no rehearsal value") {
 		t.Errorf("issued key: %v", err)
 	}
 	url, _ := cat.Secret(catalog.Ref{Namespace: "redis", Name: "url"})
-	if _, err := Fresh([]*catalog.Secret{url}); err == nil || !strings.Contains(err.Error(), "does not make") {
+	if _, err := Fresh(context.Background(), []*catalog.Secret{url}, rehearsalVault); err == nil || !strings.Contains(err.Error(), "does not make") {
 		t.Errorf("copy without its source: %v", err)
 	}
 }

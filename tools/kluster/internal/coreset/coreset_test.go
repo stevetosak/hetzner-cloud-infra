@@ -173,8 +173,12 @@ func TestEachRuleFires(t *testing.T) {
 		}, "cert-manager/cloudflare-dns-token.api-token is issued"},
 		{"a fresh copy of an omitted Secret", func(t *testing.T, m fstest.MapFS) {
 			edit(t, m, catalog.FileName, "        kind: literal\n        value: tosak\n",
-				"        kind: copy\n        from: pg-cluster/r2-backup-credentials.ACCESS_KEY_ID\n")
-		}, "copies pg-cluster/r2-backup-credentials.ACCESS_KEY_ID, which a rehearsal does not make"},
+				"        kind: copy\n        from: argocd/argocd-notifications-secret.github-token\n")
+		}, "copies argocd/argocd-notifications-secret.github-token, which a rehearsal does not make"},
+		{"an issued key without its rehearsal item", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, catalog.FileName, "        field: access_key_id\n        rehearsalItem: kluster/r2-backup-rehearsal-ro\n",
+				"        field: access_key_id\n")
+		}, "pg-cluster/r2-source-credentials.ACCESS_KEY_ID is issued"},
 		{"an omit no rehearsal needs", func(t *testing.T, m fstest.MapFS) {
 			edit(t, m, catalog.FileName, "    file: core/pg-drill/telegram.enc.yaml\n", "    file: core/pg-drill/telegram.enc.yaml\n    rehearsal: omit\n")
 		}, "pg-drill/telegram has rehearsal: omit, but no rehearsal namespace holds it"},
