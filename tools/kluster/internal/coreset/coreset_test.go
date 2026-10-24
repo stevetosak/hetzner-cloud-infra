@@ -80,6 +80,11 @@ func TestListsAreRead(t *testing.T) {
 	if slices.ContainsFunc(reh, func(e Element) bool { return e.Dir == "pg-drill" }) {
 		t.Errorf("the rehearsal list must leave the Restore Drill out: %+v", reh)
 	}
+	for rehearsal, want := range map[bool]string{false: "HEAD", true: "rehearsal"} {
+		if rev, err := TargetRevision(fsys, rehearsal); err != nil || rev != want {
+			t.Errorf("TargetRevision(rehearsal %t) = %q, %v; want %q", rehearsal, rev, err, want)
+		}
+	}
 	projects, err := Projects(fsys)
 	if err != nil {
 		t.Fatal(err)
@@ -159,6 +164,9 @@ func TestEachRuleFires(t *testing.T) {
 		{"an element namespace no namespace file makes", func(t *testing.T, m fstest.MapFS) {
 			delete(m, "core/redis/namespace.yaml")
 		}, "namespace redis of core-redis is in no namespace file"},
+		{"a rehearsal that syncs master", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, RehearsalArgoCDFile, "        path: /spec/template/spec/source/targetRevision\n", "        path: /spec/template/spec/source/repoURL\n")
+		}, "no replace of /spec/template/spec/source/targetRevision"},
 		{"an issued key a rehearsal would make fresh", func(t *testing.T, m fstest.MapFS) {
 			edit(t, m, catalog.FileName, "    file: core/cert-manager/cloudflare-dns-token.enc.yaml\n    rehearsal: omit\n",
 				"    file: core/cert-manager/cloudflare-dns-token.enc.yaml\n")

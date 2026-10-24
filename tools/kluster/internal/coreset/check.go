@@ -52,6 +52,8 @@ func Check(fsys fs.FS) []error {
 			_, err = s.Namespaces(fsys)
 		}
 		add(err)
+		_, err = TargetRevision(fsys, rehearsal)
+		add(err)
 	}
 	errs = append(errs, checkRehearsalSecrets(fsys)...)
 	return errs
