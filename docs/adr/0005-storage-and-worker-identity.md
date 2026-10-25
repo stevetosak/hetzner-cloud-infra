@@ -93,3 +93,14 @@ for it to protect.
   `kubernetes.io/hostname: k8swk2-20260105-182701`, a dead worker. Stable names
   make such a pin durable for the first time; the value must be corrected to
   `k8swk2`.
+
+## Amendments
+
+**2026-10-25 — monitoring is not pinned to a Worker.** The last consequence
+above said the pin in `core/monitoring/lean-monitoring.yaml` must be corrected
+to `k8swk2`. It is dropped instead, and the file replaced
+([ADR 0011](./0011-monitoring-runs-in-the-cluster-and-a-heartbeat-outside-watches-it.md)).
+The pin kept Prometheus next to its volume; with Prometheus on an `emptyDir`
+there is nothing to stay next to, and a pin would only take monitoring down with
+the one Worker it is tied to. Prometheus and Alertmanager prefer different
+nodes instead.

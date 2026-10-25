@@ -339,3 +339,23 @@ an app deploy, a write to the live backups. A rehearsal goes on only while it
 can show, from the running cluster, that no live link remains.
 
 _Avoid_: patch set (the older form the cuts replaced), rehearsal overlay.
+
+## Heartbeat
+
+A ping that a watcher sends on a schedule to a service outside both the cluster
+and the watcher, which raises an alert when a ping is late. It turns silence
+into a signal: a watcher that reports only faults is also silent when it is
+dead, and a missing Heartbeat is how that death is seen. A Heartbeat can also
+carry a failure, so the outside service becomes a second path for a fault the
+watcher found.
+
+_Avoid_: health check (a probe that asks, not a ping that is expected),
+uptime check.
+
+## Alert Chat
+
+The one place where every "something is wrong" message arrives, from the
+cluster and from outside it, and nothing else. A message there always means
+act. Distinct from the chat that announces deploys, which is information.
+
+_Avoid_: alerts channel, notification chat.
