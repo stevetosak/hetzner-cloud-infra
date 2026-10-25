@@ -14,6 +14,7 @@ import (
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/catalog"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/config"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/coreset"
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/pgcluster"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/secrets"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/seed"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/sops"
@@ -156,6 +157,11 @@ func (a *app) seed(ctx context.Context, cmd *cobra.Command) error {
 		in.Store = secrets.NewStore(cat, bin, secrets.NewBitwarden(bw).AgeKey)
 	} else {
 		in.Vault = secrets.NewBitwarden(bw)
+		as, _, err := pgcluster.Stores(root, false)
+		if err != nil {
+			return err
+		}
+		in.RehearsalBucket = as.Bucket
 	}
 	svc := a.cfg.Services
 	item, err := bw.Item(ctx, svc.ZoneTokenItem)

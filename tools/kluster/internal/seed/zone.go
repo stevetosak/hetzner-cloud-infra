@@ -28,15 +28,22 @@ type ZoneReader interface {
 
 // Zone is done when every in-scope host has an A record and each points at
 // the load balancer. It never writes: when a record is wrong it names the
-// change and fails. A rehearsal's load balancer is never the live one, so
-// there this Stage always refuses, by design (ADR 0010, Amendment
-// 2026-10-22): that refusal is the mismatch report run for real.
+// change and fails.
+//
+// A rehearsal's load balancer is never the live one, so there the Stage
+// proves the opposite (ADR 0010, Amendment 2026-10-25): the zone still points
+// at live, untouched. It is done when each host has exactly one A record, all
+// hold the same address, and none holds the rehearsal load balancer's. The
+// live address itself is not known to a rehearsal: its token sees only its
+// own project, and the address is the origin behind Cloudflare, which stays
+// out of the public repository.
 type Zone struct {
 	Reader ZoneReader
 	// Hosts are the hostnames of the routes the environment syncs.
 	Hosts []string
 	// Address is the load balancer's address, from the lb-address Stage.
-	Address *string
+	Address   *string
+	Rehearsal bool
 
 	wrong []string
 }
@@ -51,6 +58,13 @@ func (z *Zone) Probe(ctx context.Context, _ *stage.Host) (stage.Status, error) {
 	recs, err := z.Reader.ARecords(ctx)
 	if err != nil {
 		return stage.Status{}, err
+	}
+	if z.Rehearsal {
+		z.wrong = UntouchedMismatches(recs, z.Hosts, *z.Address)
+		if len(z.wrong) == 0 {
+			return stage.Status{Done: true, Detail: fmt.Sprintf("%d host(s) keep one address, the same for all, and none points at the rehearsal load balancer %s", len(z.Hosts), *z.Address)}, nil
+		}
+		return stage.Status{Detail: fmt.Sprintf("%d of %d host(s) do not point at live untouched", len(z.wrong), len(z.Hosts))}, nil
 	}
 	z.wrong = Mismatches(recs, z.Hosts, *z.Address)
 	if len(z.wrong) == 0 {
@@ -80,15 +94,53 @@ func Mismatches(recs []Record, hosts []string, addr string) []string {
 	return out
 }
 
+// UntouchedMismatches names each host whose A records are not one record,
+// the address every other host holds, and not rehearsalAddr. The address
+// itself is never printed: it is live's origin.
+func UntouchedMismatches(recs []Record, hosts []string, rehearsalAddr string) []string {
+	var out []string
+	count := map[string]int{}
+	for _, h := range hosts {
+		var got []string
+		for _, r := range recs {
+			if r.Name == h {
+				got = append(got, r.Content)
+			}
+		}
+		switch {
+		case len(got) == 0:
+			out = append(out, h+": no A record")
+		case slices.Contains(got, rehearsalAddr):
+			out = append(out, h+": points at the rehearsal load balancer "+rehearsalAddr+"; point it back at live")
+		case len(got) > 1:
+			out = append(out, fmt.Sprintf("%s: %d A records", h, len(got)))
+		default:
+			count[got[0]]++
+		}
+	}
+	if len(count) > 1 {
+		out = append(out, fmt.Sprintf("the hosts point at %d different addresses, not one", len(count)))
+	}
+	return out
+}
+
 func (z *Zone) Preview(context.Context, *stage.Host) (string, error) {
-	if len(z.wrong) == 0 {
+	switch {
+	case len(z.wrong) == 0 && z.Rehearsal:
+		return "show that the A records of " + strings.Join(z.Hosts, ", ") + " still point at live, none at the rehearsal load balancer\n", nil
+	case len(z.wrong) == 0:
 		return "compare the A records of " + strings.Join(z.Hosts, ", ") + " with the load balancer\n", nil
+	case z.Rehearsal:
+		return "the zone is not as live left it:\n  " + strings.Join(z.wrong, "\n  ") + "\n", nil
 	}
 	return "change by hand in Cloudflare (kluster writes no record):\n  " + strings.Join(z.wrong, "\n  ") + "\n", nil
 }
 
 func (z *Zone) Act(context.Context, *stage.Host) error {
-	return fmt.Errorf("the zone does not point at the load balancer: change the records above by hand, then run the seed again")
+	if z.Rehearsal {
+		return fmt.Errorf("the zone is not as live left it (above); a rehearsal never changes the zone: put the records back by hand")
+	}
+	return fmt.Errorf("the zone does not point at the load balancer: change the records above by hand, then run again")
 }
 
 // Cloudflare reads a zone through the API with a read-only token

@@ -42,10 +42,13 @@ type Inputs struct {
 	// Store reads the Secret files; live only.
 	Store *secrets.Store
 	// Vault reads the rehearsal items of issued keys; a rehearsal only.
-	Vault   secrets.Vault
-	Zone    ZoneReader
-	Timeout time.Duration
-	Poll    time.Duration
+	Vault secrets.Vault
+	Zone  ZoneReader
+	// RehearsalBucket is the rehearsal archive bucket, which the
+	// rehearsal-cuts Stage expects the archive ObjectStore to name.
+	RehearsalBucket string
+	Timeout         time.Duration
+	Poll            time.Duration
 }
 
 // Element is one core Application's build, for the Plan Mode diff.
@@ -60,10 +63,21 @@ type Plan struct {
 	Stages   []stage.Stage
 	Elements []Element
 	Hosts    []string
+	// Zone is the last of Stages. kluster up runs it after the database,
+	// at the very end.
+	Zone *Zone
+}
+
+// BeforeZone is every Stage but the zone.
+func (p *Plan) BeforeZone() []stage.Stage {
+	return slices.DeleteFunc(slices.Clone(p.Stages), func(s stage.Stage) bool { return s == stage.Stage(p.Zone) })
 }
 
 // Build reads both trees and builds every manifest the seed applies.
 func Build(in Inputs) (*Plan, error) {
+	if in.Rehearsal && in.RehearsalBucket == "" {
+		return nil, errors.New("a rehearsal seed needs the rehearsal archive bucket, for the rehearsal-cuts Stage")
+	}
 	wt := os.DirFS(in.WorkTree)
 	ws, err := coreset.SeedFor(wt, in.Rehearsal)
 	if err != nil {
@@ -145,9 +159,16 @@ func Build(in Inputs) (*Plan, error) {
 		&Apply{StageName: "seed-argocd", Manifest: argocd.Manifest, Target: argocd.Target,
 			What: "the build of core-argocd at the synced revision"},
 		&Healthy{Applications: ss.Applications(), Waiting: wait},
-		&Address{Gateway: GatewayName, Namespace: GatewayNamespace, Waiting: wait, Got: addr},
-		&Zone{Reader: in.Zone, Hosts: p.Hosts, Address: addr},
 	}
+	// The cuts are proven once core is in step, before anything goes on
+	// (ADR 0009, Amendment 2026-10-25).
+	if in.Rehearsal {
+		p.Stages = append(p.Stages, &Cuts{Bucket: in.RehearsalBucket})
+	}
+	p.Zone = &Zone{Reader: in.Zone, Hosts: p.Hosts, Address: addr, Rehearsal: in.Rehearsal}
+	p.Stages = append(p.Stages,
+		&Address{Gateway: GatewayName, Namespace: GatewayNamespace, Waiting: wait, Got: addr},
+		p.Zone)
 	return p, nil
 }
 
