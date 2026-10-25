@@ -113,34 +113,44 @@ func (a *app) dbCreate(ctx context.Context, cmd *cobra.Command) error {
 		return fmt.Errorf("%s has changes that are not committed (a generation bump is committed before the next db create):\n%s", pgcluster.ClusterDir, d)
 	}
 
-	bw := bitwarden.New(cmd.ErrOrStderr())
-	vault := secrets.NewBitwarden(bw)
-	archive, source, err := openStores(ctx, root, cat, vault, live)
+	plan, err := a.dbPlan(ctx, bitwarden.New(cmd.ErrOrStderr()), root, cat, mode, target, dbFlags.timeout)
 	if err != nil {
 		return err
 	}
-	in := db.Inputs{Mode: mode, Live: live, Root: root, TargetTime: target, Archive: archive,
-		Waiting: seed.Waiting{Timeout: dbFlags.timeout, Poll: 10 * time.Second}}
-	if mode == db.Recover {
-		in.Source = source
-		if live {
-			if in.Locks, err = a.lockReader(ctx, bw, root); err != nil {
-				return err
-			}
-		}
-	}
-	plan, err := db.Build(in)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(a.out, "db create --%s: the repository names %s; the Cluster archives to %s/%s\n",
-		mode, plan.Generation.ServerName(), archive.Name(), plan.Archives.Prefix())
 	return a.onControlPlane(ctx, func(cp *stage.Host) error {
 		if cp == nil {
 			return stage.PlanNew(ctx, plan.Stages, a.cfg.ControlPlane.Name, a.out)
 		}
 		return stage.Run(ctx, plan.Stages, cp, stage.Options{Apply: a.mode.Apply, Out: a.out})
 	})
+}
+
+// dbPlan opens the buckets with their tokens (and, for a live recovery,
+// the lock rules) and builds the db create. It prints where the Cluster
+// archives.
+func (a *app) dbPlan(ctx context.Context, bw *bitwarden.Client, root string, cat *catalog.Catalog, mode db.Mode, target *time.Time, timeout time.Duration) (*db.Plan, error) {
+	live := a.env.IsLive()
+	archive, source, err := openStores(ctx, root, cat, secrets.NewBitwarden(bw), live)
+	if err != nil {
+		return nil, err
+	}
+	in := db.Inputs{Mode: mode, Live: live, Root: root, TargetTime: target, Archive: archive,
+		Waiting: seed.Waiting{Timeout: timeout, Poll: 10 * time.Second}}
+	if mode == db.Recover {
+		in.Source = source
+		if live {
+			if in.Locks, err = a.lockReader(ctx, bw, root); err != nil {
+				return nil, err
+			}
+		}
+	}
+	plan, err := db.Build(in)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Fprintf(a.out, "db create --%s: the repository names %s; the Cluster archives to %s/%s\n",
+		mode, plan.Generation.ServerName(), archive.Name(), plan.Archives.Prefix())
+	return plan, nil
 }
 
 // repository is the repository top (where the catalog sits) and the

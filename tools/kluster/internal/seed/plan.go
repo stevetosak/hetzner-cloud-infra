@@ -262,3 +262,35 @@ func (p *Plan) Diffs(ctx context.Context, h *stage.Host, out io.Writer, dir stri
 	}
 	return nil
 }
+
+// Readable reads, in memory, every value the seed-secrets Stage will need,
+// and discards it: live decrypts each Secret's file with the age key, a
+// rehearsal makes its fresh Secrets once, which reads every rehearsal item.
+// So a front check (kluster up) refuses an unreadable Bitwarden item before
+// anything is built. Nothing is printed or kept.
+func (p *Plan) Readable(ctx context.Context) []error {
+	var s *Secrets
+	for _, st := range p.Stages {
+		if x, ok := st.(*Secrets); ok {
+			s = x
+		}
+	}
+	if s == nil {
+		return []error{errors.New("the seed has no seed-secrets Stage")}
+	}
+	if s.Rehearsal {
+		if _, err := secrets.Fresh(ctx, s.Secrets, s.Vault); err != nil {
+			return []error{fmt.Errorf("the rehearsal Secrets: %w", err)}
+		}
+		return nil
+	}
+	var errs []error
+	for _, sec := range s.Secrets {
+		if _, found, _, err := s.Store.Read(ctx, sec); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", sec.Ref, err))
+		} else if !found {
+			errs = append(errs, fmt.Errorf("%s: its file %s does not exist", sec.Ref, sec.File))
+		}
+	}
+	return errs
+}
