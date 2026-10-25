@@ -219,7 +219,7 @@ That pair is the expected signature of a token with `Zone:DNS:Edit` and no
 `User` permission — the verify endpoint needs a permission the token correctly
 does not have. Zone settings are denied too, which means **this token cannot
 enable Authenticated Origin Pulls**; that step needs a second token or the
-dashboard.
+dashboard. The operator used the dashboard on 2026-10-25 ([Log](../logs/2026-10-25-the-origin-is-locked-cloudflare-presents-our-own-certificate-and-the-gateway-requires-it.md)).
 
 ### ClusterIssuer and certificate
 
@@ -384,7 +384,8 @@ location: https://gw-test.tosak.net/
 Note what the first test also proves: **the origin answers direct connections
 today.** Authenticated Origin Pulls is what closes that, and it is not
 configured yet. Until it is, `CF-Connecting-IP` is forgeable by anyone who
-finds `77.42.14.48`.
+finds `77.42.14.48`. *Superseded 2026-10-25: the origin is now locked
+([Log](../logs/2026-10-25-the-origin-is-locked-cloudflare-presents-our-own-certificate-and-the-gateway-requires-it.md)).*
 
 ---
 
@@ -548,9 +549,10 @@ in the README where the next reader would have trusted it.
 | Cloudflare zone | 11 A records, all proxied, all on `77.42.14.48` |
 | Routes applied | one — the HTTP-to-HTTPS redirect in `gateway` |
 
-**The origin is NOT locked.** Authenticated Origin Pulls is deliberately last
-and is not done. `77.42.14.48` answers direct HTTPS today, and `CF-Connecting-IP`
-is forgeable by anyone who finds it.
+**The origin was NOT locked at the end of this stage.** Authenticated Origin Pulls
+was deliberately last. `77.42.14.48` answered direct HTTPS, and `CF-Connecting-IP`
+was forgeable by anyone who found it. *Locked 2026-10-25: see the
+[Log](../logs/2026-10-25-the-origin-is-locked-cloudflare-presents-our-own-certificate-and-the-gateway-requires-it.md) and the [leaf renewal procedure](renew-the-cloudflare-origin-pull-leaf-certificate.md).*
 
 ### A mistake made and corrected here
 

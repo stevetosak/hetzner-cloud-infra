@@ -294,3 +294,24 @@ Note also that a `Zone:DNS:Edit` token **cannot** enable origin pulls; that
 needs a second token or the dashboard.
 
 **The gRPC claim is still unproven.** ArgoCD is not installed yet.
+
+### Amendment 2026-10-25 — the origin is locked
+
+The origin lock named under "Still outstanding" is done ([Log](../logs/2026-10-25-the-origin-is-locked-cloudflare-presents-our-own-certificate-and-the-gateway-requires-it.md)). The
+decisions, all the operator's:
+
+- Cloudflare **zone-level** Authenticated Origin Pulls with **our own**
+  certificate authority and leaf, not Cloudflare's shared certificate, which is
+  the same for every customer. The operator uploads the leaf and turns the
+  feature on in the dashboard, because a `Zone:DNS:Edit` token cannot change zone
+  settings. No new token was made.
+- The CA (RSA 4096, to 2036-10-22) and the leaf (RSA 4096, to 2028-10-24) were
+  made by the operator; both private keys are kept in Bitwarden. The Gateway
+  trusts the CA only and does not pin the leaf.
+- Staged rollout: first `optional: true`, then proof from the Envoy listener
+  counters that Cloudflare presents the leaf, then the lock.
+- The field `optional` is deprecated in Envoy Gateway v1.9.1. The policy uses
+  `mode: RequireAndVerify`; the body above names the older field.
+- A rehearsal Gateway now refuses every HTTPS client, because `core/gateway` is
+  synced to it unchanged (inferred, not tested).
+- Renewal needs no git change: [runbook](../runbook/renew-the-cloudflare-origin-pull-leaf-certificate.md).
