@@ -1,0 +1,30 @@
+# The apex and `www` send visitors to the docs site.
+#
+# Both names are proxied A records to the origin and are in the certificate,
+# but no project owns them, so without this route they return 404.
+#
+# 302, not 301, on purpose: this is a placeholder until a landing page owns
+# the apex, and a browser caches a 301 with no end date. The path is kept, so
+# `tosak.net/cloud-infra` lands on `docs.tosak.net/cloud-infra`.
+#
+# It attaches to the `https` listener alone. Port 80 is already sent to 443
+# by `http-to-https`, for every host.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: apex-to-docs
+  namespace: gateway
+spec:
+  parentRefs:
+    - name: tosak
+      sectionName: https
+  hostnames:
+    - tosak.net
+    - www.tosak.net
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            hostname: docs.tosak.net
+            statusCode: 302
