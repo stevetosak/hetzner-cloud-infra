@@ -303,3 +303,39 @@ cluster itself is gone — which is when an orphan is most likely to hold the
 newest data.
 
 _Avoid_: released volume, leaked volume.
+
+## Archive Generation
+
+One numbered path in the backup bucket that one database Cluster archives its
+WAL and base backups to: `tosak-pg-cluster-g1`, `-g2`, and so on. A recovery
+reads one generation and archives to the next, because an archive path is never
+written by two Clusters and a locked path cannot be cleared. The current
+generation is the one the repository names.
+
+_Avoid_: backup prefix, server name (the setting that holds it, not the concept).
+
+## Source Store
+
+The read-only view of the live backups that every recovery reads from, in every
+environment. Distinct from the **archive store**, which the Cluster writes to and
+which a rehearsal points at a bucket of its own.
+
+## Empty Slot
+
+A place in an environment where the thing kluster builds does not exist yet:
+no Control Plane, no Worker of that name, no database Cluster. kluster builds
+only into an empty slot, or resumes what it started there itself; it never
+changes, replaces or deletes what it finds. Clearing a slot is the operator's
+act.
+
+_Avoid_: free node, missing resource.
+
+## Rehearsal Cut
+
+The change a rehearsal makes to a part of `core/` so that it cannot reach the
+live outside world. Each **live link** it removes is one way the rehearsal could
+act on something live: a real certificate, a DNS write, a deploy notification,
+an app deploy, a write to the live backups. A rehearsal goes on only while it
+can show, from the running cluster, that no live link remains.
+
+_Avoid_: patch set (the older form the cuts replaced), rehearsal overlay.
