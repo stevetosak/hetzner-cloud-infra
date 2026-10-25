@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 )
@@ -72,8 +73,7 @@ func (c *Client) DeleteAll(ctx context.Context, inv *Inventory, log io.Writer) e
 				continue
 			}
 		}
-		_, err := c.h.PrimaryIP.Delete(ctx, ip)
-		step("primary IP "+ip.Name, err)
+		step("primary IP "+ip.Name, c.deletePrimaryIP(ctx, ip))
 	}
 	for _, ip := range inv.FloatingIPs {
 		if ip.Protection.Delete {
@@ -112,6 +112,28 @@ func (c *Client) DeleteAll(ctx context.Context, inv *Inventory, log io.Writer) e
 		step("certificate "+cert.Name, err)
 	}
 	return errors.Join(errs...)
+}
+
+// errMustBeUnassigned is Hetzner's answer to deleting a Primary IP that is
+// still assigned. hcloud-go has no constant for it.
+const errMustBeUnassigned hcloud.ErrorCode = "must_be_unassigned"
+
+// deletePrimaryIP retries while Hetzner still holds ip on a server it has
+// just deleted: the unassign follows the server's delete action a moment
+// later (rehearsal 2026-10-24).
+func (c *Client) deletePrimaryIP(ctx context.Context, ip *hcloud.PrimaryIP) error {
+	deadline := time.Now().Add(c.unassign.upTo)
+	for {
+		_, err := c.h.PrimaryIP.Delete(ctx, ip)
+		if !hcloud.IsError(err, errMustBeUnassigned) || time.Now().After(deadline) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(c.unassign.every):
+		}
+	}
 }
 
 func (c *Client) deleteServer(ctx context.Context, s *hcloud.Server) error {
