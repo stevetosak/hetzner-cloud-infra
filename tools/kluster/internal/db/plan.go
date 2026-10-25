@@ -1,7 +1,9 @@
 package db
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"os"
 	"time"
 
@@ -95,4 +97,45 @@ func Build(in Inputs) (*Plan, error) {
 		p.Stages = append(p.Stages, &GenerationBump{r})
 	}
 	return p, nil
+}
+
+// Buckets runs the checks of db-preflight that read no cluster, so a run
+// that builds the cluster first (kluster up) can refuse before anything
+// opens. db-preflight runs them again, with the Cluster in view.
+func (p *Plan) Buckets(ctx context.Context) []error {
+	return (&Preflight{&run{Plan: p}}).checkBuckets(ctx)
+}
+
+// Built reports whether the database step is already done although the
+// Cluster is not this run's render: kluster made it (it carries
+// pgcluster.CreatedBy), it archives to the generation the repository names,
+// and it is healthy. That is the Cluster of an earlier db create whose
+// generation bump is merged since (ADR 0009, Amendment 2026-10-25). A
+// Cluster that is this run's render is not Built: its Stages resume. Any
+// other Cluster is left to db-preflight, which refuses it.
+func (p *Plan) Built(ctx context.Context, h *stage.Host) (bool, string, error) {
+	c, err := getCluster(ctx, h)
+	if err != nil || c == nil {
+		return false, "", err
+	}
+	if st, err := p.cluster.Probe(ctx, h); err != nil || st.Done {
+		return false, "", err
+	}
+	if _, ok := c.Metadata.Annotations[pgcluster.CreatedBy]; !ok {
+		return false, "", nil
+	}
+	archives := ""
+	for _, pl := range c.Spec.Plugins {
+		if pl.IsWALArchiver {
+			archives = pl.Parameters["serverName"]
+		}
+	}
+	if archives != p.Generation.ServerName() {
+		return false, "", nil
+	}
+	if c.Status.Phase != healthyPhase || c.Status.ReadyInstances != c.Spec.Instances {
+		return false, "", nil
+	}
+	return true, fmt.Sprintf("Cluster %s was made by %s, archives to %s and is healthy (%d of %d ready)",
+		ClusterName, c.Metadata.Annotations[pgcluster.CreatedBy], archives, c.Status.ReadyInstances, c.Spec.Instances), nil
 }
