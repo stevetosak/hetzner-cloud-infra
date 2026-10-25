@@ -315,3 +315,8 @@ decisions, all the operator's:
 - A rehearsal Gateway now refuses every HTTPS client, because `core/gateway` is
   synced to it unchanged (inferred, not tested).
 - Renewal needs no git change: [runbook](../runbook/renew-the-cloudflare-origin-pull-leaf-certificate.md).
+- The apex `tosak.net` and `www` now redirect to `docs.tosak.net` with a 302
+  from the route `apex-to-docs` in `core/gateway/` (item 5 above found them
+  proxied and answering 404). 302, not 301, because a browser caches a 301 with
+  no end date and the redirect is a placeholder for a later landing page
+  ([Log](../logs/2026-10-25-the-apex-and-www-redirect-to-the-docs-site-with-a-302.md)).
