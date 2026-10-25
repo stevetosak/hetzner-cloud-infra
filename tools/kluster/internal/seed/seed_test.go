@@ -42,8 +42,8 @@ func TestBuildReadsTheRepository(t *testing.T) {
 		secrets   []string
 		cuts      []string
 	}{
-		{false, []string{"argocd.tosak.net", "authos-api.tosak.net", "authos-demo.tosak.net", "authos.tosak.net", "doma.tosak.net"}, nil, nil},
-		{true, []string{"argocd.tosak.net"}, []string{"pg-cluster/db-credentials", "pg-cluster/r2-backup-credentials", "pg-cluster/r2-source-credentials", "redis/redis"},
+		{false, []string{"argocd.tosak.net", "authos-api.tosak.net", "authos-demo.tosak.net", "authos.tosak.net", "doma.tosak.net", "tosak.net", "www.tosak.net"}, nil, nil},
+		{true, []string{"argocd.tosak.net", "tosak.net", "www.tosak.net"}, []string{"pg-cluster/db-credentials", "pg-cluster/r2-backup-credentials", "pg-cluster/r2-source-credentials", "redis/redis"},
 			[]string{"rehearsal-cuts"}},
 	} {
 		p, err := Build(Inputs{Rehearsal: tc.rehearsal, WorkTree: repoRoot, Synced: repoRoot, Catalog: repoCatalog(t), RehearsalBucket: "tosak-pg-backups-rehearsal"})
