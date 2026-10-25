@@ -200,7 +200,7 @@ on a hub nobody had reached ([control-plane runbook](../runbook/control-plane.md
 names `infra/workers/terraform.tfvars` as the file `node add` writes. Terraform
 loads that file in every environment, so a rehearsal `node add` would have
 written the live Worker set. A rehearsal now has its own committed file,
-`infra/workers/rehearsal.tfvars`, empty between rehearsals. kluster passes each
+`infra/workers/rehearsal.tfvars`, empty between rehearsals (changed 2026-10-25, see below). kluster passes each
 environment's own file to the workers Module with `-var-file`, which wins over
 the auto-loaded `terraform.tfvars`, so the rehearsal file is never read under
 live. kluster's configuration refuses a rehearsal Worker set equal to the
@@ -223,8 +223,9 @@ rehearsal Application points at the overlays. The cuts in the `services seed` ta
 ClusterIssuer instead of Let's Encrypt, ArgoCD notifications off, the Restore
 Drill and the `projects` ApplicationSet left out, and rehearsal Secrets made
 fresh in memory and never written to an `*.enc.yaml`. The CNPG cuts —
-archiving to a `rehearsal/` prefix with its own token, and a recovery reading
-the live bucket with a read-only token — stay with the `db create` task.
+archiving to a bucket of its own with its own token (first written as a
+`rehearsal/` prefix, corrected 2026-10-24), and a recovery reading the live
+bucket with a read-only token — stay with the `db create` task.
 Overlays in git also make each cut reviewable in the same pull request as
 the file it changes. Chosen by the operator.
 
@@ -248,3 +249,116 @@ holds two. The rehearsal load balancer was refused with
 of 10; Hetzner raised the limit to 15 the same day. `kluster down` can also race
 the unassign of those Primary IPs, and a second run empties the project
 ([rehearsal runbook](../runbook/rehearsal.md)).
+
+**2026-10-24 — `kluster db create`: the rehearsal archives to a bucket of its own,
+and git records the generation.** Eleven details from the `db create` review,
+each chosen by the operator and rehearsed on 2026-10-24 ([Log](../logs/2026-10-25-kluster-db-create-and-kluster-up-built-and-rehearsed-end-to-end-down-waits-for-the-primary-ip-unassign.md)).
+
+🔴 The Amendment of 2026-10-22 and the decision say a rehearsal Cluster archives to
+a `rehearsal/` prefix of the live bucket. R2 tokens scope to buckets and not to
+prefixes, so a prefix would have needed the live bucket's token, the very
+credential the rehearsal must never hold. A rehearsal Cluster archives to its own
+bucket, `tosak-pg-backups-rehearsal`, with a token that has Object Read and Write
+on that bucket alone. Every recovery, live included, reads through one read-only
+Source Store `tosak-pg-backups-source` in `pg-cluster`, synced by `core-cnpg` in
+both environments, so a live recovery cannot write the generation it reads. Only
+the archive store gets a rehearsal cut. The Secret Catalog lets an issued key name
+`rehearsalItem:`: a rehearsal reads that Bitwarden item, the value is never
+written to an `*.enc.yaml`, and `kluster services check` refuses a
+`rehearsalItem` equal to `item`.
+
+The rehearsal Cluster is the live Cluster; the cut changes only the archive
+ObjectStore. The two renders are the sibling kustomize directories
+`core/cnpg/cluster/fresh/` and `core/cnpg/cluster/recover/`, because kustomize
+refuses a base that contains its own overlay (the same fault as in the Amendment
+of 2026-10-22). The recovery overlay is a JSON patch whose `test` operations name
+the base's `serverName`; a point-in-time target is an in-memory patch. The
+on-live scratch Cluster `pg-rehearsal` and `core/cnpg/recovery/` are gone; "look
+first" at logical damage now runs in the rehearsal project, which reads the live
+backups read-only.
+
+Git is the record of the Archive Generation. Before a recovery kluster lists the
+live bucket with the source token and refuses unless generation N, the one git
+names, is the newest with objects and N+1 is empty. After a live recovery passes,
+kluster writes the bump (`serverName` and the overlay) and the next `db create`
+refuses until it is committed; a rehearsal never writes it. `kluster services
+check` refuses an overlay whose test is not the base's `serverName` or whose
+replace is not N+1. The 30-day lock rule for N+1 exists ahead of time: the
+operator adds it, and each bump commit comes with "add N+2". kluster only reads
+lock rules, with a read-only account token, and refuses a live `--recover`
+without an enabled rule of 30 days or more on `gN+1/wals/`. kluster never writes
+a lock. The outside watcher checks daily that rules for N and N+1 exist.
+
+Both modes go only into an Empty Slot: they refuse while the Cluster
+`tosak-pg-cluster` exists, and kluster never deletes a Cluster, so deleting one
+stays a step of the runbook. `--fresh` also refuses when generation N in its
+bucket holds any object. `immediate: true` is dropped from the ScheduledBackup,
+because it leaves a Backup `pending` that starts with the Cluster; `db create`
+takes the first base backup itself and proves it by `backup.info` and
+`data.tar.gz` in the bucket. `kluster down` empties the rehearsal bucket after the
+Hetzner project is empty and reads it back; `db create` never deletes a backup.
+`--recover --target-time <RFC 3339 UTC>` works in both environments, and live
+refuses it without `--rehearsed`. The Stages and their runbook sections are in
+[the recovery runbook](../runbook/pg-recovery.md#the-stages-of-db-create).
+
+**2026-10-25 — `kluster up --db fresh|recover` fills empty slots, and the rehearsal
+Worker set stays declared.** Eleven details from the `up` review, chosen by the
+operator and rehearsed on 2026-10-25 ([Log](../logs/2026-10-25-kluster-db-create-and-kluster-up-built-and-rehearsed-end-to-end-down-waits-for-the-primary-ip-unassign.md)).
+
+🔴 The decision says that when `up` follows a `cp init`, the existing Workers
+belong to the dead cluster "and are replaced". `up` replaces nothing. It fills
+empty slots only, in both environments, in the order shared, Control Plane, every
+declared Worker, seed, database, zone. It refuses while a server other than the
+Control Plane is not a Node of the current cluster, and names the way out: delete
+the dead Workers by hand, or `node replace`. After a total loss of live the
+operator deletes the dead Workers first. Replacing a dead Worker inside `up` is a
+possible later item.
+
+🔴 The Amendment of 2026-10-06 says the rehearsal Worker set is "empty between
+rehearsals". `up` builds what the Worker set declares and never writes it, and it
+refuses an empty set, so `infra/workers/rehearsal.tfvars` now declares the same
+three Workers as live and stays committed. `down` does not touch the set.
+
+A front `up-preflight` runs every check that needs no cluster, all together and
+before anything opens, and prints every failure at once. One revision builds the
+cluster: the preflight fetches the branch the environment's ArgoCD reads (live
+`origin/master`, rehearsal `origin/rehearsal`) and refuses unless `HEAD` is that
+commit and `core/`, `projects/`, `infra/`, `secrets.yaml` and
+`tools/kluster/kluster.yaml` have no tracked change. kluster runs no git write; a
+rehearsal operator pushes the branch as before. The bucket checks sit in the
+preflight only while the project has no Control Plane; with one, they run inside
+`db create` (the generation is no longer empty on a rerun). `--db fresh|recover`
+is required, with no default, and `--target-time`, `--rehearsed` and `--timeout`
+behave as in `db create`.
+
+On a rerun the database step is one of three cases: the Cluster equals this run's
+render, and the `db create` Stages resume; or the Cluster carries the annotation
+`kluster.tosak.net/created-by`, archives to the generation the repository names
+and is healthy, and the step is done; or `up` refuses. The second case matches
+a live recovery only after its bump is merged, so the bump goes by pull request.
+One SSH gate covers the build: the Control Plane and Worker firewalls open once,
+the Control Plane and every Worker are built, and both close with a readback
+before the seed. Live runs seed, database and zone with port 22 closed, over the
+VPN; a rehearsal opens the Control Plane firewall once more for those three and
+closes it at the end. One Terraform apply creates every missing Worker, then each
+Worker is built in turn. Building the pre-join Stages of all Workers at once, with
+only the hub peer and the join serial, is kept as a later item.
+
+The zone check moves to the end of `up`. On live it refuses with the hand changes
+and a rerun resumes. In a rehearsal it proves the opposite, that the zone is as
+live left it: each host has exactly one A record, all the same, and none at the
+rehearsal load balancer. The live address is not known to a rehearsal and is the
+origin behind Cloudflare, so it is not compared.
+
+The promise that each cut has a Probe is kept by a Stage `rehearsal-cuts` at the
+end of the seed's `core-healthy` step, so `up` and a rehearsal `seed` alone both
+run it, before the database. It reads the running cluster and fails while any
+live link remains: the ClusterIssuer `letsencrypt-prod` has no `acme`; no Secret
+`cert-manager/cloudflare-dns-token`; the Deployment
+`argocd-notifications-controller` has no replicas and no
+`argocd-notifications-secret` exists; no ApplicationSet `projects`; the
+ObjectStore `tosak-pg-backups` archives to the rehearsal bucket. One table in
+code next to the cuts lists them, and a test fails when a `core/rehearsal/<dir>`
+has no entry. The rehearsal proof is `up --db fresh` from empty, a rerun, `down`,
+`up --db recover` from empty with a data check, and `down`
+([rehearsal runbook](../runbook/rehearsal.md#a-whole-rehearsal-with-kluster-up)).

@@ -33,6 +33,16 @@ in 2026-09 with those variables exported from that file.
 
 ## How kluster carries this out
 
+`kluster up --db fresh|recover` builds every Worker the environment's Worker set
+declares, in one run with the Control Plane, the seed and the database
+([rehearsal runbook](./rehearsal.md#a-whole-rehearsal-with-kluster-up)). It
+creates all the missing Workers with one Terraform apply, builds each with the
+code of `node add`, never writes the Worker set, and refuses while a server is
+not a Node of the current cluster (delete a dead Worker by hand, or use `node
+replace`). The rehearsal's `infra/workers/rehearsal.tfvars` declares `k8swk1`
+to `k8swk3` and stays committed. The rest of this section is the single
+command.
+
 `kluster node add <name>` builds one Worker, and it runs twice
 ([ADR 0009](../adr/0009-kluster-builds-the-whole-cluster-and-proves-it-in-a-rehearsal-project.md)). The first run finds the name missing from the environment's
 Worker set — `infra/workers/terraform.tfvars` for live,

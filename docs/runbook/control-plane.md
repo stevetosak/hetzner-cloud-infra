@@ -36,6 +36,11 @@ as `go run . exec -- terraform` today.
 
 ## How kluster carries this out
 
+`kluster up --db fresh|recover` runs `cp init` as one step of a whole build,
+after `shared` and before the Workers, the seed and the database, behind one
+bootstrap SSH gate ([rehearsal runbook](./rehearsal.md#a-whole-rehearsal-with-kluster-up)).
+It builds into an empty Control Plane slot only.
+
 `kluster cp init` runs steps 1 to 9 in order, one Stage per step, each naming
 its section here ([ADR 0009](../adr/0009-kluster-builds-the-whole-cluster-and-proves-it-in-a-rehearsal-project.md)). Each Stage has a read-only Probe made of the
 checks under "Verified" in its step, and an Act. A Stage whose Probe passes is

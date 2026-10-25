@@ -35,8 +35,9 @@ load balancer's address.
 no ArgoCD plugin ([the secrets runbook](../runbook/secrets.md), "What is deliberately NOT done").
 
 **The CNPG `Cluster` resource stays out of ArgoCD.** The committed
-`core/cnpg/pg-cluster.yaml` keeps `bootstrap.initdb` on purpose; a recovery
-applies a patched copy that is never committed ([the recovery runbook](../runbook/pg-recovery.md)).
+`core/cnpg/cluster/fresh/pg-cluster.yaml` keeps `bootstrap.initdb` on purpose; a
+recovery applies the render `core/cnpg/cluster/recover/`, built by `kluster db create`
+([the recovery runbook](../runbook/pg-recovery.md)).
 If ArgoCD synced that file after a total loss, it would create an empty
 database at once, the applications would start writing to it, and self-heal
 would turn a recovered Cluster's `serverName` back to the old generation.
@@ -227,7 +228,7 @@ by the generator, so it has to live in the template.
 **Proven in the rehearsal (2026-10-24):** the hook Jobs are idempotent; the
 keys of `argocd-secret` survive repeated server-side applies; a `ScheduledBackup`
 and a `Database` wait for a missing Cluster without error (but `immediate: true`
-leaves a Backup `pending` that starts with the Cluster); a broken ArgoCD
+left a Backup `pending` that started with the Cluster; it is dropped since 2026-10-24); a broken ArgoCD
 (`argocd-repo-server` deleted) is repaired by the seed; the LB mismatch report
 works. **Proven on the GitHub proof repository (2026-10-23):** a ruleset with an
 empty bypass binds the owner, a `pull_request_target` check satisfies it, and

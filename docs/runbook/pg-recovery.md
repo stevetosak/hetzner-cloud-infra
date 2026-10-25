@@ -1,9 +1,9 @@
 ---
 title: "PostgreSQL recovery runbook"
-description: "How to bring tosak-pg-cluster back from the R2 backups after a total loss, a lost database, or logical damage, and how to rehearse it without touching production."
+description: "How to bring tosak-pg-cluster back from the R2 backups with kluster db create after a total loss, a lost database, or logical damage, what each of its Stages proves, and how to rehearse it without touching production."
 type: procedure
 topics: [backups, databases, kubernetes]
-verified: 2026-10-03
+verified: 2026-10-25
 ---
 
 Run this when `tosak-pg-cluster` has to be rebuilt from the backups in R2. It
@@ -23,49 +23,91 @@ next**: CloudNativePG refuses to archive into a non-empty path, and the bucket
 lock means the old path cannot be cleared. Today the cluster archives to
 `tosak-pg-cluster-g1`, so a recovery reads `g1` and archives to `g2`.
 
-The recovery manifest is not written by hand. It is rendered from
-[`core/cnpg/cluster/fresh/pg-cluster.yaml`](../../core/cnpg/cluster/fresh/pg-cluster.yaml) by the JSON
-patch in [`core/cnpg/cluster/recover/`](../../core/cnpg/cluster/README.md), with
-`kubectl patch --local`. That needs no cluster and no tool beyond `kubectl`,
-so it works on the first day of a total loss. The patch refuses to run unless
-`pg-cluster.yaml` is still on `g1`.
+The recovery manifest is not written by hand. It is the kustomize directory
+[`core/cnpg/cluster/recover/`](../../core/cnpg/cluster/README.md): the fresh Cluster
+[`core/cnpg/cluster/fresh/pg-cluster.yaml`](../../core/cnpg/cluster/fresh/pg-cluster.yaml)
+with a JSON patch whose first operations `test` that the base still names `g1`.
+It needs no cluster, so it works on the first day of a total loss. kluster
+builds it with kustomize's own library, and a unit test proves the `test`
+operations run (a base on `g2` fails the build). By hand the same render is
+`kubectl kustomize core/cnpg/cluster/recover` (assumed: not run with this
+layout).
+
+## The way in: kluster
+
+Since 2026-10-24 kluster does the work of steps 3 to 7 below, and proves each
+of them as a Stage ([The stages of db create](#the-stages-of-db-create)).
+Like every kluster write it runs in Plan Mode unless given `--apply`, and the
+operator runs it in their own terminal, because it reads Bitwarden.
+
+```sh
+cd tools/kluster
+go run . db create --recover                 # Plan Mode: every Stage and what it reads
+go run . db create --recover --apply
+go run . db create --recover --target-time 2026-10-04T10:00:00Z --rehearsed --apply   # logical damage on live
+go run . up --db recover --apply             # total loss: the whole cluster, database included
+```
+
+`db create --fresh` is the first build of an empty database. `up --db
+recover|fresh` builds shared, the Control Plane, the Workers, the seed and the
+zone check around the same Stages ([ADR 0009, Amendment 2026-10-25](../adr/0009-kluster-builds-the-whole-cluster-and-proves-it-in-a-rehearsal-project.md#amendments)).
+Both modes go into an empty slot only: they refuse while a Cluster
+`tosak-pg-cluster` exists, and kluster never deletes one or any backup, so
+step 2 stays a command by hand. `--target-time` takes RFC 3339 in UTC, and on
+live it needs `--rehearsed`: a typed reminder that every later write is lost.
+The steps below are what the Stages carry out, and the way back to a recovery
+when kluster itself is not at hand.
 
 ## Before you start
 
-- `pg-cluster.yaml` and the patches name the same generation. Render once and
-  read the two `serverName` lines:
+- The base and the overlay name the same generation. Render once and read the
+  `serverName` lines:
 
   ```bash
-  kubectl patch --local -f core/cnpg/pg-cluster.yaml --type json \
-    --patch-file core/cnpg/recovery/recover.json -o yaml | grep serverName
+  kubectl kustomize core/cnpg/cluster/recover | grep serverName
   ```
 
   Expected: `tosak-pg-cluster-g1` (the source) and `tosak-pg-cluster-g2` (the
-  archive). `test failed` means the generations drifted; fix that first.
+  archive). A failed `test` means the generations drifted; fix that first.
+  `kluster services check` refuses an overlay whose `test` is not the base's
+  `serverName` or whose replace is not the next generation.
 - 🔴 **Add the R2 lock rule for the new generation before anything archives
   to it.** In the Cloudflare dashboard, bucket `tosak-pg-backups`, add a rule
   with prefix `tosak-pg-cluster-g2/wals/`, 30 days. A prefix is literal: the
-  `g1` rule does not cover `g2`. Read the rule back from the dashboard.
+  `g1` rule does not cover `g2`. Read the rule back from the dashboard. The
+  rule for the next generation is added ahead of time, together with the bump
+  commit of the recovery before it. kluster only reads the rules, with a
+  read-only account token, and a live `--recover` refuses without an enabled
+  rule of 30 days or more on the new generation's `wals/`. kluster never
+  writes a lock. The outside watcher checks daily that rules
+  of 30 days or more exist for the current and the next generation; it reads
+  them with the repository secret `R2_CONFIG_READ_TOKEN`.
 - The `tosak-pg-cluster-g2/` prefix is empty. The plugin checks this itself
   and refuses to archive into a non-empty path, but a leftover there means an
-  earlier attempt ran; find out what it was before going on.
+  earlier attempt ran; find out what it was before going on. kluster lists
+  the bucket first and refuses unless `g1` is the newest generation with
+  objects and `g2` is empty.
 - **For logical damage, choose the target time first**, in UTC, before the
   mistake. Rehearse with it (see [Rehearsing](#rehearsing-without-touching-production))
-  and look at the data in the rehearsal cluster before replacing production:
+  and look at the data in the rehearsal project before replacing production:
   every write after the target time is lost.
 
 ## Steps
 
+Each step names the Stage that carries it out.
+
 1. **Bring up what the Cluster needs.** After a total loss, rebuild the
    cluster and follow the apply order in
    [`core/cnpg/README.md`](../../core/cnpg/README.md) up to, not including,
-   `pg-cluster.yaml` — the CRDs, the namespaces, `db-credentials`,
-   `r2-backup-credentials`, and then the operator, the plugin, the Retain
-   storage class and the ObjectStore. The last four are what `kubectl apply -k
-   core/cnpg` applies and what the Application `core-cnpg` syncs once
-   [`kluster services seed`](services-seed.md) has run. **Stop before `pg-cluster.yaml`**: applying it would run
+   the Cluster — the CRDs, the namespaces, `db-credentials`,
+   `r2-backup-credentials`, `r2-source-credentials`, and then the operator,
+   the plugin, the Retain storage class and the two ObjectStores
+   (`tosak-pg-backups` and the read-only `tosak-pg-backups-source`). The last
+   ones are what `kubectl apply -k core/cnpg` applies and what the
+   Application `core-cnpg` syncs once [`kluster services seed`](services-seed.md)
+   has run. **Stop before the Cluster**: applying the fresh render would run
    `initdb` and archive an empty database. In the other two cases all of this
-   is already in place.
+   is already in place. Stage: `db-preflight` checks it.
 
 2. **Remove the old Cluster** (database lost, logical damage):
 
@@ -75,21 +117,20 @@ so it works on the first day of a total loss. The patch refuses to run unless
 
    Its volumes are `Retain`: the PVCs go, the Hetzner volumes stay. Keep them
    until step 6 has passed (see [The old volumes](#the-old-volumes)). Writes
-   stop here; the applications fail their readiness checks until step 4.
+   stop here; the applications fail their readiness checks until step 4. No
+   Stage does this: kluster never deletes a Cluster. The Cluster's `Backup`
+   objects have no owner and stay behind, which `db-first-backup` allows for.
 
-3. **Render and apply the recovery manifest.**
+3. **Render and apply the recovery manifest.** Stage: `db-cluster`.
 
    ```bash
-   kubectl patch --local -f core/cnpg/pg-cluster.yaml --type json \
-     --patch-file core/cnpg/recovery/recover.json -o yaml \
-     | kubectl apply -f -
+   kubectl kustomize core/cnpg/cluster/recover | kubectl apply -f -
    ```
 
    For logical damage, add the target between the two commands:
 
    ```bash
-   kubectl patch --local -f core/cnpg/pg-cluster.yaml --type json \
-     --patch-file core/cnpg/recovery/recover.json -o yaml \
+   kubectl kustomize core/cnpg/cluster/recover \
      | kubectl patch --local -f - --type json -o yaml -p \
        '[{"op":"add","path":"/spec/bootstrap/recovery/recoveryTarget","value":{"targetTime":"2026-10-04 10:00:00+00"}}]' \
      | kubectl apply -f -
@@ -99,7 +140,8 @@ so it works on the first day of a total loss. The patch refuses to run unless
    the WAL up to it. `bootstrap.recovery` sets the `tosak` role's password
    from `db-credentials` again, so the applications' credentials keep working.
 
-4. **Wait for the cluster.**
+4. **Wait for the cluster.** Stages: `db-healthy`, `db-archive`, `db-marker`,
+   `db-replication`.
 
    ```bash
    kubectl get cluster tosak-pg-cluster -n pg-cluster -w
@@ -120,7 +162,10 @@ so it works on the first day of a total loss. The patch refuses to run unless
    followed by no error: the empty-archive check passed on `g2`.
 
 5. **Take a base backup into the new generation** at once, so the new path
-   has a restore point before the next 03:00 run:
+   has a restore point before the next 03:00 run. Stage: `db-first-backup`
+   (kluster names it `tosak-pg-cluster-first-<time>`). The ScheduledBackup no
+   longer has `immediate: true`, which left a Backup `pending` that started
+   with the Cluster.
 
    ```bash
    kubectl create -f - <<'EOF'
@@ -139,13 +184,105 @@ so it works on the first day of a total loss. The patch refuses to run unless
    ```
 
 6. **Prove it** with the checks in [How to know it worked](#how-to-know-it-worked).
+   Each Stage is one of them.
 
-7. **Commit the new generation** on a branch: in `pg-cluster.yaml` change
-   `serverName` to `tosak-pg-cluster-g2` and keep `bootstrap.initdb` as it
-   is (it only matters when a cluster is created empty). Bump the generations
-   in `core/cnpg/recovery/` in the same commit, as its README says. The
-   outside watcher and the Restore Drill read `serverName` from this file and
-   from the live Cluster, so they follow on their own once it merges.
+7. **Commit the new generation** on a branch. Stage: `db-generation`, a live
+   recovery only, writes it: `serverName` in
+   `core/cnpg/cluster/fresh/pg-cluster.yaml` becomes `tosak-pg-cluster-g2`
+   (`bootstrap.initdb` stays; it only matters when a cluster is created
+   empty), and the overlay's `test`, source and replace operations move up by
+   one in the same commit. Add the lock rule for `g3` in the Cloudflare
+   dashboard as well. Merge it by pull request: `kluster up` demands that
+   `HEAD` is the commit ArgoCD reads, and the next `db create` refuses until
+   the bump is committed. The outside watcher and the Restore Drill read
+   `serverName` from this file and from the live Cluster, so they follow on
+   their own once it merges.
+
+## The stages of db create
+
+`db create` runs these Stages in order. Each has a read-only Probe, and a Stage
+whose Probe passes is skipped, so a run that stopped resumes at the first Stage
+that is not done. kluster prints the anchor of the Stage that fails.
+
+### db-preflight
+
+Read only. It is done when the slot is empty and everything the Cluster needs
+is in place, or when a Cluster exists and is exactly this run's render (a
+resume). Into an empty slot it checks that the operator and the plugin
+Deployments in `cnpg-system` have a replica, that the Secrets
+(`db-credentials`, `r2-backup-credentials`, and for a recovery
+`r2-source-credentials`) and the ObjectStores exist, that the archive
+generation holds no object, and, for a recovery, that the generation the
+repository names is the newest one with objects in the live bucket. A live
+recovery also needs the lock rule of [Before you start](#before-you-start).
+When it fails, the message names the check: commit the generation of the last
+recovery, add the lock rule, run `kluster services seed`, or find out who wrote
+into the archive path. A Cluster that differs from the render is refused,
+because `db create` never changes or deletes a Cluster (step 2).
+
+### db-cluster
+
+Applies the render server-side with the field manager `kluster`. It is done when
+the Cluster in the cluster equals the render.
+
+### db-healthy
+
+Done when the Cluster is in phase `Cluster in healthy state` and every instance
+is ready (3 of 3). It waits up to `--timeout` (30 minutes by default). When it
+times out, read `kubectl get cluster tosak-pg-cluster -n pg-cluster -w` and the
+`full-recovery` job log; the repeated `archive command failed` lines near the
+end of that job are expected (step 4).
+
+### db-archive
+
+Done when the Cluster archives into its generation. For a fresh Cluster that is
+one segment under `<generation>/wals/`. For a recovery it is a timeline history
+file and a segment on the new timeline, and that segment must be at or after the
+newest segment the preflight saw in the source generation: that proves replay
+reached the end of the WAL. A recovery with `--target-time` does not compare,
+because replay stops at the target, and neither does a resumed run, which has no
+preflight reading. The Stage first switches the WAL on the primary, so the
+segment shows at once instead of after `archive_timeout`. When it fails with
+"replay did not reach the end of the WAL", the recovery used less than the
+bucket holds; do not go on.
+
+### db-marker
+
+Done when no instance holds `.check-empty-wal-archive`. An instance that still
+holds it refuses to archive into a non-empty path, and after a switchover that
+stops archiving for good (plugin#828).
+This is the check live relies on, because a switchover on live stops writes for
+a while.
+
+### db-replication
+
+Done when every standby streams: `pg_stat_replication` on the primary shows
+`state = streaming` for each instance but the primary.
+
+### db-switchover
+
+A rehearsal only. kluster sets `status.targetPrimary` to a standby, waits for
+the new primary and a healthy Cluster, switches the WAL, and waits for a new
+timeline with a segment in the bucket and no marker on any instance. It is done
+when archiving survives a switchover, which is the plugin#828 proof. Live skips
+the Stage and relies on `db-marker`.
+
+### db-first-backup
+
+Creates the Backup `tosak-pg-cluster-first-<time>` with the plugin, waits for
+phase `completed`, and is done when `base/<backupId>/backup.info` and
+`data.tar.gz` are in the archive generation. A completed Backup without those
+files is an error. Only Backups created after the current Cluster count,
+because a deleted Cluster leaves its Backup objects behind. A `failed` Backup
+stops the run: delete it and run again.
+
+### db-generation
+
+A live recovery only. Done when `core/cnpg/cluster/fresh/pg-cluster.yaml` and
+the overlay name the new generation. kluster writes the files and prints `git
+add` for them; commit them with the lock rule for the generation after, merged
+by pull request. The next `db create` and `up` refuse until the bump is
+committed.
 
 ## The old volumes
 
@@ -168,88 +305,46 @@ every day until then — that is intended.
 
 ## Rehearsing without touching production
 
-The rehearsal runs the same patches, plus a second one that moves the result
-into the namespace `pg-rehearsal`, names it `rehearsal`, gives it two small
-instances on `hcloud-volumes` (Delete), and archives to
-`tosak-pg-cluster-rehearsal` — a prefix with no lock rule, so it can be
-cleared. `rehearsal.json` refuses anything but the `g2` render, so a broken
-patch cannot archive into the real next generation.
+A recovery is rehearsed in the rehearsal project, where it reads the live
+backups with a read-only token and archives to a bucket of its own,
+`tosak-pg-backups-rehearsal`, with a token that has no access to the live bucket
+([ADR 0009, Amendment 2026-10-24](../adr/0009-kluster-builds-the-whole-cluster-and-proves-it-in-a-rehearsal-project.md#amendments)).
+The rehearsal Cluster is the live Cluster, so the rehearsal proves the manifest
+that will run. The scratch Cluster in a namespace on live, used for the first
+rehearsal on 2026-10-03, is gone.
 
-The rehearsal costs two 10 GB volumes for a quarter of an hour and needs
-about 512 MiB of free memory requests on the workers. It copies the R/W
-backup token into the scratch namespace, because the rehearsal must archive;
-the namespace is deleted at the end, and the Secret with it.
-
-```bash
-kubectl create namespace pg-rehearsal
-
-# The R/W token, never printed. Compare hashes afterwards, not values.
-kubectl get secret -n pg-cluster r2-backup-credentials -o json \
-  | jq '{apiVersion,kind,type,data,metadata:{name:.metadata.name,namespace:"pg-rehearsal"}}' \
-  | kubectl create -f -
-
-kubectl patch --local -f core/cnpg/objectstore.yaml --type json \
-  --patch-file core/cnpg/recovery/rehearsal-objectstore.json -o yaml \
-  | kubectl create -f -
-
-kubectl patch --local -f core/cnpg/pg-cluster.yaml --type json \
-  --patch-file core/cnpg/recovery/recover.json -o yaml \
-  | kubectl patch --local -f - --type json \
-      --patch-file core/cnpg/recovery/rehearsal.json -o yaml \
-  | kubectl create -f -
+```sh
+git push -f origin HEAD:rehearsal
+go run . --env rehearsal up --db recover --apply
+# a PITR rehearsal: --target-time 2026-10-04T10:00:00Z
 ```
 
-For a PITR rehearsal, put the `recoveryTarget` patch from step 3 between the
-two patches. Once the cluster is healthy with two instances, run the checks
-below, then a switchover and a base backup:
-
-```bash
-kubectl patch cluster rehearsal -n pg-rehearsal --type merge --subresource status \
-  -p '{"status":{"targetPrimary":"rehearsal-2"}}'
-kubectl wait cluster/rehearsal -n pg-rehearsal \
-  --for=jsonpath='{.status.currentPrimary}'=rehearsal-2 --timeout=300s
-# then a Backup as in step 5, named rehearsal-base, cluster rehearsal
-```
-
-Clearing up is done in this order. The Cluster goes first, so that nothing
-archives into the prefix after it is cleared. The bucket is read and cleared
-from a Pod in `pg-rehearsal` that runs the drill's pinned `alpine/k8s` image
-with the copied token as `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
-
-```bash
-kubectl delete cluster rehearsal -n pg-rehearsal --wait=true
-# in the Pod, with --endpoint-url set to the ObjectStore's endpointURL:
-aws s3 rm --recursive --dryrun s3://tosak-pg-backups/tosak-pg-cluster-rehearsal/
-#   every key must start with tosak-pg-cluster-rehearsal/ — then without --dryrun
-aws s3api list-objects-v2 --bucket tosak-pg-backups --prefix tosak-pg-cluster-g2/ --query KeyCount
-#   null: the rehearsal never wrote into the real next generation
-kubectl delete namespace pg-rehearsal
-```
-
-🔴 The trailing slash and the full prefix matter. `tosak-pg-cluster-g1/base/`
-is **not** locked (only its `wals/` is), so a delete with a wrong prefix can
-erase production's base backups. The dry run is not optional.
-
-Finally, list the Hetzner volumes: only production's three may remain. A
-rehearsal volume that is still there a minute after the namespace is gone is
-a stuck delete, which the outside watcher would report as an Orphaned Volume.
+[The rehearsal runbook](rehearsal.md#a-whole-rehearsal-with-kluster-up) has the
+whole sequence, the data check and the teardown. `down --apply` empties the
+rehearsal bucket after the project is empty and reads it back, and a rehearsal
+never writes the generation bump. For logical damage, look at the data in the
+rehearsal first and only then run the recovery on live with `--rehearsed`.
 
 ## How to know it worked
 
 A `Cluster in healthy state` proves the restore, not the backups after it,
 and `ContinuousArchiving=True` proves nothing at all (see step 15 of
 [the cluster-services runbook](./cluster-services.md#15-backups--wal-archiving-and-a-daily-base-backup-to-r2)).
-Each check below is made separately. The evidence column is the rehearsal of
-2026-10-03, 22:18–22:30 UTC, in `pg-rehearsal`.
+Each check below is made separately, and each is a Stage of `db create` since
+2026-10-24. The evidence column is the first rehearsal, 2026-10-03, 22:18–22:30
+UTC, in a scratch namespace on live. The Stages passed again in the rehearsal
+project on 2026-10-24 (`--fresh` and `--recover`) and on 2026-10-25 (`up --db
+fresh` and `up --db recover`; a new timeline opened after the live bucket's
+newest segment, and the restored `doma` database had 33 tables, as live does).
 
-| Check | How | Rehearsal evidence |
+| Check (Stage) | How | Rehearsal evidence |
 |---|---|---|
-| Restored to the end of the WAL | the primary's first archived segment is on a new timeline and follows the newest segment of `g1` | replay ended in `…0D000000A3`; timeline 2 opened in `…A4`, archived 22:22:38. Production archived its own `…A4` only at 22:26:20, so `…A3` was the newest in `g1` |
-| The recovery marker is gone on every instance | `ls $PGDATA/.check-empty-wal-archive` in each instance's `postgres` container → `No such file or directory` | absent on both instances before the switchover and after it |
-| The new generation receives WAL | `pg_stat_archiver` on the primary; `Archived WAL file` in the `plugin-barman-cloud` container's log; objects under `<serverName>/wals/` | `00000002.history` 22:22:37, then `…A4`–`…A8`, zstd |
-| A standby joins | `select application_name, state from pg_stat_replication` on the primary | `rehearsal-2 \| streaming \| async` |
-| Archiving survives a switchover (plugin#828) | after the switchover, the new primary's archiver advances; no `Expected empty archive` in either log | `00000003.history` 22:26:28, `…A9.partial` 22:26:29; no `Expected empty archive` |
-| A base backup lands in the new generation | the `Backup` is `completed`, and `base/<backupId>/` holds `backup.info` and `data.tar.gz` | `20261003T222702`, taken in 5 s on `rehearsal-1` (the former primary, now a standby); `data.tar.gz` 5.7 MB |
+| Restored to the end of the WAL (`db-archive`) | the primary's first archived segment is on a new timeline and follows the newest segment of `g1` | replay ended in `…0D000000A3`; timeline 2 opened in `…A4`, archived 22:22:38. Production archived its own `…A4` only at 22:26:20, so `…A3` was the newest in `g1` |
+| The recovery marker is gone on every instance (`db-marker`) | `ls $PGDATA/.check-empty-wal-archive` in each instance's `postgres` container → `No such file or directory` | absent on both instances before the switchover and after it |
+| The new generation receives WAL (`db-archive`) | `pg_stat_archiver` on the primary; `Archived WAL file` in the `plugin-barman-cloud` container's log; objects under `<serverName>/wals/` | `00000002.history` 22:22:37, then `…A4`–`…A8`, zstd |
+| A standby joins (`db-replication`) | `select application_name, state from pg_stat_replication` on the primary | `rehearsal-2 \| streaming \| async` |
+| Archiving survives a switchover (plugin#828; `db-switchover`, rehearsal only) | after the switchover, the new primary's archiver advances; no `Expected empty archive` in either log | `00000003.history` 22:26:28, `…A9.partial` 22:26:29; no `Expected empty archive` |
+| A base backup lands in the new generation (`db-first-backup`) | the `Backup` is `completed`, and `base/<backupId>/` holds `backup.info` and `data.tar.gz` | `20261003T222702`, taken in 5 s on `rehearsal-1` (the former primary, now a standby); `data.tar.gz` 5.7 MB |
 
 The switchover logged one refusal, `switchover in progress, refusing
 archiving`, for `00000003.history`. That is CloudNativePG's own guard during
