@@ -25,16 +25,16 @@
 # trusts only that CA (`cloudflare-aop-ca.yaml`). Cloudflare's shared
 # origin-pull certificate is the same for every customer and proves nothing.
 #
-# `optional: true` asks for the certificate but still accepts a connection
-# without one. It is the first step of the rollout, so that Cloudflare is seen
-# presenting the certificate before the lock closes. Until `optional` is
-# false, anyone who finds the origin address can set `CF-Connecting-IP` to
-# anything.
+# `mode: RequireAndVerify` refuses a TLS connection that does not present a
+# leaf of that CA. The rollout first ran with `optional: true` (deprecated in
+# Envoy Gateway v1.9; `mode: VerifyIfGiven` is the same thing) until the
+# listener's `ssl.no_certificate` counter proved Cloudflare presents the leaf.
+# Go back to that mode, not to no validation, if the lock must open again.
 #
-# 🔴 Once `optional` is false, the origin refuses every client but Cloudflare,
-# and that includes a rehearsal Gateway, which is not behind Cloudflare. A
-# broken lock is undone by a revert in git: ArgoCD reads git directly and does
-# not depend on the Gateway.
+# 🔴 The origin refuses every client but Cloudflare, and that includes a
+# rehearsal Gateway, which is not behind Cloudflare. A broken lock is undone by
+# a revert in git: ArgoCD reads git directly and does not depend on the
+# Gateway. Port 80 is not locked; it serves only the HTTPS redirect.
 #
 # 🔴 Do NOT add a SecurityPolicy IP allowlist instead. `clientCIDRs` matches
 # the DETECTED client address, which this policy defines, so allowlisting
@@ -54,7 +54,7 @@ spec:
     optional: false
   tls:
     clientValidation:
-      optional: true
+      mode: RequireAndVerify
       caCertificateRefs:
         - kind: ConfigMap
           name: cloudflare-aop-ca
