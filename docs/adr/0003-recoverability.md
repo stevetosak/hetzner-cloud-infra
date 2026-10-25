@@ -450,3 +450,14 @@ from its encrypted file. Decided in a design grill with the operator:
   the one attachment that `rbw` cannot download; kluster never unlocks the
   agent itself. [The secrets runbook](../runbook/secrets.md) has the setup and
   the trade-off.
+
+**2026-10-25 — the known gap goes to a heartbeat outside both watchers.** The
+gap above, and the note that monitoring must watch WAL archiving itself, are
+answered by [ADR 0011](./0011-monitoring-runs-in-the-cluster-and-a-heartbeat-outside-watches-it.md).
+The outside watcher now pings a dead-man's switch at healthchecks.io at the end
+of every run, and pings its `/fail` form when any check found a fault, so a
+disabled schedule shows as a missing ping and a finding no longer depends on the
+watcher's own Telegram send. The WAL archiver, the certificates and the
+database get rules in the in-cluster stack, whose own death the same switch
+sees through the Alertmanager Watchdog. Nothing is built yet; until it is, the
+gap stays open.
