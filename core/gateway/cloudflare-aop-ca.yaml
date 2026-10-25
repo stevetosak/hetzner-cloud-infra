@@ -1,0 +1,50 @@
+# The CA that the Gateway trusts for client certificates (ADR 0008): the
+# trust anchor of the origin lock, read by `client-traffic-policy.yaml`.
+#
+# Cloudflare presents a leaf signed by this CA on every connection to the
+# origin (zone-level Authenticated Origin Pulls, our own certificate). The CA
+# is ours, not Cloudflare's shared origin-pull certificate, which is the same
+# for every Cloudflare customer.
+#
+# Public on purpose: a CA certificate is not a secret. Both private keys are in
+# Bitwarden (`kluster/cloudflare-aop-ca`, `kluster/cloudflare-aop-leaf`).
+# CA valid to 2036-10-22, leaf to 2028-10-24. A renewal signs a new leaf with
+# this CA and uploads it to Cloudflare; this file does not change.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudflare-aop-ca
+  namespace: gateway
+data:
+  ca.crt: |
+    -----BEGIN CERTIFICATE-----
+    MIIFTTCCAzWgAwIBAgIUY/v/xms6+aZSRXihGokYxNdWByAwDQYJKoZIhvcNAQEL
+    BQAwLjEsMCoGA1UEAwwjdG9zYWsubmV0IENsb3VkZmxhcmUgb3JpZ2luLXB1bGwg
+    Q0EwHhcNMjYxMDI1MjAwMDExWhcNMzYxMDIyMjAwMDExWjAuMSwwKgYDVQQDDCN0
+    b3Nhay5uZXQgQ2xvdWRmbGFyZSBvcmlnaW4tcHVsbCBDQTCCAiIwDQYJKoZIhvcN
+    AQEBBQADggIPADCCAgoCggIBALur7qGtJ4s2CN4yVfKlhOQ8YYxAhio8G9599RNS
+    bMT8Cma/xbBACdlTHaSFj/csgtLj5ZlCfPGFRCn7f9WTi/WX+MIYwONX5k1C6m+2
+    33dgXs31XWYifmvJz7DI+zxugcFeikv44Kz+AUzTfoYr/nmp2TjpmZ++4pgjtYq7
+    6VO8mR823w/gYannfaeIz3nFdS+6ZwctnJ02ftPjKpNm/bwkNP78R9XYdsMumOWT
+    fKr/36RCVO4wTvxf0Mthl/aLYQyHqVmYvxoRjwNQxs18KHkEEFYvehWcbOt2FLSL
+    2mrvwsxm4ejaY6okBWa5d4TFn8nr96fGrsj9dE/j6zCElArZ/y0kq6UTMSXuAAfl
+    fMZr0TNRD3MBa662GbGDdWOwPxwExQI/hvBUiZlvpamYL9GdNM6aXNfs3N6JZSP5
+    uTTPRLjjXCLA6XfSotaBQjRVI6zB+E7Jq/dQeTxsWo30M5WYkwEuWSW9XN095yw+
+    8Nm87DQoXCnoPwAr5CMZqOsTyrhRxHYL06gRKfCBFvLU+UEP7fKHQMY+wGAx+zl8
+    OfWBUw3/KuotYngZG94h1m0ksPYKgFY5Mf4O09ZF3gtdkmfleFr9sujRQeahFT54
+    SRZQeLbFGgKxNvSPfGC9ATuUyi/Lp8mPb+JQgVZSeSh2Ui8Mv+iaxUQaT2yM36Ez
+    tmzxAgMBAAGjYzBhMB0GA1UdDgQWBBRiFViMMSS7veg6uwje/B4nJfBcbzAfBgNV
+    HSMEGDAWgBRiFViMMSS7veg6uwje/B4nJfBcbzAPBgNVHRMBAf8EBTADAQH/MA4G
+    A1UdDwEB/wQEAwIBBjANBgkqhkiG9w0BAQsFAAOCAgEAFINAiThQAmMthAqK7FeE
+    K9XAXnaU1L5bBwPEJqBNbQDa98Cbfx9HhHald+SAH4iK/CZveIgsaTtrwKPrsRa+
+    q48yZt63majc3HwzSUNsp3I/bhUzP+m4J8jvl0EK4zOQKPNgTyAtZtPaoYc+c91T
+    qWwatBMPxxoO4moDsCzMPIEa6eBElvJX8UypS0UyVpVlbhnAE+PC1pPkFGdLrggY
+    0pIzO0tluUqL6JQOMTqqZdTHzDYFrcrnwpjGW7WeTlpi/4RTpJVw1OCobLwfpzah
+    /2bZ5tuigjuQodPKsVBz8uRIkcYlk8nIVqQjEHykgOfO9kk5unywuLAoJdU2SBeP
+    CDGaSKi6EpeQk24ccUHgMY5r1l2uKsXb7m6YFjhQ/mTVXwXGL6TnOi48KGPi8U7/
+    1Pl8uhmaF92a5IwfyFRJkNSf5MXVY0jX793rkzKrvPmaTeAYPueu/XnTkiu/+9os
+    krcR+gJxMIT9Xsp/4up5srFaixQR380RObABePJ7S3zbSPhHRgr5LrI+SoW7zSRX
+    bKPOd9J52D/KvjAYpAGHMjCJKIsLg/NKXw87aSJrnA+QvXNg3U6AVrG0SiuUaG5Y
+    dNNwwU0cvwY4ZBRK9sPIY/tEKyb18pY1HfK50Pc/WcUzWGZmODECLY9OYd912hck
+    3J+aQCcJPptBVRvjbrZ8Ir8=
+    -----END CERTIFICATE-----

@@ -10,6 +10,7 @@ resources:
   - envoy-gateway.yaml
   - gatewayclass.yaml
   - envoyproxy.yaml
+  - cloudflare-aop-ca.yaml
   - client-traffic-policy.yaml
   - gateway.yaml
   - certificate.yaml
