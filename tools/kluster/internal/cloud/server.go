@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 )
@@ -20,6 +21,7 @@ type Server struct {
 	PrivateMAC       string // the NIC on the private network
 	DeleteProtected  bool
 	RebuildProtected bool
+	Created          time.Time
 }
 
 // Server reads the named server, or returns nil if the project has none.
@@ -54,6 +56,7 @@ func toServer(s *hcloud.Server) *Server {
 		Status:           string(s.Status),
 		DeleteProtected:  s.Protection.Delete,
 		RebuildProtected: s.Protection.Rebuild,
+		Created:          s.Created,
 	}
 	if s.PublicNet.IPv4.IP != nil {
 		out.PublicIP = s.PublicNet.IPv4.IP.String()

@@ -14,6 +14,7 @@ import (
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/catalog"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/config"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/coreset"
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/pgcluster"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/secrets"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/seed"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/sops"
@@ -100,80 +101,24 @@ var servicesSeedCmd = &cobra.Command{
 }
 
 func (a *app) seed(ctx context.Context, cmd *cobra.Command) error {
-	rehearsal := !a.env.IsLive()
-	catPath, err := a.cfg.Path(a.cfg.Secrets.Catalog)
-	if err != nil {
-		return err
-	}
-	root := filepath.Dir(catPath)
-	repo := gitRepo{root: root}
-	if err := repo.isTop(ctx); err != nil {
-		return err
-	}
-	cat, err := catalog.Load(catPath)
-	if err != nil {
-		return err
-	}
-	bw := bitwarden.New(cmd.ErrOrStderr())
-
-	rev, err := coreset.TargetRevision(os.DirFS(root), rehearsal)
-	if err != nil {
-		return err
-	}
-	synced, err := os.MkdirTemp("", "kluster-seed-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(synced)
-	commit, err := seed.Export(ctx, repo.run, rev, synced)
-	if err != nil {
-		if rehearsal {
-			return fmt.Errorf("%w; a rehearsal syncs branch %s: git push -f origin HEAD:%s", err, rev, rev)
-		}
-		return err
-	}
-	head, err := repo.run(ctx, "rev-parse", "HEAD")
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(a.out, "ArgoCD reads %s, at %s; CRDs, Namespaces and Secrets come from the working tree\n", rev, commit[:12])
-	if h := strings.TrimSpace(string(head)); h != commit {
-		fmt.Fprintf(a.out, "note: HEAD is %s, not %s: what ArgoCD owns is built from %s\n", h[:12], commit[:12], rev)
-	}
-
-	in := seed.Inputs{Rehearsal: rehearsal, WorkTree: root, Synced: synced, Catalog: cat,
-		Timeout: seedFlags.timeout, Poll: 10 * time.Second}
-	if !rehearsal {
-		// Live applies each file's values; a rehearsal reads no file.
-		sopsConfig, err := a.cfg.Path(a.cfg.Secrets.SopsConfig)
-		if err != nil {
-			return err
-		}
-		bin := sops.New(a.cfg.Versions.Sops, sopsConfig)
-		if err := bin.CheckVersion(ctx); err != nil {
-			return err
-		}
-		in.Store = secrets.NewStore(cat, bin, secrets.NewBitwarden(bw).AgeKey)
-	} else {
-		in.Vault = secrets.NewBitwarden(bw)
-	}
-	svc := a.cfg.Services
-	item, err := bw.Item(ctx, svc.ZoneTokenItem)
-	if err != nil {
-		return err
-	}
-	token, err := item.Field(svc.ZoneTokenField)
-	if err != nil {
-		return err
-	}
-	in.Zone = &seed.Cloudflare{Zone: svc.Zone, Token: token}
-
-	plan, err := seed.Build(in)
-	if err != nil {
-		return err
-	}
 	if seedFlags.diffDir != "" && a.mode.Apply {
 		return fmt.Errorf("--diff-dir is for Plan Mode")
+	}
+	root, cat, err := a.repository(ctx)
+	if err != nil {
+		return err
+	}
+	synced, err := a.exportSynced(ctx, root)
+	if err != nil {
+		return err
+	}
+	defer synced.remove()
+	if synced.head != synced.commit {
+		fmt.Fprintf(a.out, "note: HEAD is %s, not %s: what ArgoCD owns is built from %s\n", synced.head[:12], synced.commit[:12], synced.rev)
+	}
+	plan, err := a.seedPlan(ctx, bitwarden.New(cmd.ErrOrStderr()), root, cat, synced.dir, seedFlags.timeout)
+	if err != nil {
+		return err
 	}
 	return a.onControlPlane(ctx, func(cp *stage.Host) error {
 		if cp == nil {
@@ -188,4 +133,82 @@ func (a *app) seed(ctx context.Context, cmd *cobra.Command) error {
 		fmt.Fprintln(a.out, "What each core Application's sync would change (information only; ArgoCD applies it):")
 		return plan.Diffs(ctx, cp, a.out, seedFlags.diffDir)
 	})
+}
+
+// syncedTree is an export of the revision this environment's ArgoCD reads.
+type syncedTree struct {
+	rev, commit, head, dir string
+}
+
+func (t *syncedTree) remove() { _ = os.RemoveAll(t.dir) }
+
+// exportSynced fetches the revision this environment's ArgoCD reads (live:
+// the core ApplicationSet's targetRevision; a rehearsal: branch rehearsal)
+// and exports it.
+func (a *app) exportSynced(ctx context.Context, root string) (*syncedTree, error) {
+	rehearsal := !a.env.IsLive()
+	repo := gitRepo{root: root}
+	rev, err := coreset.TargetRevision(os.DirFS(root), rehearsal)
+	if err != nil {
+		return nil, err
+	}
+	dir, err := os.MkdirTemp("", "kluster-seed-")
+	if err != nil {
+		return nil, err
+	}
+	t := &syncedTree{rev: rev, dir: dir}
+	if t.commit, err = seed.Export(ctx, repo.run, rev, dir); err != nil {
+		t.remove()
+		if rehearsal {
+			return nil, fmt.Errorf("%w; a rehearsal syncs branch %s: git push -f origin HEAD:%s", err, rev, rev)
+		}
+		return nil, err
+	}
+	head, err := repo.run(ctx, "rev-parse", "HEAD")
+	if err != nil {
+		t.remove()
+		return nil, err
+	}
+	t.head = strings.TrimSpace(string(head))
+	fmt.Fprintf(a.out, "ArgoCD reads %s, at %s; CRDs, Namespaces and Secrets come from the working tree\n", rev, t.commit[:12])
+	return t, nil
+}
+
+// seedPlan builds the seed from the working tree at root and the export at
+// synced. It reads the zone token now; the Secrets' values are read when
+// their Stage runs (or by Plan.Readable).
+func (a *app) seedPlan(ctx context.Context, bw *bitwarden.Client, root string, cat *catalog.Catalog, synced string, timeout time.Duration) (*seed.Plan, error) {
+	rehearsal := !a.env.IsLive()
+	in := seed.Inputs{Rehearsal: rehearsal, WorkTree: root, Synced: synced, Catalog: cat,
+		Timeout: timeout, Poll: 10 * time.Second}
+	if !rehearsal {
+		// Live applies each file's values; a rehearsal reads no file.
+		sopsConfig, err := a.cfg.Path(a.cfg.Secrets.SopsConfig)
+		if err != nil {
+			return nil, err
+		}
+		bin := sops.New(a.cfg.Versions.Sops, sopsConfig)
+		if err := bin.CheckVersion(ctx); err != nil {
+			return nil, err
+		}
+		in.Store = secrets.NewStore(cat, bin, secrets.NewBitwarden(bw).AgeKey)
+	} else {
+		in.Vault = secrets.NewBitwarden(bw)
+		as, _, err := pgcluster.Stores(root, false)
+		if err != nil {
+			return nil, err
+		}
+		in.RehearsalBucket = as.Bucket
+	}
+	svc := a.cfg.Services
+	item, err := bw.Item(ctx, svc.ZoneTokenItem)
+	if err != nil {
+		return nil, err
+	}
+	token, err := item.Field(svc.ZoneTokenField)
+	if err != nil {
+		return nil, err
+	}
+	in.Zone = &seed.Cloudflare{Zone: svc.Zone, Token: token}
+	return seed.Build(in)
 }

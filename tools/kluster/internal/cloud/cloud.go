@@ -6,6 +6,7 @@ package cloud
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 )
@@ -13,6 +14,13 @@ import (
 // Client is a Hetzner API client for one project.
 type Client struct {
 	h *hcloud.Client
+	// unassign bounds how long DeleteAll waits for Hetzner to unassign a
+	// Primary IP from a server it has just deleted.
+	unassign retry
+}
+
+type retry struct {
+	every, upTo time.Duration
 }
 
 // New returns a client for the project the token belongs to.
@@ -21,7 +29,7 @@ func New(token string, opts ...hcloud.ClientOption) *Client {
 		hcloud.WithToken(token),
 		hcloud.WithApplication("kluster", "0"),
 	}, opts...)
-	return &Client{h: hcloud.NewClient(opts...)}
+	return &Client{h: hcloud.NewClient(opts...), unassign: retry{every: 2 * time.Second, upTo: 2 * time.Minute}}
 }
 
 // GuardNotProject refuses a project that holds ip on any server or primary

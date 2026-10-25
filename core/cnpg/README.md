@@ -11,13 +11,15 @@ PostgreSQL runs under **CloudNativePG**. One shared cluster,
 | `operator.yaml` | The operator, upstream `cnpg-1.30.0.yaml` without its CRDs and its Namespace |
 | `namespace.yaml` | `cnpg-system` (the operator) and `pg-cluster` (the cluster) |
 | `db-credentials.enc.yaml` | The `db-credentials` Secret, SOPS-encrypted. `secrets.yaml` at the top describes it |
-| `pg-cluster.yaml` | The `Cluster` — 3 instances, 10Gi each on `hcloud-volumes-retain`, archiving through the plugin |
+| `cluster/` | The `Cluster`, built by `kluster db create` and never synced: `fresh/pg-cluster.yaml` (3 instances, 10Gi each on `hcloud-volumes-retain`, archiving through the plugin) and `recover/` (the same Cluster reading the previous generation). See `cluster/README.md` |
 | `databases/<project>.yaml` | One `Database` per project database |
 | `plugin-barman-cloud.yaml` | The barman-cloud CNPG-I plugin, upstream `v0.15.1` `manifest.yaml` without its CRD |
-| `objectstore.yaml` | Where backups go: R2 bucket `tosak-pg-backups`, zstd WAL, 30-day retention |
-| `r2-backup-credentials.enc.yaml` | The backup token, SOPS-encrypted. `secrets.yaml` at the top describes it |
+| `objectstore.yaml` | Where backups go: R2 bucket `tosak-pg-backups`, zstd WAL, 30-day retention. The only store a Cluster archives to |
+| `source-objectstore.yaml` | The Source Store `tosak-pg-backups-source`: the same bucket, read only. Every recovery reads through it, in both environments |
+| `r2-backup-credentials.enc.yaml` | The backup token (read and write), SOPS-encrypted. `secrets.yaml` at the top describes it |
+| `r2-source-credentials.enc.yaml` | The read-only token the Source Store uses, SOPS-encrypted |
 | `storageclass-retain.yaml` | `hcloud-volumes-retain` — a deleted PVC leaves its Hetzner volume behind |
-| `scheduled-backup.yaml` | A full base backup every day at 03:00 UTC, from a standby |
+| `scheduled-backup.yaml` | A full base backup every day at 03:00 UTC, from a standby. No `immediate`: `db create` takes the first base backup itself |
 
 Backups, the bucket lock and why it covers only the WAL:
 `docs/runbook/cluster-services.md` step 15 and ADR 0003, Amendments.
@@ -54,18 +56,21 @@ kubectl apply --server-side --field-manager=cloud-infra -f core/cnpg/crds.yaml
 kubectl apply -f core/cnpg/namespace.yaml
 # the two Secrets (from tools/kluster; drop --apply for the diff first)
 #   go run . secrets apply --apply pg-cluster/db-credentials pg-cluster/r2-backup-credentials
-# the operator, the plugin, the StorageClass, the ObjectStore, the
+# the operator, the plugin, the StorageClass, both ObjectStores, the
 # ScheduledBackup and doma's Database: what the Application core-cnpg syncs.
 # Run it again if it fails on a webhook: the operator starts first.
 kubectl apply --server-side --field-manager=cloud-infra -k core/cnpg
-kubectl apply -f core/cnpg/pg-cluster.yaml
+# the Cluster: not by hand, and never by ArgoCD
+#   go run . db create --fresh --apply         (from tools/kluster)
 ```
 
-🔴 **After a real recovery this order is not enough** — the `serverName`
-generation and its lock rule change first, and `pg-cluster.yaml` is replaced
-by a manifest rendered from it with the patches in `recovery/`. Follow
-[the PostgreSQL recovery runbook](../../docs/runbook/pg-recovery.md) instead
-of the `pg-cluster.yaml` line.
+`kluster db create` builds `cluster/fresh` or `cluster/recover`, applies it into
+an empty slot and proves it healthy, archiving and backed up. It also needs
+`r2-source-credentials` for a recovery. After a real recovery the Archive
+Generation moves up: kluster writes the bump into `cluster/` (the `serverName`
+and the overlay), and the next `db create` refuses until it is committed, with
+the lock rule for the generation after added in the Cloudflare dashboard.
+Follow [the PostgreSQL recovery runbook](../../docs/runbook/pg-recovery.md).
 
 🔴 **`--server-side` is not optional for `crds.yaml`**, for the same reason
 as the Gateway API CRDs. The `clusters.postgresql.cnpg.io` CRD alone is about
@@ -87,6 +92,10 @@ repository unsynced.
 Since 2026-10-02, WAL is archived continuously and a full base backup is taken
 every day to R2 bucket `tosak-pg-backups`, path `tosak-pg-cluster-g1/`, kept
 30 days (ADR 0003 Amendments; `docs/runbook/cluster-services.md` step 15).
+Git is the record of the current Archive Generation: it is the `serverName` in
+`cluster/fresh/pg-cluster.yaml`. A rehearsal archives to its own bucket
+`tosak-pg-backups-rehearsal` (`core/rehearsal/cnpg`), never to this one.
 
-**A backup is not proven until a restore is.** The monthly Restore Drill does
-not exist yet, so no restore from this bucket has been tested.
+**A backup is not proven until a restore is.** The monthly Restore Drill
+(`core/pg-drill/`) restores from this bucket, and a rehearsal recovery has
+restored it into the rehearsal project (2026-10-24, 2026-10-25).

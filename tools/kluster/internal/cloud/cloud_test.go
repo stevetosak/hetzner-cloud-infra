@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 )
@@ -19,6 +20,9 @@ type fakeAPI struct {
 	setRulesBody  string
 	primaryIPs    string // JSON array
 	servers       string // JSON array; empty: none
+	// assignedFor is how many deletes of primary IP 8 Hetzner answers with
+	// must_be_unassigned before it lets one through.
+	assignedFor, ipDeletes int
 }
 
 func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -35,6 +39,14 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodDelete && r.URL.Path == "/primary_ips/9":
 		w.WriteHeader(http.StatusNotFound)
 		io.WriteString(w, `{"error":{"code":"not_found","message":"primary ip not found"}}`)
+	case r.Method == http.MethodDelete && r.URL.Path == "/primary_ips/8":
+		f.ipDeletes++
+		if f.ipDeletes <= f.assignedFor {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			io.WriteString(w, `{"error":{"code":"must_be_unassigned","message":"primary ip must be unassigned"}}`)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	case r.Method == http.MethodDelete && r.URL.Path == "/ssh_keys/3":
 		w.WriteHeader(http.StatusNoContent)
 	case r.Method == http.MethodGet && r.URL.Path == "/servers":
@@ -147,5 +159,30 @@ func TestDeleteAllTreatsNotFoundAsDeleted(t *testing.T) {
 	if !strings.Contains(log.String(), "already gone: primary IP primary_ip-9") ||
 		!strings.Contains(log.String(), "deleted ssh key tosak-cluster") {
 		t.Fatalf("log:\n%s", log.String())
+	}
+}
+
+// Hetzner unassigns a deleted server's Primary IP a moment after the
+// server's delete action ends: down waits for it, a bounded time.
+func TestDeleteAllWaitsForTheUnassign(t *testing.T) {
+	f := &fakeAPI{assignedFor: 2}
+	c := newFake(t, f)
+	c.unassign = retry{every: time.Millisecond, upTo: time.Second}
+	inv := &Inventory{PrimaryIPs: []*hcloud.PrimaryIP{{ID: 8, Name: "primary_ip-8"}}}
+	var log strings.Builder
+	if err := c.DeleteAll(context.Background(), inv, &log); err != nil {
+		t.Fatal(err)
+	}
+	if f.ipDeletes != 3 || !strings.Contains(log.String(), "deleted primary IP primary_ip-8") ||
+		strings.Count(log.String(), "primary IP primary_ip-8 is still assigned: waiting up to 1s") != 1 {
+		t.Fatalf("%d deletes, log:\n%s", f.ipDeletes, log.String())
+	}
+
+	f = &fakeAPI{assignedFor: 1 << 30}
+	c = newFake(t, f)
+	c.unassign = retry{every: time.Millisecond, upTo: 20 * time.Millisecond}
+	err := c.DeleteAll(context.Background(), inv, io.Discard)
+	if !hcloud.IsError(err, errMustBeUnassigned) {
+		t.Fatalf("a Primary IP that stays assigned: err = %v, want must_be_unassigned", err)
 	}
 }

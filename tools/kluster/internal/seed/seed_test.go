@@ -40,11 +40,13 @@ func TestBuildReadsTheRepository(t *testing.T) {
 		rehearsal bool
 		hosts     []string
 		secrets   []string
+		cuts      []string
 	}{
-		{false, []string{"argocd.tosak.net", "authos-api.tosak.net", "authos-demo.tosak.net", "authos.tosak.net", "doma.tosak.net"}, nil},
-		{true, []string{"argocd.tosak.net"}, []string{"pg-cluster/db-credentials", "pg-cluster/r2-backup-credentials", "pg-cluster/r2-source-credentials", "redis/redis"}},
+		{false, []string{"argocd.tosak.net", "authos-api.tosak.net", "authos-demo.tosak.net", "authos.tosak.net", "doma.tosak.net"}, nil, nil},
+		{true, []string{"argocd.tosak.net"}, []string{"pg-cluster/db-credentials", "pg-cluster/r2-backup-credentials", "pg-cluster/r2-source-credentials", "redis/redis"},
+			[]string{"rehearsal-cuts"}},
 	} {
-		p, err := Build(Inputs{Rehearsal: tc.rehearsal, WorkTree: repoRoot, Synced: repoRoot, Catalog: repoCatalog(t)})
+		p, err := Build(Inputs{Rehearsal: tc.rehearsal, WorkTree: repoRoot, Synced: repoRoot, Catalog: repoCatalog(t), RehearsalBucket: "tosak-pg-backups-rehearsal"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -52,8 +54,12 @@ func TestBuildReadsTheRepository(t *testing.T) {
 		for _, s := range p.Stages {
 			names = append(names, s.Name())
 		}
-		if want := []string{"seed-crds", "seed-namespaces", "seed-secrets", "seed-argocd", "core-healthy", "lb-address", "zone"}; !slices.Equal(names, want) {
+		want := append(append([]string{"seed-crds", "seed-namespaces", "seed-secrets", "seed-argocd", "core-healthy"}, tc.cuts...), "lb-address", "zone")
+		if !slices.Equal(names, want) {
 			t.Errorf("stages %v", names)
+		}
+		if b := p.BeforeZone(); len(b) != len(want)-1 || b[len(b)-1].Name() != "lb-address" {
+			t.Errorf("BeforeZone %d stages, ends with %s", len(b), b[len(b)-1].Name())
 		}
 		if !slices.Equal(p.Hosts, tc.hosts) {
 			t.Errorf("rehearsal %t: hosts %v, want %v", tc.rehearsal, p.Hosts, tc.hosts)
@@ -204,7 +210,7 @@ func TestApplyIsDoneWhenTheDiffIsEmpty(t *testing.T) {
 }
 
 func TestRehearsalSecretsAreMadeOnce(t *testing.T) {
-	p, err := Build(Inputs{Rehearsal: true, WorkTree: repoRoot, Synced: repoRoot, Catalog: repoCatalog(t)})
+	p, err := Build(Inputs{Rehearsal: true, WorkTree: repoRoot, Synced: repoRoot, Catalog: repoCatalog(t), RehearsalBucket: "b"})
 	if err != nil {
 		t.Fatal(err)
 	}

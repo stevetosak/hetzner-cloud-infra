@@ -70,10 +70,16 @@ func kubectl(args ...string) string {
 // liveCluster is what the Stages read of the Cluster's status.
 type liveCluster struct {
 	Metadata struct {
-		CreationTimestamp time.Time `json:"creationTimestamp"`
+		CreationTimestamp time.Time         `json:"creationTimestamp"`
+		Annotations       map[string]string `json:"annotations"`
 	} `json:"metadata"`
 	Spec struct {
 		Instances int `json:"instances"`
+		Plugins   []struct {
+			Name          string            `json:"name"`
+			IsWALArchiver bool              `json:"isWALArchiver"`
+			Parameters    map[string]string `json:"parameters"`
+		} `json:"plugins"`
 	} `json:"spec"`
 	Status struct {
 		Phase           string              `json:"phase"`
@@ -145,10 +151,27 @@ func (p *Preflight) Probe(ctx context.Context, h *stage.Host) (stage.Status, err
 		}
 		return stage.Status{Done: true, Detail: "resumed: the Cluster is this run's render, unchanged"}, nil
 	}
-	var errs []error
-	errs = append(errs, needInCluster(ctx, h, p.Mode)...)
-
+	errs := append(needInCluster(ctx, h, p.Mode), p.checkBuckets(ctx)...)
+	if err := errors.Join(errs...); err != nil {
+		return stage.Status{}, err
+	}
 	g, next := p.Generation, p.Archives
+	detail := fmt.Sprintf("empty slot; %s/%s is empty", p.Archive.Name(), next.Prefix())
+	if p.Mode == Recover {
+		detail += fmt.Sprintf("; %s is the newest generation in %s", g, p.Source.Name())
+		if p.sourceNewest != nil {
+			detail += ", newest segment " + p.sourceNewest.Pos
+		}
+	}
+	return stage.Status{Done: true, Detail: detail}, nil
+}
+
+// checkBuckets is the half of the preflight that reads no cluster: the
+// archive generation is empty; a recovery's source names the repository's
+// generation as its newest; a live recovery's next generation is locked.
+func (p *Preflight) checkBuckets(ctx context.Context) []error {
+	var errs []error
+	next := p.Archives
 	objs, err := p.Archive.List(ctx, next.Prefix())
 	switch {
 	case err != nil:
@@ -163,17 +186,7 @@ func (p *Preflight) Probe(ctx context.Context, h *stage.Host) (stage.Status, err
 			errs = append(errs, p.checkLock(ctx)...)
 		}
 	}
-	if err := errors.Join(errs...); err != nil {
-		return stage.Status{}, err
-	}
-	detail := fmt.Sprintf("empty slot; %s/%s is empty", p.Archive.Name(), next.Prefix())
-	if p.Mode == Recover {
-		detail += fmt.Sprintf("; %s is the newest generation in %s", g, p.Source.Name())
-		if p.sourceNewest != nil {
-			detail += ", newest segment " + p.sourceNewest.Pos
-		}
-	}
-	return stage.Status{Done: true, Detail: detail}, nil
+	return errs
 }
 
 // checkSource proves the repository's generation is the newest one with

@@ -42,10 +42,13 @@ type Inputs struct {
 	// Store reads the Secret files; live only.
 	Store *secrets.Store
 	// Vault reads the rehearsal items of issued keys; a rehearsal only.
-	Vault   secrets.Vault
-	Zone    ZoneReader
-	Timeout time.Duration
-	Poll    time.Duration
+	Vault secrets.Vault
+	Zone  ZoneReader
+	// RehearsalBucket is the rehearsal archive bucket, which the
+	// rehearsal-cuts Stage expects the archive ObjectStore to name.
+	RehearsalBucket string
+	Timeout         time.Duration
+	Poll            time.Duration
 }
 
 // Element is one core Application's build, for the Plan Mode diff.
@@ -60,10 +63,21 @@ type Plan struct {
 	Stages   []stage.Stage
 	Elements []Element
 	Hosts    []string
+	// Zone is the last of Stages. kluster up runs it after the database,
+	// at the very end.
+	Zone *Zone
+}
+
+// BeforeZone is every Stage but the zone.
+func (p *Plan) BeforeZone() []stage.Stage {
+	return slices.DeleteFunc(slices.Clone(p.Stages), func(s stage.Stage) bool { return s == stage.Stage(p.Zone) })
 }
 
 // Build reads both trees and builds every manifest the seed applies.
 func Build(in Inputs) (*Plan, error) {
+	if in.Rehearsal && in.RehearsalBucket == "" {
+		return nil, errors.New("a rehearsal seed needs the rehearsal archive bucket, for the rehearsal-cuts Stage")
+	}
 	wt := os.DirFS(in.WorkTree)
 	ws, err := coreset.SeedFor(wt, in.Rehearsal)
 	if err != nil {
@@ -145,9 +159,16 @@ func Build(in Inputs) (*Plan, error) {
 		&Apply{StageName: "seed-argocd", Manifest: argocd.Manifest, Target: argocd.Target,
 			What: "the build of core-argocd at the synced revision"},
 		&Healthy{Applications: ss.Applications(), Waiting: wait},
-		&Address{Gateway: GatewayName, Namespace: GatewayNamespace, Waiting: wait, Got: addr},
-		&Zone{Reader: in.Zone, Hosts: p.Hosts, Address: addr},
 	}
+	// The cuts are proven once core is in step, before anything goes on
+	// (ADR 0009, Amendment 2026-10-25).
+	if in.Rehearsal {
+		p.Stages = append(p.Stages, &Cuts{Bucket: in.RehearsalBucket})
+	}
+	p.Zone = &Zone{Reader: in.Zone, Hosts: p.Hosts, Address: addr, Rehearsal: in.Rehearsal}
+	p.Stages = append(p.Stages,
+		&Address{Gateway: GatewayName, Namespace: GatewayNamespace, Waiting: wait, Got: addr},
+		p.Zone)
 	return p, nil
 }
 
@@ -240,4 +261,36 @@ func (p *Plan) Diffs(ctx context.Context, h *stage.Host, out io.Writer, dir stri
 		}
 	}
 	return nil
+}
+
+// Readable reads, in memory, every value the seed-secrets Stage will need,
+// and discards it: live decrypts each Secret's file with the age key, a
+// rehearsal makes its fresh Secrets once, which reads every rehearsal item.
+// So a front check (kluster up) refuses an unreadable Bitwarden item before
+// anything is built. Nothing is printed or kept.
+func (p *Plan) Readable(ctx context.Context) []error {
+	var s *Secrets
+	for _, st := range p.Stages {
+		if x, ok := st.(*Secrets); ok {
+			s = x
+		}
+	}
+	if s == nil {
+		return []error{errors.New("the seed has no seed-secrets Stage")}
+	}
+	if s.Rehearsal {
+		if _, err := secrets.Fresh(ctx, s.Secrets, s.Vault); err != nil {
+			return []error{fmt.Errorf("the rehearsal Secrets: %w", err)}
+		}
+		return nil
+	}
+	var errs []error
+	for _, sec := range s.Secrets {
+		if _, found, _, err := s.Store.Read(ctx, sec); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", sec.Ref, err))
+		} else if !found {
+			errs = append(errs, fmt.Errorf("%s: its file %s does not exist", sec.Ref, sec.File))
+		}
+	}
+	return errs
 }

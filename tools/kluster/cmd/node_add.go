@@ -99,7 +99,10 @@ func nodeAdd(ctx context.Context, a *app, name string) error {
 		return err
 	}
 	if cpSrv == nil {
-		return fmt.Errorf("the project has no %s: run kluster cp init first", a.cfg.ControlPlane.Name)
+		if a.mode.Apply {
+			return fmt.Errorf("the project has no %s: run kluster cp init first", a.cfg.ControlPlane.Name)
+		}
+		return a.planWithoutControlPlane(ctx, workers, w, srv)
 	}
 	if srv != nil {
 		// kluster pins only servers it created.
@@ -125,6 +128,26 @@ func nodeAdd(ctx context.Context, a *app, name string) error {
 		defer closeCP()
 		return a.createAndBuild(ctx, workers, w, srv, cpSrv, cp)
 	})
+}
+
+// planWithoutControlPlane is Plan Mode in a project with no Control Plane
+// yet: the Worker's create plan and its Stages, the Control Plane's values
+// still unknown.
+func (a *app) planWithoutControlPlane(ctx context.Context, workers *tf.Module, w workerset.Worker, srv *cloud.Server) error {
+	fmt.Fprintf(a.out, "Plan Mode: the project has no %s; kluster cp init builds it first\n", a.cfg.ControlPlane.Name)
+	if srv != nil {
+		return nil
+	}
+	if _, err := provision.CreateWorkers(ctx, workers, []string{w.Name}, a.pins, a.mode, a.out); err != nil {
+		return err
+	}
+	return a.planNewWorker(ctx, w, a.unknownControlPlane(), nil)
+}
+
+// unknownControlPlane stands in for a Control Plane that does not exist yet.
+func (a *app) unknownControlPlane() *cloud.Server {
+	n := a.cfg.ControlPlane.Name
+	return &cloud.Server{Name: n, ID: "<new>", PublicIP: "<" + n + " public IP>"}
 }
 
 // withBootstrapSSH opens bootstrap SSH on the Worker firewall, and in a

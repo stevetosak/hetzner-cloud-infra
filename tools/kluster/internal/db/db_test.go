@@ -382,3 +382,49 @@ func TestParseWAL(t *testing.T) {
 		}
 	}
 }
+
+// A Cluster from an earlier db create whose bump is merged since: it is not
+// this run's render, but kluster made it and it archives to the
+// repository's generation.
+func TestBuiltOnlyForKlustersHealthyClusterOfTheRepositorysGeneration(t *testing.T) {
+	cluster := func(ann, server, phase string, ready int) string {
+		a := ""
+		if ann != "" {
+			a = `"annotations":{"` + pgcluster.CreatedBy + `":"` + ann + `"},`
+		}
+		return `{"metadata":{` + a + `"name":"tosak-pg-cluster"},
+			"spec":{"instances":3,"plugins":[{"name":"barman-cloud.cloudnative-pg.io","isWALArchiver":true,"parameters":{"serverName":"` + server + `"}}]},
+			"status":{"phase":"` + phase + `","readyInstances":` + fmt.Sprint(ready) + `}}`
+	}
+	healthy := "Cluster in healthy state"
+	for name, tc := range map[string]struct {
+		cp   *cp
+		want bool
+	}{
+		"kluster's, the repository's generation, healthy": {&cp{cluster: cluster("kluster db create --recover", "tosak-pg-cluster-g1", healthy, 3), diffRC: 1}, true},
+		"no Cluster":                           {&cp{}, false},
+		"this run's render: its Stages resume": {&cp{cluster: cluster("kluster db create --fresh", "tosak-pg-cluster-g1", healthy, 3)}, false},
+		"made by hand":                         {&cp{cluster: cluster("", "tosak-pg-cluster-g1", healthy, 3), diffRC: 1}, false},
+		"another generation":                   {&cp{cluster: cluster("kluster db create --recover", "tosak-pg-cluster-g2", healthy, 3), diffRC: 1}, false},
+		"not healthy":                          {&cp{cluster: cluster("kluster db create --recover", "tosak-pg-cluster-g1", "Setting up primary", 1), diffRC: 1}, false},
+	} {
+		p, _ := preflight(t, Inputs{Mode: Fresh, Archive: newBucket("a")})
+		got, detail, err := p.Built(context.Background(), host(tc.cp))
+		if err != nil || got != tc.want {
+			t.Errorf("%s: Built = %v (%s), %v; want %v", name, got, detail, err, tc.want)
+		}
+	}
+}
+
+// The up-preflight runs the bucket checks with no cluster at all.
+func TestBucketsReadNoCluster(t *testing.T) {
+	p, _ := preflight(t, Inputs{Mode: Recover, Live: true, Archive: sourceG1(), Source: sourceG1(), Locks: locks{}})
+	errs := p.Buckets(context.Background())
+	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "no enabled lock rule") {
+		t.Fatalf("errs = %v, want only the missing lock", errs)
+	}
+	p, _ = preflight(t, Inputs{Mode: Fresh, Archive: sourceG1()})
+	if errs := p.Buckets(context.Background()); len(errs) != 1 || !strings.Contains(errs[0].Error(), "holds 3 object(s)") {
+		t.Fatalf("errs = %v", errs)
+	}
+}
