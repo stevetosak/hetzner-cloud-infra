@@ -20,10 +20,21 @@
 # the visitor's.
 #
 # 🔴 That header is FORGEABLE until the origin is locked. The lock is
-# Cloudflare Authenticated Origin Pulls with a PER-ZONE certificate, added
-# under `tls.clientValidation.caCertificateRefs`. It is not configured yet —
-# see the Phase 4 checklist. Until it is, anyone who finds the origin address
-# can set `CF-Connecting-IP` to anything.
+# Cloudflare zone-level Authenticated Origin Pulls with our OWN certificate:
+# Cloudflare presents a leaf signed by our CA, and `tls.clientValidation`
+# trusts only that CA (`cloudflare-aop-ca.yaml`). Cloudflare's shared
+# origin-pull certificate is the same for every customer and proves nothing.
+#
+# `optional: true` asks for the certificate but still accepts a connection
+# without one. It is the first step of the rollout, so that Cloudflare is seen
+# presenting the certificate before the lock closes. Until `optional` is
+# false, anyone who finds the origin address can set `CF-Connecting-IP` to
+# anything.
+#
+# 🔴 Once `optional` is false, the origin refuses every client but Cloudflare,
+# and that includes a rehearsal Gateway, which is not behind Cloudflare. A
+# broken lock is undone by a revert in git: ArgoCD reads git directly and does
+# not depend on the Gateway.
 #
 # 🔴 Do NOT add a SecurityPolicy IP allowlist instead. `clientCIDRs` matches
 # the DETECTED client address, which this policy defines, so allowlisting
@@ -41,6 +52,12 @@ spec:
       name: tosak
   proxyProtocol:
     optional: false
+  tls:
+    clientValidation:
+      optional: true
+      caCertificateRefs:
+        - kind: ConfigMap
+          name: cloudflare-aop-ca
   clientIPDetection:
     customHeader:
       name: CF-Connecting-IP
