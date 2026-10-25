@@ -41,8 +41,34 @@ func noToken(log string) string {
 	return "grep -v -e 'kubeadm join' -e 'discovery-token' -e '--token' " + log + " | tail -n 30"
 }
 
+// resetLog holds the output of the reset of a cut init.
+const resetLog = "/root/kluster-kubeadm-reset.log"
+
+// resetHalfInit clears what a cut `kubeadm init` left (the static Pod
+// manifests, admin.conf, a running kubelet), or every later init fails its
+// preflight on those files and ports. The Act runs only when the probe is not
+// done, and cp init reaches it only on a build it started and did not
+// finish; the script checks that marker once more before it resets.
+func resetHalfInit() string {
+	return `if [ -e /etc/kubernetes/manifests/kube-apiserver.yaml ] || [ -e /etc/kubernetes/admin.conf ]; then
+  if [ "$(cat ` + MarkerPath + ` 2>/dev/null)" != ` + MarkerRunning + ` ]; then
+    echo 'a kubeadm init is left, but ` + MarkerPath + ` is not ` + MarkerRunning + `: refusing to reset'
+    exit 1
+  fi
+  echo 'a cut kubeadm init is left: kubeadm reset -f'
+  if ! kubeadm reset -f > ` + resetLog + ` 2>&1; then
+    tail -n 30 ` + resetLog + `
+    exit 1
+  fi
+  rm -f ` + resetLog + `
+  # kubeadm reset leaves the CNI configuration; flannel writes it again.
+  rm -f /etc/cni/net.d/*
+fi
+`
+}
+
 func (k KubeadmInit) dryRun() string {
-	return `umask 077
+	return resetHalfInit() + `umask 077
 if ! kubeadm init --dry-run ` + k.flags() + ` > ` + dryRunLog + ` 2>&1; then
   ` + noToken(dryRunLog) + `
   exit 1

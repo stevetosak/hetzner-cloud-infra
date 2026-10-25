@@ -21,7 +21,7 @@
         "plugin": {
           "name": "barman-cloud.cloudnative-pg.io",
           "parameters": {
-            "barmanObjectName": "tosak-pg-backups",
+            "barmanObjectName": "tosak-pg-backups-source",
             "serverName": "tosak-pg-cluster-g1"
           }
         }

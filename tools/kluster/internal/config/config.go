@@ -39,6 +39,7 @@ type Config struct {
 	Manifests    Manifests      `yaml:"manifests"`
 	Secrets      Secrets        `yaml:"secrets"`
 	Services     Services       `yaml:"services"`
+	DB           DB             `yaml:"db"`
 	Terraform    Terraform      `yaml:"terraform"`
 	Envs         map[string]Env `yaml:"envs"`
 	SSH          SSH            `yaml:"ssh"`
@@ -128,6 +129,15 @@ type Services struct {
 	// rehearsal reads live's records to prove the mismatch report.
 	ZoneTokenItem  string `yaml:"zoneTokenItem"`
 	ZoneTokenField string `yaml:"zoneTokenField"`
+}
+
+// DB is what `kluster db create` reads besides the repository.
+type DB struct {
+	// LockTokenItem and LockTokenField hold an account token with R2
+	// Storage Read only: it reads the bucket lock rules and cannot change
+	// them (ADR 0009, Amendment 2026-10-24).
+	LockTokenItem  string `yaml:"lockTokenItem"`
+	LockTokenField string `yaml:"lockTokenField"`
 }
 
 // Manifests are the cluster manifests the Control Plane Stages apply, as
@@ -285,6 +295,8 @@ func (c *Config) validate() error {
 		{"services.zone", c.Services.Zone},
 		{"services.zoneTokenItem", c.Services.ZoneTokenItem},
 		{"services.zoneTokenField", c.Services.ZoneTokenField},
+		{"db.lockTokenItem", c.DB.LockTokenItem},
+		{"db.lockTokenField", c.DB.LockTokenField},
 	}
 	for _, r := range required {
 		if r.v == "" {

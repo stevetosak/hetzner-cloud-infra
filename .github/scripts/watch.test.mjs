@@ -12,6 +12,8 @@ import {
   checkWal,
   checkDrill,
   checkRehearsal,
+  checkLocks,
+  nextGeneration,
   rehearsalResources,
   REHEARSAL_KINDS,
   composeMessage,
@@ -170,8 +172,42 @@ function dataDir() {
     'status=DONE\nend_time=2026-10-02 03:00:09.1+00:00\n',
   )
   writeFileSync(join(dir, 'wal-newest'), '2026-10-02T05:58:00+00:00\n')
+  writeFileSync(join(dir, 'server'), 'tosak-pg-cluster-g1\n')
+  writeFileSync(join(dir, 'locks.json'), JSON.stringify(locks(LOCK_G1, LOCK_G2)))
   return dir
 }
+
+const MONTH = 30 * 24 * 3600
+const lock = (prefix, extra = {}) => ({
+  id: prefix,
+  enabled: true,
+  prefix,
+  condition: { type: 'Age', maxAgeSeconds: MONTH },
+  ...extra,
+})
+const LOCK_G1 = lock('tosak-pg-cluster-g1/wals/')
+const LOCK_G2 = lock('tosak-pg-cluster-g2/wals/')
+const locks = (...rules) => ({ success: true, result: { rules } })
+
+test('nextGeneration', () => {
+  assert.equal(nextGeneration('tosak-pg-cluster-g9'), 'tosak-pg-cluster-g10')
+  assert.throws(() => nextGeneration('tosak-pg-cluster'), /not <name>-g<N>/)
+})
+
+test('checkLocks: the current and the next generation must both be locked', () => {
+  assert.equal(checkLocks(locks(LOCK_G1, LOCK_G2), 'tosak-pg-cluster-g1'), null)
+  assert.match(checkLocks(locks(LOCK_G1), 'tosak-pg-cluster-g1'), /tosak-pg-cluster-g2\/wals\//)
+  assert.match(
+    checkLocks(locks(LOCK_G1, lock('tosak-pg-cluster-g2/wals/', { enabled: false })), 'tosak-pg-cluster-g1'),
+    /g2/,
+  )
+  const short = lock('tosak-pg-cluster-g2/wals/', { condition: { type: 'Age', maxAgeSeconds: 86400 } })
+  assert.match(checkLocks(locks(LOCK_G1, short), 'tosak-pg-cluster-g1'), /g2/)
+  // A base/ rule does not hold wals/: a prefix is literal.
+  assert.match(checkLocks(locks(lock('tosak-pg-cluster-g1/base/'), LOCK_G2), 'tosak-pg-cluster-g1'), /g1\/wals/)
+  assert.equal(checkLocks(locks(lock('tosak-pg-cluster-g'), LOCK_G2), 'tosak-pg-cluster-g1'), null)
+  assert.throws(() => checkLocks({ success: false }, 'tosak-pg-cluster-g1'), /could not be read/)
+})
 
 test('evaluate: a healthy data dir yields no message', () => {
   assert.equal(composeMessage(evaluate(dataDir(), NOW)), null)
@@ -200,6 +236,12 @@ test('evaluate: a malformed input breaks only its own check', () => {
   const f = evaluate(dir, NOW)
   assert.match(f.broken[0], /^volumes: hetzner: more than one page/)
   assert.equal(f.backups, null)
+})
+
+test('evaluate: a missing lock rule is reported', () => {
+  const dir = dataDir()
+  writeFileSync(join(dir, 'locks.json'), JSON.stringify(locks(LOCK_G1)))
+  assert.match(composeMessage(evaluate(dir, NOW)), /Bucket lock: .*g2\/wals/)
 })
 
 test('evaluate: no rehearsal listing at all is a broken check, not a clean one', () => {

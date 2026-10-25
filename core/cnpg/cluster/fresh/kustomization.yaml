@@ -1,0 +1,9 @@
+# The database Cluster, built by `kluster db create --fresh` (ADR 0009,
+# Amendment 2026-10-24). NOT synced by ArgoCD, and never to be: a sync after a
+# loss would bootstrap an empty initdb database, and self-heal would revert a
+# recovered serverName. `kluster services check` refuses a synced
+# kustomization that lists anything under core/cnpg/cluster/.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - pg-cluster.yaml

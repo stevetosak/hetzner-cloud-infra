@@ -83,6 +83,13 @@ services:
   zoneTokenItem: kluster/cloudflare-zone-read
   zoneTokenField: api_token
 
+# `kluster db create`: a read-only token for the bucket lock rules (an account
+# token, R2 Storage Read). The buckets and their tokens come from the
+# ObjectStores and the Secret Catalog.
+db:
+  lockTokenItem: kluster/r2-config-ro
+  lockTokenField: api_token
+
 # Applied on the Control Plane by `kluster cp init`, relative to this file.
 manifests:
   flannel: ../../core/cni/flannel.yaml

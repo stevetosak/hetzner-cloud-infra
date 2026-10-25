@@ -42,7 +42,7 @@ func TestBuildReadsTheRepository(t *testing.T) {
 		secrets   []string
 	}{
 		{false, []string{"argocd.tosak.net", "authos-api.tosak.net", "authos-demo.tosak.net", "authos.tosak.net", "doma.tosak.net"}, nil},
-		{true, []string{"argocd.tosak.net"}, []string{"pg-cluster/db-credentials", "redis/redis"}},
+		{true, []string{"argocd.tosak.net"}, []string{"pg-cluster/db-credentials", "pg-cluster/r2-backup-credentials", "pg-cluster/r2-source-credentials", "redis/redis"}},
 	} {
 		p, err := Build(Inputs{Rehearsal: tc.rehearsal, WorkTree: repoRoot, Synced: repoRoot, Catalog: repoCatalog(t)})
 		if err != nil {
@@ -209,20 +209,21 @@ func TestRehearsalSecretsAreMadeOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := p.Stages[2].(*Secrets)
+	s.Vault = rehearsalItems{}
 	cp := &fakeCP{secrets: map[string]string{}}
 	h := &stage.Host{Name: "k8s-cp", Exec: cp}
 	var out bytes.Buffer
 	if err := stage.Run(context.Background(), []stage.Stage{s}, h, stage.Options{Out: &out, Apply: true}); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
-	if len(cp.secrets) != 2 {
+	if len(cp.secrets) != 4 {
 		t.Fatalf("made %v", cp.secrets)
 	}
 	first := cp.secrets["redis/redis"]
 	if err := stage.Run(context.Background(), []stage.Stage{s}, h, stage.Options{Out: &out, Apply: true}); err != nil {
 		t.Fatal(err)
 	}
-	if cp.secrets["redis/redis"] != first || len(cp.applied) != 2 {
+	if cp.secrets["redis/redis"] != first || len(cp.applied) != 4 {
 		t.Error("a second seed made a Secret again")
 	}
 	if strings.Contains(out.String(), "data:") {
@@ -233,6 +234,17 @@ func TestRehearsalSecretsAreMadeOnce(t *testing.T) {
 	if _, err := s.Probe(context.Background(), h); err == nil || !strings.Contains(err.Error(), "delete it") {
 		t.Errorf("a Secret without its key: %v", err)
 	}
+}
+
+// rehearsalItems answers only a rehearsal item: a read of a live item is a
+// fault the test must see.
+type rehearsalItems struct{}
+
+func (rehearsalItems) Issued(_ context.Context, k *catalog.Key) ([]byte, error) {
+	if !strings.Contains(k.Item, "rehearsal") {
+		return nil, fmt.Errorf("read the live item %s", k.Item)
+	}
+	return []byte("x-" + k.Field), nil
 }
 
 func TestHealthyWaitsThenNamesWhatIsNot(t *testing.T) {

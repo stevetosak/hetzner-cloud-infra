@@ -146,3 +146,14 @@ func TestPlanNewPreviewsEveryStageWithoutAHost(t *testing.T) {
 		}
 	}
 }
+
+// TestDryRunResetsOnlyItsOwnCutInit proves the reset of a cut init comes
+// before the dry run and is guarded by the running marker.
+func TestDryRunResetsOnlyItsOwnCutInit(t *testing.T) {
+	s := KubeadmInit{}.dryRun()
+	reset, dry := strings.Index(s, "kubeadm reset -f >"), strings.Index(s, "kubeadm init --dry-run")
+	guard := strings.Index(s, `!= `+MarkerRunning+` ]`)
+	if reset < 0 || guard < 0 || guard > reset || reset > dry {
+		t.Fatalf("want the marker guard, then the reset, then the dry run:\n%s", s)
+	}
+}

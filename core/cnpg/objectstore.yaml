@@ -1,9 +1,11 @@
-# Where tosak-pg-cluster archives its WAL and base backups (ADR 0003,
-# Amendments 2026-10-01 and 2026-10-02).
+# The archive store: where tosak-pg-cluster archives its WAL and base backups
+# (ADR 0003, Amendments 2026-10-01 and 2026-10-02). A rehearsal points it at a
+# bucket of its own (core/rehearsal/cnpg); every recovery reads the live
+# backups through the source store instead (source-objectstore.yaml).
 #
 # There is no `serverName` here on purpose: the plugin ignores it on an
 # ObjectStore and takes it from the Cluster's plugin parameters, so the
-# generation (tosak-pg-cluster-g1, -g2, …) is recorded in pg-cluster.yaml.
+# generation (tosak-pg-cluster-g1, -g2, …) is recorded in cluster/pg-cluster.yaml.
 apiVersion: barmancloud.cnpg.io/v1
 kind: ObjectStore
 metadata:

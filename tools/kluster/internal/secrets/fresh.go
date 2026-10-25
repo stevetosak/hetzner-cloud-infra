@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/catalog"
@@ -9,9 +10,11 @@ import (
 // Fresh makes the manifests a rehearsal applies in place of each Secret's
 // file, in memory (ADR 0009, Amendment 2026-10-22): generated keys new,
 // copies of those, literals as written. No file is read, so no live value
-// can reach a rehearsal. It refuses an issued key, and a copy of a Secret
-// outside secrets; `kluster services check` refuses both first.
-func Fresh(secrets []*catalog.Secret) (map[catalog.Ref][]byte, error) {
+// can reach a rehearsal. An issued key with a rehearsalItem is read from
+// that item through vault (Amendment 2026-10-24) and never written to a file.
+// It refuses an issued key without one, and a copy of a Secret outside
+// secrets; `kluster services check` refuses both first.
+func Fresh(ctx context.Context, secrets []*catalog.Secret, vault Vault) (map[catalog.Ref][]byte, error) {
 	vals := map[catalog.Ref]Values{}
 	for _, s := range secrets {
 		v := Values{}
@@ -26,7 +29,17 @@ func Fresh(secrets []*catalog.Secret) (map[catalog.Ref][]byte, error) {
 			case catalog.Literal:
 				v[name] = []byte(k.Value)
 			case catalog.Issued:
-				return nil, fmt.Errorf("%s.%s: an issued key has no rehearsal value; mark the Secret rehearsal: %s", s.Ref, name, catalog.RehearsalOmit)
+				if !k.InRehearsal() {
+					return nil, fmt.Errorf("%s.%s: an issued key has no rehearsal value; name a rehearsalItem or mark the Secret rehearsal: %s", s.Ref, name, catalog.RehearsalOmit)
+				}
+				if vault == nil {
+					return nil, fmt.Errorf("%s.%s: no vault to read its rehearsal item from", s.Ref, name)
+				}
+				b, err := vault.Issued(ctx, k.ForRehearsal())
+				if err != nil {
+					return nil, fmt.Errorf("%s.%s: %w", s.Ref, name, err)
+				}
+				v[name] = b
 			}
 		}
 		vals[s.Ref] = v

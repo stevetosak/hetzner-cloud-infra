@@ -47,7 +47,7 @@ jobs:
       # moves archiving to the next serverName generation needs no edit here.
       - name: Read the backup location from core/cnpg
         run: |
-          SERVER=$(yq '.spec.plugins[] | select(.name == "barman-cloud.cloudnative-pg.io") | .parameters.serverName' core/cnpg/pg-cluster.yaml)
+          SERVER=$(yq '.spec.plugins[] | select(.name == "barman-cloud.cloudnative-pg.io") | .parameters.serverName' core/cnpg/cluster/fresh/pg-cluster.yaml)
           DEST=$(yq '.spec.configuration.destinationPath' core/cnpg/objectstore.yaml)
           ENDPOINT=$(yq '.spec.configuration.endpointURL' core/cnpg/objectstore.yaml)
           BUCKET=${DEST#s3://}; BUCKET=${BUCKET%%/*}
@@ -58,6 +58,7 @@ jobs:
           echo "BUCKET=$BUCKET" >> "$GITHUB_ENV"
           echo "ENDPOINT=$ENDPOINT" >> "$GITHUB_ENV"
           mkdir -p "$DATA/errors"
+          echo "$SERVER" > "$DATA/server"
           echo "watching s3://$BUCKET/$SERVER/"
 
       # Each check below records an error CODE in $DATA/errors/<check> instead of
@@ -130,6 +131,23 @@ jobs:
             -H "Authorization: Bearer $HCLOUD_TOKEN" \
             'https://api.hetzner.cloud/v1/volumes?per_page=50' || echo 000)
           [ "$CODE" = 200 ] || echo "hetzner HTTP $CODE (second check)" > "$DATA/errors/volumes"
+
+      # The lock rules of the current and the next generation (ADR 0009,
+      # Amendment 2026-10-24). A token with R2 Storage Read only; the account
+      # id is the endpoint's first label, not a secret. The body is written to
+      # a file and never printed.
+      - name: Bucket lock rules
+        env:
+          CF_TOKEN: ${{ secrets.R2_CONFIG_READ_TOKEN }}
+        run: |
+          if [ -z "$CF_TOKEN" ]; then
+            echo "secret R2_CONFIG_READ_TOKEN is not set" > "$DATA/errors/locks"; exit 0
+          fi
+          ACCOUNT=${ENDPOINT#https://}; ACCOUNT=${ACCOUNT%%.*}
+          CODE=$(curl -sS -o "$DATA/locks.json" -w '%{http_code}' \
+            -H "Authorization: Bearer $CF_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT/r2/buckets/$BUCKET/lock" || echo 000)
+          [ "$CODE" = 200 ] || { echo "cloudflare HTTP $CODE" > "$DATA/errors/locks"; rm -f "$DATA/locks.json"; }
 
       # A forgotten rehearsal costs the monthly caps and Hetzner has no spending
       # cap (ADR 0009). A read-only token for the rehearsal project only; without

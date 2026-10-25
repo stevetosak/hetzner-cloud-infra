@@ -1,0 +1,15 @@
+# The recovery render of ../fresh/pg-cluster.yaml, built by
+# `kluster db create --recover` (ADR 0009, Amendment 2026-10-24). It reads the
+# current Archive Generation through the read-only source store and archives
+# to the next one. recover.json starts with `test` ops: the build fails unless
+# the base still names the generation this overlay reads.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../fresh
+patches:
+  - path: recover.json
+    target:
+      group: postgresql.cnpg.io
+      kind: Cluster
+      name: tosak-pg-cluster

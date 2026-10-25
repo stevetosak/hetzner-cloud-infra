@@ -1,10 +1,10 @@
 # Synced by the Application core-cnpg (ADR 0010, Amendment 2026-10-22).
 # NOT listed, and never to be: namespace.yaml and crds.yaml (the seed), the
-# *.enc.yaml Secrets (kluster secrets apply), pg-cluster.yaml and recovery/
-# (`kluster db create`: a sync must never create or change the Cluster),
+# *.enc.yaml Secrets (kluster secrets apply), cluster/ (`kluster db create`:
+# a sync must never create or change the Cluster),
 # databases/ of projects outside the generator (imaps, wasteio).
 # `kluster services check` refuses a kustomization that names a *.enc.yaml,
-# pg-cluster.yaml, a values file, a crds.yaml or a Namespace.
+# pg-cluster.yaml or cluster/, a values file, a crds.yaml or a Namespace.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
@@ -12,5 +12,6 @@ resources:
   - plugin-barman-cloud.yaml
   - storageclass-retain.yaml
   - objectstore.yaml
+  - source-objectstore.yaml
   - scheduled-backup.yaml
   - databases/doma.yaml

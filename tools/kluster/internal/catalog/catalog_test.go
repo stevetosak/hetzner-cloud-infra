@@ -112,6 +112,8 @@ func TestParseRefuses(t *testing.T) {
 		{"copy of copy", "secrets:\n" + src + "  d/d:\n    file: x/d.enc.yaml\n    keys:\n      k: {kind: copy, from: c/c.k}\n", "a copy key"},
 		{"copy of literal", "secrets:\n" + src + "  d/d:\n    file: x/d.enc.yaml\n    keys:\n      k: {kind: copy, from: r/r.l}\n", "a literal key"},
 		{"rehearsal value", "secrets:\n  a/b:\n    file: x/b.enc.yaml\n    rehearsal: skip\n    keys:\n      k: {kind: generated}\n", `rehearsal: "skip"`},
+		{"rehearsal item is the live item", "secrets:\n  a/b:\n    file: x/b.enc.yaml\n    keys:\n      k: {kind: issued, item: kluster/x, field: f, rehearsalItem: kluster/x}\n", "rehearsalItem is the live item"},
+		{"rehearsal item on a generated key", "secrets:\n  a/b:\n    file: x/b.enc.yaml\n    keys:\n      k: {kind: generated, rehearsalItem: kluster/x}\n", "a generated key has no rehearsalItem"},
 		{"same file", "secrets:\n  a/b:\n    file: x/b.enc.yaml\n    keys:\n      k: {kind: generated}\n  c/b:\n    file: x/b.enc.yaml\n    keys:\n      k: {kind: generated}\n", "is also the file of"},
 	}
 	for _, tt := range tests {

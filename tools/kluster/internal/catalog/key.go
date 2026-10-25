@@ -46,6 +46,11 @@ type Key struct {
 	Item       string `yaml:"item"`
 	Field      string `yaml:"field"`
 	Attachment string `yaml:"attachment"`
+	// RehearsalItem is the Bitwarden item a rehearsal reads instead of
+	// Item, for a token made for rehearsals only; the same field or
+	// attachment. Unset, a rehearsal has no value for the key (ADR 0009,
+	// Amendment 2026-10-24).
+	RehearsalItem string `yaml:"rehearsalItem"`
 	// copy: the source key, and an optional format holding {value} once.
 	From   string `yaml:"from"`
 	Format string `yaml:"format"`
@@ -57,6 +62,20 @@ type Key struct {
 
 // Source is the key a copy copies. It is the zero KeyRef for other kinds.
 func (k *Key) Source() KeyRef { return k.source }
+
+// InRehearsal reports whether a rehearsal has a value for the key: every
+// kind but an issued key without a RehearsalItem.
+func (k *Key) InRehearsal() bool { return k.Kind != Issued || k.RehearsalItem != "" }
+
+// ForRehearsal returns the key as a rehearsal reads it: an issued key's
+// RehearsalItem in place of its Item.
+func (k *Key) ForRehearsal() *Key {
+	r := *k
+	if k.Kind == Issued {
+		r.Item, r.RehearsalItem = k.RehearsalItem, ""
+	}
+	return &r
+}
 
 // Render returns the value of a copy, given its source's value.
 func (k *Key) Render(source []byte) []byte {
@@ -85,12 +104,16 @@ var kinds = map[Kind]kindSpec{
 		}
 		return nil
 	}},
-	Issued: {fields: []string{"item", "field", "attachment"}, copyable: true, check: func(k *Key) error {
+	Issued: {fields: []string{"item", "field", "attachment", "rehearsalItem"}, copyable: true, check: func(k *Key) error {
 		if k.Item == "" {
 			return errors.New("an issued key names its Bitwarden item")
 		}
 		if (k.Field == "") == (k.Attachment == "") {
 			return errors.New("an issued key names a field or an attachment, not both")
+		}
+		if k.RehearsalItem == k.Item {
+			// A rehearsal never gets a live value (ADR 0009).
+			return errors.New("rehearsalItem is the live item; a rehearsal needs a token of its own")
 		}
 		return nil
 	}},
@@ -135,12 +158,13 @@ func (k *Key) validate() error {
 // setFields reports which kind-specific fields are set.
 func (k *Key) setFields() map[string]bool {
 	return map[string]bool{
-		"length":     k.Length != 0,
-		"item":       k.Item != "",
-		"field":      k.Field != "",
-		"attachment": k.Attachment != "",
-		"from":       k.From != "",
-		"format":     k.Format != "",
-		"value":      k.Value != "",
+		"length":        k.Length != 0,
+		"item":          k.Item != "",
+		"field":         k.Field != "",
+		"attachment":    k.Attachment != "",
+		"rehearsalItem": k.RehearsalItem != "",
+		"from":          k.From != "",
+		"format":        k.Format != "",
+		"value":         k.Value != "",
 	}
 }
