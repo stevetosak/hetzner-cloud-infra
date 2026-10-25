@@ -10,7 +10,16 @@ Cloudflare presents a leaf certificate to the Gateway on every request ([the Log
 ## Steps
 
 1. Read the CA certificate and key from Bitwarden, profile `kluster`, item `kluster/cloudflare-aop-ca` (PEM in the notes). Write them to a private temporary directory, never to the repository.
-2. Make a new RSA 4096 key and certificate signing request, and sign it with the CA for two years with `CA:FALSE` and extended key usage `clientAuth`, the same shape as the first leaf.
+2. Make a new RSA 4096 key and certificate signing request, and sign it with the CA for two years with `CA:FALSE` and extended key usage `clientAuth`. These are the commands that made the first leaf on 2026-10-25, run from that directory with `ca.crt` and `ca.key` in it; `umask 077` keeps the keys private, and nothing prints a key:
+
+   ```sh
+   umask 077
+   openssl req -newkey rsa:4096 -nodes -keyout leaf.key -out leaf.csr \
+     -subj "/CN=tosak.net Cloudflare origin pull" 2>/dev/null
+   printf 'basicConstraints=CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=clientAuth\n' > leaf.ext
+   openssl x509 -req -in leaf.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
+     -out leaf.crt -days 730 -extfile leaf.ext 2>/dev/null
+   ```
 3. Run `openssl verify -CAfile ca.crt leaf.crt`. It must print OK.
 4. Store the new key and certificate in Bitwarden, item `kluster/cloudflare-aop-leaf`, as PEM in the notes.
 5. In the Cloudflare dashboard, upload the new leaf at zone level with its key. Cloudflare refuses a root CA ("missing leaf certificate"), so upload the leaf only.
