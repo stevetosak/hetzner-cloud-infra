@@ -73,7 +73,7 @@ func (c *Client) DeleteAll(ctx context.Context, inv *Inventory, log io.Writer) e
 				continue
 			}
 		}
-		step("primary IP "+ip.Name, c.deletePrimaryIP(ctx, ip))
+		step("primary IP "+ip.Name, c.deletePrimaryIP(ctx, ip, log))
 	}
 	for _, ip := range inv.FloatingIPs {
 		if ip.Protection.Delete {
@@ -120,13 +120,17 @@ const errMustBeUnassigned hcloud.ErrorCode = "must_be_unassigned"
 
 // deletePrimaryIP retries while Hetzner still holds ip on a server it has
 // just deleted: the unassign follows the server's delete action a moment
-// later (rehearsal 2026-10-24).
-func (c *Client) deletePrimaryIP(ctx context.Context, ip *hcloud.PrimaryIP) error {
+// later (rehearsal 2026-10-24). It says once that it waits, so a teardown
+// shows whether the race happened.
+func (c *Client) deletePrimaryIP(ctx context.Context, ip *hcloud.PrimaryIP, log io.Writer) error {
 	deadline := time.Now().Add(c.unassign.upTo)
-	for {
+	for waited := false; ; waited = true {
 		_, err := c.h.PrimaryIP.Delete(ctx, ip)
 		if !hcloud.IsError(err, errMustBeUnassigned) || time.Now().After(deadline) {
 			return err
+		}
+		if !waited {
+			fmt.Fprintf(log, "  primary IP %s is still assigned: waiting up to %s for Hetzner to unassign it\n", ip.Name, c.unassign.upTo)
 		}
 		select {
 		case <-ctx.Done():

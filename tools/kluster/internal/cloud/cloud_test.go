@@ -173,7 +173,8 @@ func TestDeleteAllWaitsForTheUnassign(t *testing.T) {
 	if err := c.DeleteAll(context.Background(), inv, &log); err != nil {
 		t.Fatal(err)
 	}
-	if f.ipDeletes != 3 || !strings.Contains(log.String(), "deleted primary IP primary_ip-8") {
+	if f.ipDeletes != 3 || !strings.Contains(log.String(), "deleted primary IP primary_ip-8") ||
+		strings.Count(log.String(), "primary IP primary_ip-8 is still assigned: waiting up to 1s") != 1 {
 		t.Fatalf("%d deletes, log:\n%s", f.ipDeletes, log.String())
 	}
 
