@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: alertmanager-receivers
+    namespace: monitoring
+type: Opaque
+data:
+    telegram-bot-token: ENC[AES256_GCM,data:TahnD20M7/QlJOVEMcMyZMGwwGoWx+VzLpMH7mXsdCbClTUuvsXmJweKLDOhuuXCR8M2VjTE2kGorYiDueeKLw==,iv:zW4MfsfGxlu8HMwJ9ta8lihOqkbsK6Qp8EBK3w3MbNg=,tag:ROMbZ2n/0LGLLDzBrrsWyg==,type:str]
+    telegram-chat-id: ENC[AES256_GCM,data:mn1neORlA+Pk4sqsuTtq3pJl0dk=,iv:AIKr8EStmZdOsmJo6yUPLZ7IxJje6XY4exF1yCSOfOU=,tag:6D9IIPagGMI7Utxcs5n3Qg==,type:str]
+    watchdog-ping-url: ENC[AES256_GCM,data:C1ztq4t4zruV34BJaO3aPH+ISiKcPGwnH54adE33nMRJxdWsA+0YS1vo52WmLbKvnWou6n7LLGsdnrpx45d1dn59rGdJFceoIDtBFg==,iv:Z4m0ZfIVD3+uyw9zz18H4yW7IrspwRd0J4qwVgNnr4Y=,tag:NdjZTQGm66nX01kgfJipiA==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBqYkcwVW04bGZtVFZKT3NT
+            a3ZKV1F2MjQ2cE5WSHZrUW1STEE0dDMreENNCk9wd21XaDI1ZW8weU1OcGQ0ZVVV
+            bHdHakZ5UWk3bzFOVnA1QzE4Q01ocm8KLS0tIHJ3K3NVSHFnUXBKQWlFbHJqa3Zm
+            MndoRGlFd3dpaWhRczdSWDBkQS9PWWcKZ4/YVDsuYJmj9gTz3Dp1kX1KBc7OxQOy
+            jTVpkLoccNDNQKGu+uBEIzdBrOPDycNnq0MVO8985tFhhg7qhashIg==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1djev7m4tq9z9lgrd8r3unhlzgzfkx3j6vz6dltu4rumqnnu7fq5q0aqtnd
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAzNWNlWlZlODBwYVlwSmhF
+            VTl2V1IxL0FyVzVNSzdOSWtxYm90RXdGWVhjClUvUWdoaWlYY1FhOW13S3dGbi82
+            aVcrRzBkSDRHaUdKZVB0VlBHeFZPcDQKLS0tIE1rY0JVTHJxNVovM2pCSFdBYjBF
+            MEUxdlVnVmxDbmN4VkkxdC8rYjBxMDQKA1a1Vy3p0aWFiFYjyyDt3eaXTEN+kE8E
+            CY7E10szc//W9hxiI6oQhVIQJ501Y8RwwCoVTHAvQMrNIMG88Ro+Eg==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age167896gaqg05ht7eaa78z2jhk4p9gxnyfep8ft3f8cvu8wh3dd3hscv3n8j
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-10-31T23:47:59Z"
+    mac: ENC[AES256_GCM,data:5JbUIReCTEFk33vsp8LsMMiv+Q2c35XlLQHb4YzElJcW4f1k38QjLhWZGx3ZmgV8OFv17nBxD93DoCoiA43gymyuKgeq+Qx0pO/Zqy3Ut9iHV+k6Xrp7jTVWRFTTg+7e9gUfR9s+b5gIPy6pUtlPivoVcYa7dH5jKDpxAZLjrTQ=,iv:RkNaOWX/ZDrZ/wS+YWXnmT0sTEezs9qmz4uf0GPVi54=,tag:ChCEHulQ/hZVcZ22r0HQ0w==,type:str]
+    version: 3.13.3
