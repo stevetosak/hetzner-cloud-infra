@@ -1,0 +1,6 @@
+# A kalfa Module that describes this platform; it is not part of the kalfa
+# package. A machine finds it through the kalfa machine setting
+#   module-dirs: [~/Projects/Active/cloud-infra/kalfa/modules]
+# and a repository that deploys here turns it on in its kalfa.yaml.
+schema: 1
+description: The Operator's own deployment platform (the Hetzner Kubernetes cluster behind tosak.net); its rules load in the repositories that deploy to it. Not generic; turn on `infra` for the generic rules.
