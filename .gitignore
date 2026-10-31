@@ -42,3 +42,4 @@ tools/kluster/.idea/
 # Untracked on purpose, pending the Phase 5 configuration work. Delete this
 # rule once that lands and the file is ready to be committed.
 projects/imaps/backend/manifests/configmap.yaml
+.kalfa/
