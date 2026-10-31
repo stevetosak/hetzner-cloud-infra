@@ -6,6 +6,7 @@ _Generated from `history.jsonl` on this branch by `deployments/render-catalog.mj
 
 | App | Version | Commit | Env | Deployed (UTC) |
 | --- | --- | --- | --- | --- |
+| doma-web | v0.3.0-9-g79e4d94 | [79e4d94](https://github.com/stevetosak/doma/commit/79e4d94b53744de9bda47f1e25778f15b1b046e2) | dev | 2026-10-31T18:20:10Z |
 | core-cert-manager | unknown | - | dev | 2026-10-24T14:13:04Z |
 | core-gateway | unknown | - | dev | 2026-10-24T14:13:03Z |
 | core-cnpg | unknown | - | dev | 2026-10-24T14:12:50Z |
@@ -16,7 +17,6 @@ _Generated from `history.jsonl` on this branch by `deployments/render-catalog.mj
 | authos-api | authos-api-v0.0.0+a8d580f | [a8d580f](https://github.com/stevetosak/authos/commit/a8d580fc30e315004afa15ad19fcdb26715d3784) | dev | 2026-10-23T11:12:44Z |
 | authos-ui | authos-ui-v0.0.0+a8d580f | [a8d580f](https://github.com/stevetosak/authos/commit/a8d580fc30e315004afa15ad19fcdb26715d3784) | dev | 2026-10-23T10:59:33Z |
 | authos-demo | authos-demo-v0.0.0+a8d580f | [a8d580f](https://github.com/stevetosak/authos/commit/a8d580fc30e315004afa15ad19fcdb26715d3784) | dev | 2026-10-23T10:56:24Z |
-| doma-web | v0.3.0-7-gd0fa1d7 | [d0fa1d7](https://github.com/stevetosak/doma/commit/d0fa1d74932ca2df272c89aff47621dbbb3cddc2) | dev | 2026-10-23T10:35:30Z |
 
 ## Recent history
 
@@ -24,6 +24,7 @@ _Generated from `history.jsonl` on this branch by `deployments/render-catalog.mj
 
 | App | Version | Commit | Env | Deployed (UTC) |
 | --- | --- | --- | --- | --- |
+| doma-web | v0.3.0-9-g79e4d94 | [79e4d94](https://github.com/stevetosak/doma/commit/79e4d94b53744de9bda47f1e25778f15b1b046e2) | dev | 2026-10-31T18:20:10Z |
 | core-cert-manager | unknown | - | dev | 2026-10-24T14:13:04Z |
 | core-gateway | unknown | - | dev | 2026-10-24T14:13:03Z |
 | core-cnpg | unknown | - | dev | 2026-10-24T14:12:50Z |
