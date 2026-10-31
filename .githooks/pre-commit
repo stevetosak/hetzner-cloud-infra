@@ -15,8 +15,8 @@ cd "$(git rev-parse --show-toplevel)"
 
 if git diff --cached --name-only --diff-filter=ACMR | grep -q '\.md$'; then
 	docs="$(dirname "$PWD")/tosak-docs"
-	if [ -x "$docs/agent/bin/run-node" ]; then
-		"$docs/agent/bin/run-node" "$docs/contract/cli.ts" cloud-infra --root "$PWD"
+	if [ -x "$docs/scripts/run-node" ]; then
+		"$docs/scripts/run-node" "$docs/contract/cli.ts" cloud-infra --root "$PWD"
 	else
 		echo "pre-commit: no tosak-docs clone at $docs; Contract check skipped (the PR check still runs it)." >&2
 	fi
