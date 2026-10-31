@@ -139,7 +139,68 @@ prometheus:
 # Alertmanager
 # ---------------------------------------------------------------------------
 alertmanager:
+  # The routing is plain YAML here, so a review can read it. Every secret value
+  # is a file from the Secret monitoring/alertmanager-receivers (Secret
+  # Catalog), mounted by `secrets:` below at /etc/alertmanager/secrets/<name>/.
+  # The chart renders this config into a Secret in the committed file, so it
+  # must never hold a value itself.
+  config:
+    global:
+      resolve_timeout: 5m
+    # The chart's defaults: a critical alert silences the warning and info
+    # alerts of the same name and namespace; InfoInhibitor silences info.
+    inhibit_rules:
+      - source_matchers: ['severity = critical']
+        target_matchers: ['severity =~ warning|info']
+        equal: [namespace, alertname]
+      - source_matchers: ['severity = warning']
+        target_matchers: ['severity = info']
+        equal: [namespace, alertname]
+      - source_matchers: ['alertname = InfoInhibitor']
+        target_matchers: ['severity = info']
+        equal: [namespace]
+      - target_matchers: ['alertname = InfoInhibitor']
+    route:
+      # Anything not routed below goes to the Alert Chat: an alert with no
+      # severity is a rule fault worth seeing, not something to drop.
+      receiver: telegram
+      group_by: [namespace]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
+      routes:
+        # The dead-man's switch (ADR 0011). The Watchdog always fires; its
+        # ping every minute keeps the healthchecks.io check (period 5 min,
+        # grace 10 min) green. Silence means Prometheus, Alertmanager or the
+        # cluster is gone.
+        - receiver: healthchecks
+          matchers: ['alertname = "Watchdog"']
+          group_wait: 0s
+          group_interval: 1m
+          repeat_interval: 1m
+        - receiver: 'null'
+          matchers: ['alertname = "InfoInhibitor"']
+        # info stays in Grafana (ADR 0011).
+        - receiver: 'null'
+          matchers: ['severity = "info"']
+    receivers:
+      - name: 'null'
+      - name: telegram
+        telegram_configs:
+          - bot_token_file: /etc/alertmanager/secrets/alertmanager-receivers/telegram-bot-token
+            chat_id_file: /etc/alertmanager/secrets/alertmanager-receivers/telegram-chat-id
+            send_resolved: true
+      - name: healthchecks
+        webhook_configs:
+          - url_file: /etc/alertmanager/secrets/alertmanager-receivers/watchdog-ping-url
+            send_resolved: false
+    templates:
+      - '/etc/alertmanager/config/*.tmpl'
+
   alertmanagerSpec:
+    secrets:
+      - alertmanager-receivers
+
     image:
       tag: v0.34.2
       sha: 39d8bb3966c694a124428a3a88fbcffd40bd069129ecd47c059f8a3f17c55f3b
