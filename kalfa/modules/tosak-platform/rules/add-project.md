@@ -48,7 +48,7 @@ projects/<project>/<component>/manifests/overlays/dev
   Application <project>-<component>   AppProject <project>   namespace <project>
 ```
 
-The generator LISTS its projects (`- path: projects/<project>/*/manifests/overlays/dev`); a `projects/*/*` glob would adopt the projects kept unsynced (`imaps`, `wasteio`, `projects/debug/`). That list is the source of truth for which projects are live.
+The generator LISTS its projects (`- path: projects/<project>/*/manifests/overlays/dev`); a `projects/*/*` glob would adopt the projects kept unsynced (`imaps`, `wasteio`, `projects/debug/`). That list is the source of truth for which projects are live; `docs/reference/applications-the-cluster-hosts.md` in cloud-infra lists them with their namespaces, Applications and hosts.
 
 Deleting the ApplicationSet does not delete the workloads (`preserveResourcesOnDeletion: true`). Removing a directory from the list orphans that component's Deployment: still running, no longer managed.
 
