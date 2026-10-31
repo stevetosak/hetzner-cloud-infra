@@ -2,5 +2,6 @@ schema: 1
 modules:
   - infra
   - tosak-platform
+  - tosak-docs
 plans:
   - docs/**/*.md
