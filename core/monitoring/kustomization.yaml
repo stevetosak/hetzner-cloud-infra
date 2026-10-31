@@ -1,0 +1,10 @@
+# Synced by the Application core-monitoring (ADR 0010, Amendment 2026-10-22;
+# ADR 0011).
+# NOT listed, and never to be: namespace.yaml and crds.yaml (the seed),
+# kube-prometheus-stack-values.yaml (render input).
+# `kluster services check` refuses a kustomization that names a *.enc.yaml,
+# a values file, a crds.yaml or a Namespace.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - kube-prometheus-stack.yaml

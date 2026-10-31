@@ -30,6 +30,21 @@ import yaml
 SEPARATOR = re.compile(r"^---[ \t]*$", re.MULTILINE)
 
 
+class Loader(yaml.SafeLoader):
+    """SafeLoader that reads a bare `=` as the string it is.
+
+    YAML 1.1 resolves a plain `=` to the `value` type, which SafeLoader has no
+    constructor for; the prometheus-operator CRDs list `=` as an enum value of
+    a label matcher. Only classification uses the parsed form, so this cannot
+    change what is written out.
+    """
+
+
+Loader.add_constructor(
+    "tag:yaml.org,2002:value", lambda loader, node: loader.construct_scalar(node)
+)
+
+
 def documents(text):
     """Yields the raw text of each document, separators removed."""
     for chunk in SEPARATOR.split(text):
@@ -38,7 +53,7 @@ def documents(text):
 
 
 def parse(chunk):
-    docs = [d for d in yaml.safe_load_all(chunk) if d is not None]
+    docs = [d for d in yaml.load_all(chunk, Loader=Loader) if d is not None]
     if not docs:
         return None
     if len(docs) > 1 or not isinstance(docs[0], dict) or "kind" not in docs[0]:
