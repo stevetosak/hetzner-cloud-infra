@@ -1,0 +1,27 @@
+# The public hosts (ADR 0011): a probe of probes/public-hosts.yaml that fails.
+# One probe tests DNS, Cloudflare, the origin lock, the load balancer, the
+# Gateway, the route and the pod, so the alert says where to look first.
+# When blackbox-exporter itself is down, probe_success is gone and the
+# chart's TargetDown fires instead.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: probes
+  namespace: monitoring
+spec:
+  groups:
+    - name: public-hosts
+      rules:
+        - alert: PublicHostDown
+          # 5m: a pod restart or a rollout must not page.
+          expr: probe_success{job="public-hosts"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.instance }} does not answer as expected"
+            description: >-
+              The probe of {{ $labels.instance }} fails
+              for 5 minutes. probe_http_status_code shows the answer: 0 is
+              no answer (DNS, TLS or a timeout), 52x is Cloudflare without
+              the origin, 503 is Envoy without a ready pod.

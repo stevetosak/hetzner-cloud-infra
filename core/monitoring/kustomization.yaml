@@ -16,6 +16,10 @@ resources:
   - rules/certificates.yaml
   - monitors/argocd.yaml
   - monitors/envoy-gateway.yaml
+  # The probes of the public hosts and their prober (ADR 0011).
+  - blackbox-exporter.yaml
+  - probes/public-hosts.yaml
+  - rules/probes.yaml
 
 # The pinned upstream dashboards (dashboards/fetch.sh), one ConfigMap each.
 # Grafana's sidecar loads every ConfigMap with grafana_dashboard: "1".

@@ -44,7 +44,8 @@ var servicesCheckCmd = &cobra.Command{
 	Long: "Refuses a core kustomization that lists what only the seed or kluster applies " +
 		"(CRDs, Namespaces, *.enc.yaml, pg-cluster.yaml, values), a rehearsal element the main " +
 		"core list does not have, and a project in the projects generator that lacks its " +
-		"AppProject, namespace file, Gateway listeners, deploy catalog entry or Reloader scope.",
+		"AppProject, namespace file, Gateway listeners, deploy catalog entry or Reloader scope; " +
+		"and a host of a synced HTTPRoute with no Probe target, or a Probe target no synced route serves (ADR 0011).",
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		cfg, err := config.Load(flags.config)

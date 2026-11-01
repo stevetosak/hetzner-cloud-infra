@@ -1,0 +1,57 @@
+# The probes of every public host (ADR 0011). blackbox-exporter
+# (blackbox-exporter.yaml) asks each URL from inside the cluster, out through
+# Cloudflare and back. One Probe per expected status: the Probe's module
+# (blackbox-exporter-values.yaml) says which status passes, and no module
+# follows a redirect. The alert is PublicHostDown (rules/probes.yaml).
+#
+# `kluster services check` fails when a host of a synced HTTPRoute has no
+# target here, or a target here has no synced route. A new route adds its
+# host here in the same change.
+#
+# The path is one that proves the app itself answered: its liveness path
+# where the route reaches it, else a page that is always 200. Measured on
+# 2026-11-01 with curl from outside:
+#   authos-api  /  and /health/live are 404 (Spring, no health path on the
+#               route); /.well-known/openid-configuration is 200.
+#   doma        /api/health/live is the Deployment's liveness path.
+#   argocd      /healthz is argocd-server's health path.
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: public-hosts-2xx
+  namespace: monitoring
+spec:
+  jobName: public-hosts
+  module: http_2xx
+  prober:
+    url: blackbox-exporter.monitoring.svc:9115
+  interval: 1m
+  scrapeTimeout: 15s
+  targets:
+    staticConfig:
+      static:
+        - https://argocd.tosak.net/healthz
+        - https://authos.tosak.net/
+        - https://authos-api.tosak.net/.well-known/openid-configuration
+        - https://authos-demo.tosak.net/
+        - https://doma.tosak.net/api/health/live
+---
+# The apex and www: the Gateway's route apex-to-docs answers 302 to
+# docs.tosak.net (core/gateway/apex-redirect.yaml).
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: public-hosts-302
+  namespace: monitoring
+spec:
+  jobName: public-hosts
+  module: http_302
+  prober:
+    url: blackbox-exporter.monitoring.svc:9115
+  interval: 1m
+  scrapeTimeout: 15s
+  targets:
+    staticConfig:
+      static:
+        - https://tosak.net/
+        - https://www.tosak.net/

@@ -1,0 +1,33 @@
+rule_files: [probes.rules.yaml]
+evaluation_interval: 1m
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'probe_success{job="public-hosts",instance="https://doma.tosak.net/api/health/live"}'
+        values: '1x5 0x10 1x5'
+      - series: 'probe_success{job="public-hosts",instance="https://tosak.net/"}'
+        values: '1x20'
+      # A probe that is not ours does not page.
+      - series: 'probe_success{job="probe/other/x",instance="https://example.com/"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: PublicHostDown
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: PublicHostDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: public-hosts
+              instance: https://doma.tosak.net/api/health/live
+            exp_annotations:
+              summary: "https://doma.tosak.net/api/health/live does not answer as expected"
+              description: >-
+                The probe of https://doma.tosak.net/api/health/live fails
+                for 5 minutes. probe_http_status_code shows the answer: 0 is
+                no answer (DNS, TLS or a timeout), 52x is Cloudflare without
+                the origin, 503 is Envoy without a ready pod.
+      - eval_time: 20m
+        alertname: PublicHostDown
+        exp_alerts: []

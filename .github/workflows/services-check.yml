@@ -3,8 +3,9 @@
 # kustomization lists what only the seed or kluster applies, the rehearsal
 # list is a cut of the main core list, and every project in the projects
 # generator has its AppProject, namespace file, Gateway listeners, deploy
-# catalog entry and, when Reloader restarts it, Reloader's scope. It reads the
-# files only: no cluster, no key.
+# catalog entry and, when Reloader restarts it, Reloader's scope; every host
+# of a synced HTTPRoute has a Probe target and every Probe target a synced
+# route (ADR 0011). It reads the files only: no cluster, no key.
 name: Services check
 
 on:

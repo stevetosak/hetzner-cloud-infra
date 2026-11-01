@@ -8,9 +8,9 @@ A pinned helm render, synced by the Application `core-monitoring`.
 ./core/monitoring/render.sh      # after a values change or a chart bump
 ```
 
-The render writes `kube-prometheus-stack.yaml` (synced by ArgoCD) and
-`crds.yaml` (applied by `kluster services seed`, server-side). It refuses a
-render that holds a helm hook or a random value.
+The render writes `kube-prometheus-stack.yaml` and `blackbox-exporter.yaml`
+(synced by ArgoCD) and `crds.yaml` (applied by `kluster services seed`,
+server-side). It refuses a render that holds a helm hook or a random value.
 
 - **Stateless.** Prometheus keeps 3 days on an `emptyDir` (4 Gi, `retentionSize`
   3 GB); Grafana has no volume. A restart or a move loses the history.
@@ -33,7 +33,14 @@ render that holds a helm hook or a random value.
   sha256; the kustomization turns each JSON into a ConfigMap the sidecar loads.
   A dashboard made in the UI is lost on restart unless its JSON is exported
   into `dashboards/` and listed in the kustomization.
-- **Every image pinned by digest** in the values file. A chart bump needs new
+- **Probes.** blackbox-exporter asks every public host from inside the
+  cluster, out through Cloudflare and back. `probes/public-hosts.yaml` holds
+  one Probe per expected status (a module in `blackbox-exporter-values.yaml`;
+  no module follows a redirect); `PublicHostDown` (`rules/probes.yaml`) pages
+  after 5 minutes. `kluster services check` fails when a host of a synced
+  HTTPRoute has no target, or a target has no synced route: a new route adds
+  its host here in the same change.
+- **Every image pinned by digest** in the values files. A chart bump needs new
   digests: `docker buildx imagetools inspect <image>:<tag>`.
 - **Grafana's admin login** is the Secret `monitoring/grafana-admin` (Secret
   Catalog), read through `admin.existingSecret`.

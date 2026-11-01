@@ -134,8 +134,21 @@ func TestEachRuleFires(t *testing.T) {
 			edit(t, m, "core/redis/kustomization.yaml", "  - service.yaml\n", "  - service.yaml\n  - https://example.com/x.yaml\n")
 		}, "remote resource"},
 		{"an unsynced core kustomization", func(t *testing.T, m fstest.MapFS) {
-			m["core/monitoring/kustomization.yaml"] = &fstest.MapFile{Data: []byte("resources: []\n")}
-		}, "core/monitoring/kustomization.yaml: no Application syncs it"},
+			m["core/unlisted/kustomization.yaml"] = &fstest.MapFile{Data: []byte("resources: []\n")}
+		}, "core/unlisted/kustomization.yaml: no Application syncs it"},
+		{"a route without a probe", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, "core/monitoring/probes/public-hosts.yaml", "        - https://doma.tosak.net/api/health/live\n", "")
+		}, "projects/doma/httproute.yaml: host doma.tosak.net has no probe"},
+		{"a probe without a route", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, "core/monitoring/probes/public-hosts.yaml", "        - https://www.tosak.net/\n", "        - https://www.tosak.net/\n        - https://imaps.tosak.net/\n")
+		}, "a probe targets imaps.tosak.net, which no synced HTTPRoute serves"},
+		{"a probe that is not an https URL", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, "core/monitoring/probes/public-hosts.yaml", "        - https://www.tosak.net/\n", "        - www.tosak.net\n")
+		}, `target "www.tosak.net" is not an https URL`},
+		{"a probe that discovers its targets", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, "core/monitoring/probes/public-hosts.yaml", "    staticConfig:\n      static:\n        - https://tosak.net/\n        - https://www.tosak.net/\n",
+				"    ingress:\n      selector: {}\n")
+		}, "list the targets in staticConfig.static"},
 		{"a core namespace outside the AppProject", func(t *testing.T, m fstest.MapFS) {
 			edit(t, m, AppProjectsFile, "    - {server: https://kubernetes.default.svc, namespace: cnpg-system}\n", "")
 		}, "namespace cnpg-system of cnpg is not a destination"},

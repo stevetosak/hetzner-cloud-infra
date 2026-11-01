@@ -47,6 +47,7 @@ func Check(fsys fs.FS) []error {
 	errs = append(errs, orphans(fsys, "core", core, func(e Element) string { return e.Path })...)
 	errs = append(errs, checkRehearsal(fsys, core)...)
 	errs = append(errs, checkProjects(fsys, dests)...)
+	errs = append(errs, checkProbes(fsys, core)...)
 	for _, rehearsal := range []bool{false, true} {
 		s, err := SeedFor(fsys, rehearsal)
 		if err == nil {
@@ -177,21 +178,12 @@ func orphans(fsys fs.FS, parent string, els []Element, pathOf func(Element) stri
 // missing file, and a remote resource nobody reviewed.
 func checkKustomization(fsys fs.FS, dir string) []error {
 	file := dir + "/kustomization.yaml"
-	objs, err := Objects(fsys, file)
+	resources, err := kustomizationResources(fsys, dir)
 	if err != nil {
 		return []error{err}
 	}
-	if len(objs) != 1 {
-		return []error{fmt.Errorf("%s: want one document", file)}
-	}
-	var k struct {
-		Resources []string `yaml:"resources"`
-	}
-	if err := objs[0].Node.Decode(&k); err != nil {
-		return []error{fmt.Errorf("%s: %w", file, err)}
-	}
 	var errs []error
-	for _, r := range k.Resources {
+	for _, r := range resources {
 		if strings.Contains(r, "://") {
 			errs = append(errs, fmt.Errorf("%s: remote resource %s; render it into the repository", file, r))
 			continue
@@ -213,6 +205,26 @@ func checkKustomization(fsys fs.FS, dir string) []error {
 		errs = append(errs, checkContent(fsys, file, rel)...)
 	}
 	return errs
+}
+
+// kustomizationResources returns the resources list of dir's
+// kustomization.yaml, as written.
+func kustomizationResources(fsys fs.FS, dir string) ([]string, error) {
+	file := dir + "/kustomization.yaml"
+	objs, err := Objects(fsys, file)
+	if err != nil {
+		return nil, err
+	}
+	if len(objs) != 1 {
+		return nil, fmt.Errorf("%s: want one document", file)
+	}
+	var k struct {
+		Resources []string `yaml:"resources"`
+	}
+	if err := objs[0].Node.Decode(&k); err != nil {
+		return nil, fmt.Errorf("%s: %w", file, err)
+	}
+	return k.Resources, nil
 }
 
 // forbidden says why a resource path must never be in a synced build, or "".
