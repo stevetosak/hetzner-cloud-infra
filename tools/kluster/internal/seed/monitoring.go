@@ -16,9 +16,11 @@ const prometheusAPI = "/api/v1/namespaces/monitoring/services/kps-prometheus:htt
 
 // Monitoring is the health test of a rebuilt cluster (ADR 0011): every
 // active scrape target is up, the Watchdog fires (so rules are evaluated),
-// and no warning or critical alert fires or is pending. Info alerts go to
-// the null receiver and page nobody, so they do not count. It only reads,
-// and waits until the cluster settles or the timeout.
+// and no alert that would page on live fires or is pending. The live routing
+// sends every alert to Telegram but the Watchdog, the InfoInhibitor and the
+// info alerts (they stay in Grafana), so only those three do not count; an
+// alert with no severity counts, as it pages on live. It only reads, and
+// waits until the cluster settles or the timeout.
 //
 // A rehearsal only, after the database: the CNPG rules fire while no
 // database Cluster exists.
@@ -32,14 +34,13 @@ func (*Monitoring) Name() string    { return "monitoring-clean" }
 func (*Monitoring) Runbook() string { return Runbook + "#monitoring-clean" }
 
 func (m *Monitoring) Probe(ctx context.Context, h *stage.Host) (stage.Status, error) {
-	targets, err := h.Exec.Run(ctx, adminEnv+"kubectl get --raw '"+prometheusAPI+"targets?state=active' 2>/dev/null")
-	if err != nil {
-		// Prometheus is not there or not ready yet.
-		return stage.Status{Detail: "Prometheus cannot be read yet"}, nil
+	targets, ready, err := readPrometheus(ctx, h, "targets?state=active")
+	if err != nil || !ready {
+		return notReadYet, err
 	}
-	alerts, err := h.Exec.Run(ctx, adminEnv+"kubectl get --raw '"+prometheusAPI+"alerts' 2>/dev/null")
-	if err != nil {
-		return stage.Status{Detail: "Prometheus cannot be read yet"}, nil
+	alerts, ready, err := readPrometheus(ctx, h, "alerts")
+	if err != nil || !ready {
+		return notReadYet, err
 	}
 	n, problems, err := monitoringProblems([]byte(targets), []byte(alerts))
 	if err != nil {
@@ -47,13 +48,13 @@ func (m *Monitoring) Probe(ctx context.Context, h *stage.Host) (stage.Status, er
 	}
 	m.problems = problems
 	if len(problems) == 0 {
-		return stage.Status{Done: true, Detail: fmt.Sprintf("%d target(s) up, the Watchdog fires, no warning or critical alert", n)}, nil
+		return stage.Status{Done: true, Detail: fmt.Sprintf("%d target(s) up, the Watchdog fires, no alert that pages", n)}, nil
 	}
 	return stage.Status{Detail: summarize(problems, 5)}, nil
 }
 
 func (m *Monitoring) Preview(context.Context, *stage.Host) (string, error) {
-	return fmt.Sprintf("read only: wait up to %s until every target is up and no warning or critical alert fires\n", m.Timeout), nil
+	return fmt.Sprintf("read only: wait up to %s until every target is up and no alert that pages fires\n", m.Timeout), nil
 }
 
 func (m *Monitoring) Act(ctx context.Context, h *stage.Host) error {
@@ -65,6 +66,49 @@ func (m *Monitoring) Act(ctx context.Context, h *stage.Host) error {
 		return fmt.Errorf("monitoring is not clean after %s:\n  %s", m.Timeout, strings.Join(m.problems, "\n  "))
 	}
 	return nil
+}
+
+var notReadYet = stage.Status{Detail: "Prometheus cannot be read yet"}
+
+// prometheusNotReady holds the kubectl messages of a Prometheus that is not
+// there or does not serve yet: its Service or namespace is missing, it has
+// no ready endpoint, or the proxy cannot reach it. Any other failure (RBAC,
+// the kubeconfig, an API server that cannot be reached) is a fault: waiting
+// for it until the timeout would hide its cause.
+var prometheusNotReady = []string{
+	"(NotFound)",
+	"(ServiceUnavailable)",
+	"no endpoints available",
+	"error trying to reach service",
+}
+
+// readPrometheus reads one path of the Prometheus API. ready is false while
+// Prometheus is not there or does not serve yet.
+func readPrometheus(ctx context.Context, h *stage.Host, path string) (body string, ready bool, err error) {
+	out, err := h.Exec.Run(ctx, adminEnv+"kubectl get --raw '"+prometheusAPI+path+"'")
+	if err == nil {
+		return out, true, nil
+	}
+	if ctx.Err() != nil {
+		return "", false, ctx.Err()
+	}
+	for _, m := range prometheusNotReady {
+		if strings.Contains(out, m) {
+			return "", false, nil
+		}
+	}
+	return "", false, fmt.Errorf("reading Prometheus %s: %w", path, err)
+}
+
+// pagesNobody holds the alerts that the live routing does not send to
+// Telegram: the Watchdog (healthchecks.io), the InfoInhibitor and the info
+// alerts (null).
+func pagesNobody(labels map[string]string) bool {
+	switch labels["alertname"] {
+	case "Watchdog", "InfoInhibitor":
+		return true
+	}
+	return labels["severity"] == "info"
 }
 
 // monitoringProblems reads the answers of /targets and /alerts and returns
@@ -114,8 +158,12 @@ func monitoringProblems(targets, alerts []byte) (int, []string, error) {
 		if name == "Watchdog" && x.State == "firing" {
 			watchdog = true
 		}
-		if slices.Contains([]string{"warning", "critical"}, x.Labels["severity"]) {
-			p := fmt.Sprintf("alert %s (%s) is %s", name, x.Labels["severity"], x.State)
+		if !pagesNobody(x.Labels) {
+			severity := x.Labels["severity"]
+			if severity == "" {
+				severity = "no severity"
+			}
+			p := fmt.Sprintf("alert %s (%s) is %s", name, severity, x.State)
 			if ns := x.Labels["namespace"]; ns != "" {
 				p += " in " + ns
 			}

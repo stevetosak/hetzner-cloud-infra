@@ -2,6 +2,7 @@ package seed
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -20,13 +21,14 @@ const (
 		{"labels":{"alertname":"InfoInhibitor","severity":"none"},"state":"firing"}]}}`
 )
 
-// prometheus answers the two raw reads of the monitoring-clean Stage.
-type prometheus struct{ targets, alerts string }
+// prometheus answers the two raw reads of the monitoring-clean Stage. With
+// no targets, each read fails with fault's output: kubectl's message.
+type prometheus struct{ targets, alerts, fault string }
 
 func (p prometheus) Run(_ context.Context, cmd string) (string, error) {
 	switch {
 	case p.targets == "":
-		return "", os.ErrNotExist
+		return p.fault, errors.New("exit status 1")
 	case strings.Contains(cmd, "get --raw") && strings.Contains(cmd, "/targets?state=active"):
 		return p.targets, nil
 	case strings.Contains(cmd, "get --raw") && strings.Contains(cmd, "/alerts"):
@@ -37,11 +39,11 @@ func (p prometheus) Run(_ context.Context, cmd string) (string, error) {
 func (prometheus) WriteFile(context.Context, string, string, os.FileMode) error { return nil }
 func (prometheus) ReadFile(context.Context, string) (string, error)             { return "", nil }
 
-// Clean: every target up and the Watchdog fires. Info alerts page nobody,
-// so they do not count.
+// Clean: every target up and the Watchdog fires. Info alerts and the
+// InfoInhibitor page nobody, so they do not count.
 func TestMonitoringClean(t *testing.T) {
 	m := &Monitoring{}
-	st, err := m.Probe(context.Background(), &stage.Host{Name: "cp", Exec: prometheus{targetsUp, alertsClean}})
+	st, err := m.Probe(context.Background(), &stage.Host{Name: "cp", Exec: prometheus{targets: targetsUp, alerts: alertsClean}})
 	if err != nil || !st.Done {
 		t.Fatalf("%+v %v", st, err)
 	}
@@ -60,7 +62,7 @@ func TestMonitoringNamesEveryProblem(t *testing.T) {
 		{"labels":{"alertname":"CNPGNoPrimary","severity":"critical"},"state":"firing"}]}}`
 	m := &Monitoring{Waiting: Waiting{Timeout: time.Millisecond, Poll: time.Millisecond}}
 	var out strings.Builder
-	err := stage.Run(context.Background(), []stage.Stage{m}, &stage.Host{Name: "cp", Exec: prometheus{targets, alerts}},
+	err := stage.Run(context.Background(), []stage.Stage{m}, &stage.Host{Name: "cp", Exec: prometheus{targets: targets, alerts: alerts}},
 		stage.Options{Apply: true, Out: &out})
 	if err == nil {
 		t.Fatal("a cluster with a target down passed")
@@ -79,10 +81,42 @@ func TestMonitoringNamesEveryProblem(t *testing.T) {
 
 // Before Prometheus runs, the reads fail: not done yet, not an error.
 func TestMonitoringWaitsForPrometheus(t *testing.T) {
-	m := &Monitoring{}
-	st, err := m.Probe(context.Background(), &stage.Host{Name: "cp", Exec: prometheus{}})
-	if err != nil || st.Done || !strings.Contains(st.Detail, "cannot be read yet") {
-		t.Fatalf("%+v %v", st, err)
+	for _, fault := range []string{
+		`Error from server (NotFound): services "kps-prometheus" not found`,
+		`Error from server (ServiceUnavailable): no endpoints available for service "kps-prometheus:http-web"`,
+		`Error from server (ServiceUnavailable): the server is currently unable to handle the request`,
+	} {
+		m := &Monitoring{}
+		st, err := m.Probe(context.Background(), &stage.Host{Name: "cp", Exec: prometheus{fault: fault}})
+		if err != nil || st.Done || !strings.Contains(st.Detail, "cannot be read yet") {
+			t.Errorf("%s: %+v %v", fault, st, err)
+		}
+	}
+}
+
+// A fault that waiting cannot clear (RBAC, the kubeconfig) fails at once,
+// not as a wait until the timeout.
+func TestMonitoringFailsOnAFault(t *testing.T) {
+	for _, fault := range []string{
+		`Error from server (Forbidden): services "kps-prometheus:http-web" is forbidden: User "x" cannot get resource "services/proxy"`,
+		`error: error loading config file "/etc/kubernetes/admin.conf": open /etc/kubernetes/admin.conf: permission denied`,
+	} {
+		m := &Monitoring{}
+		if _, err := m.Probe(context.Background(), &stage.Host{Name: "cp", Exec: prometheus{fault: fault}}); err == nil {
+			t.Errorf("%s: no error", fault)
+		}
+	}
+}
+
+// An alert with no severity pages on live (the default route goes to
+// Telegram), so it is not clean in a rehearsal either.
+func TestMonitoringCountsAnAlertWithNoSeverity(t *testing.T) {
+	alerts := `{"data":{"alerts":[
+		{"labels":{"alertname":"Watchdog","severity":"none"},"state":"firing"},
+		{"labels":{"alertname":"RuleWithoutSeverity"},"state":"firing"}]}}`
+	_, problems, err := monitoringProblems([]byte(targetsUp), []byte(alerts))
+	if err != nil || len(problems) != 1 || problems[0] != "alert RuleWithoutSeverity (no severity) is firing" {
+		t.Fatalf("%v %v", problems, err)
 	}
 }
 

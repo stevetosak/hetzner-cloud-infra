@@ -14,7 +14,7 @@
 # zone stage accepts grafana.tosak.net while it points at live.
 #
 # The stage rehearsal-cuts proves each link is gone; monitoring-clean then
-# proves every target is up and no warning or critical alert fires.
+# proves every target is up and no alert that would page on live fires.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
