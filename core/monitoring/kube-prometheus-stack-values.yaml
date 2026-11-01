@@ -277,13 +277,16 @@ grafana:
     image:
       tag: 2.14.1
       sha: 092dbe0c335fba9af414a27630ca68f34df6185784fa847d9954187e69dbfdd7
+    # 96Mi was too little: both sidecars were OOMKilled at start in the
+    # rehearsal of 2026-11-01 (k8s-sidecar 2.x, Python and the Kubernetes
+    # client). The live rollout measures the real use.
     resources:
       requests:
         cpu: 10m
-        memory: 48Mi
+        memory: 96Mi
       limits:
         cpu: 100m
-        memory: 96Mi
+        memory: 256Mi
 
   resources:
     requests:

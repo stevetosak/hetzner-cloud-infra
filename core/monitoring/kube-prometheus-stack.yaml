@@ -1679,10 +1679,10 @@ spec:
           resources:
             limits:
               cpu: 100m
-              memory: 96Mi
+              memory: 256Mi
             requests:
               cpu: 10m
-              memory: 48Mi
+              memory: 96Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -1725,10 +1725,10 @@ spec:
           resources:
             limits:
               cpu: 100m
-              memory: 96Mi
+              memory: 256Mi
             requests:
               cpu: 10m
-              memory: 48Mi
+              memory: 96Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
