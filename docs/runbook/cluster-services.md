@@ -2002,9 +2002,33 @@ so a failed re-run cannot overwrite a month's pass — with at least:
 | `R2_READONLY_ACCESS_KEY_ID`, `R2_READONLY_SECRET_ACCESS_KEY` | R2 **Account** token, **Object Read**, buckets `tosak-pg-backups` and `tosak-drill-results`. The drill (step 17) uses the same token from SOPS |
 | `HCLOUD_READONLY_TOKEN` | Hetzner project token, **Read** |
 | `INFRA_TELEGRAM_BOT_TOKEN`, `INFRA_TELEGRAM_CHAT_ID` | already there, shared with `deploy-catalog.yml` |
+| `HEALTHCHECKS_WATCH_PING_URL` | the ping URL of the healthchecks.io check `recoverability-watch` (Bitwarden `kluster/healthchecks`). Added 2026-11-01, see below |
 
 Set with `gh secret set <NAME>`, which prompts without echo and keeps the value
 out of shell history. Neither new token can delete or change anything.
+
+### The dead-man's switch at healthchecks.io
+
+Added on 2026-11-01 ([ADR 0011](../adr/0011-monitoring-runs-in-the-cluster-and-a-heartbeat-outside-watches-it.md)).
+**The last data step of every run pings healthchecks.io: the plain URL when
+the run is clean, `/fail` for any other end** — findings, a crash, a refused
+Telegram send, the 30-minute timeout (GitHub cancels the job) or a hand cancel.
+A finding therefore reaches the Alert Chat even when the watcher's own Telegram
+send fails, and a schedule that GitHub disabled shows as a missing ping. The
+step runs before `Report a broken run`, so a failed ping or a missing secret is
+reported too. Only the public run URL goes in the ping body.
+
+Two checks, made by hand on the Hobbyist plan and sending through
+@HealthchecksBot to the Alert Chat:
+
+| Check | Pinged by | Period | Grace | Ping URL |
+|---|---|---|---|---|
+| `watchdog` | the Alertmanager Watchdog, every minute (the receiver `healthchecks`) | 5 min | 10 min | `kluster/healthchecks`, `watchdog_ping_url` → Secret `monitoring/alertmanager-receivers` |
+| `recoverability-watch` | this workflow, once a day at 06:00 UTC | 1 day | 3 h | `kluster/healthchecks` → repository secret `HEALTHCHECKS_WATCH_PING_URL` |
+
+A run takes about a minute, or 16 minutes when the second volume check waits,
+so 3 hours of grace covers a late GitHub schedule. A check that was never
+pinged stays `new` and sends nothing, so neither alerts before its first ping.
 
 ### Verified — both paths, on the real runner
 
@@ -2032,6 +2056,8 @@ an API body, `backup.info` content or an error JSON: none.
   watcher looks exactly like a clean one. Deploy-catalog commits keep the
   repository active today, but that is luck. A heartbeat service is the
   monitoring scope's decision ([ADR 0003](../adr/0003-recoverability.md)).
+  *(2026-11-01: closed by the dead-man's switch above. The ping is proven only
+  after the change is on `master`, because only `master` can be dispatched.)*
 - **The drill check is armed but unproven** until chunk 4 writes its first
   result. *(2026-10-02: proven. After PR #20 merged, dispatch run
   `36944861710` read the three drill objects — `drill results: 3` — and
