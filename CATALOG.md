@@ -6,6 +6,7 @@ _Generated from `history.jsonl` on this branch by `deployments/render-catalog.mj
 
 | App | Version | Commit | Env | Deployed (UTC) |
 | --- | --- | --- | --- | --- |
+| core-argocd | unknown | - | dev | 2026-11-01T12:06:30Z |
 | doma-web | v0.3.0-11-g03b3716 | [03b3716](https://github.com/stevetosak/doma/commit/03b371692a8810598a211039654afe362a3cacab) | dev | 2026-10-31T22:19:12Z |
 | core-cert-manager | unknown | - | dev | 2026-10-24T14:13:04Z |
 | core-gateway | unknown | - | dev | 2026-10-24T14:13:03Z |
@@ -24,6 +25,7 @@ _Generated from `history.jsonl` on this branch by `deployments/render-catalog.mj
 
 | App | Version | Commit | Env | Deployed (UTC) |
 | --- | --- | --- | --- | --- |
+| core-argocd | unknown | - | dev | 2026-11-01T12:06:30Z |
 | doma-web | v0.3.0-11-g03b3716 | [03b3716](https://github.com/stevetosak/doma/commit/03b371692a8810598a211039654afe362a3cacab) | dev | 2026-10-31T22:19:12Z |
 | doma-web | v0.3.0-9-g79e4d94 | [79e4d94](https://github.com/stevetosak/doma/commit/79e4d94b53744de9bda47f1e25778f15b1b046e2) | dev | 2026-10-31T18:20:10Z |
 | core-cert-manager | unknown | - | dev | 2026-10-24T14:13:04Z |
@@ -43,6 +45,5 @@ _Generated from `history.jsonl` on this branch by `deployments/render-catalog.mj
 | authos-demo | unknown | [48f3cad](https://github.com/stevetosak/authos/commit/48f3cadfd01fe5afdd74562904118aead1f1ebba) | dev | 2026-10-01T18:56:30Z |
 | authos-ui | unknown | [79fd738](https://github.com/stevetosak/authos/commit/79fd738af7d1e7c1244fdb6bbef2416afe0142f2) | dev | 2026-10-01T18:56:23Z |
 | doma-web | v0.3.0-3-g6051907 | [6051907](https://github.com/stevetosak/doma/commit/605190726c0d413069db765680feccffb8bf3ba2) | dev | 2026-09-21T20:56:32Z |
-| doma-web | v0.3.0 | [ac620ff](https://github.com/stevetosak/doma/commit/ac620ff6ebb9931a79d0338a2749439f59349c09) | dev | 2026-09-08T20:11:32Z |
 
 </details>
