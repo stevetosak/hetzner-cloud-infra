@@ -23,6 +23,19 @@ DIR="core/monitoring"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+# template <chart> <release> <values file>
+# Renders the pulled chart in $TMP to STDOUT.
+template() {
+  local chart="$1" release="$2" values="$3"
+  # --skip-tests: the chart's test pods are helm hooks, nothing ArgoCD should run.
+  helm template "$release" "$TMP/$chart" \
+    --namespace "$NAMESPACE" \
+    --kube-version "$KUBE_VERSION" \
+    --include-crds \
+    --skip-tests \
+    --values "$values"
+}
+
 # render <chart> <version> <release> <values file>
 # Pulls the chart and renders it with its CRDs into $TMP/<chart>.yaml, and
 # writes $TMP/<chart>.header, which names the chart, its version and its
@@ -34,18 +47,20 @@ render() {
     | awk '/^Digest:/ {print $2}')"
   [ -n "$digest" ] || { echo "$chart: helm pull printed no digest" >&2; exit 1; }
 
-  # --skip-tests: the chart's test pods are helm hooks, nothing ArgoCD should run.
-  helm template "$release" "$TMP/$chart" \
-    --namespace "$NAMESPACE" \
-    --kube-version "$KUBE_VERSION" \
-    --include-crds \
-    --skip-tests \
-    --values "$values" \
-    > "$TMP/$chart.yaml"
+  template "$chart" "$release" "$values" > "$TMP/$chart.yaml"
 
-  # A value that changes on every render would keep the sync from settling.
-  if grep -n -E 'helm\.sh/hook|randAlphaNum|genCA' "$TMP/$chart.yaml"; then
-    echo "$chart: the render holds a helm hook or a random value; check the values" >&2
+  # ArgoCD does not run helm hooks; a hook in the render would never run.
+  if grep -n -E 'helm\.sh/hook' "$TMP/$chart.yaml"; then
+    echo "$chart: the render holds a helm hook; check the values" >&2
+    exit 1
+  fi
+
+  # A value that changes on every render (randAlphaNum, genCA, uuidv4, now)
+  # would keep the sync from settling. Those functions leave no name in the
+  # output, so a grep cannot find them: render again and compare.
+  template "$chart" "$release" "$values" > "$TMP/$chart.again.yaml"
+  if ! diff -u "$TMP/$chart.yaml" "$TMP/$chart.again.yaml" >&2; then
+    echo "$chart: two renders differ, the chart renders a value that changes; check the values" >&2
     exit 1
   fi
 

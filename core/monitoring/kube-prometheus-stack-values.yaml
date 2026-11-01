@@ -4,9 +4,13 @@
 # version 92.17.0 (prometheus-operator v0.94.2).
 # Render with core/monitoring/render.sh. Do not edit the rendered file.
 #
-# The design is ADR 0011. This file holds the shape (sub-step 2 of the
-# Monitoring step); the rules, the Alertmanager routing, the dashboards and the
-# probes come in their own sub-steps.
+# The design is ADR 0011. This file holds the chart's shape and the
+# Alertmanager routing. The custom rules (rules/), the dashboards
+# (dashboards/), the monitors (monitors/) and the probes (probes/) are files
+# of their own beside it.
+#
+# Every workload sets revisionHistoryLimit: 3 (CLAUDE.md); each chart's
+# default is 10.
 
 # Short object names: kps-operator, kps-prometheus, kps-grafana, ...
 fullnameOverride: kps
@@ -72,6 +76,7 @@ defaultRules:
 # Operator
 # ---------------------------------------------------------------------------
 prometheusOperator:
+  revisionHistoryLimit: 3
   # Off by decision (2026-11-01): the webhook's certificate comes from two
   # helm-hook Jobs that patch its CA into the webhook config, and ArgoCD's
   # selfHeal would put the config back. A CI `promtool check rules` replaces
@@ -250,6 +255,7 @@ alertmanager:
 # renders a random password into the committed file.
 # ---------------------------------------------------------------------------
 grafana:
+  revisionHistoryLimit: 3
   image:
     tag: 13.3.0-distroless
     sha: 540b8afb775bf34aefce417e4329039daa5d44b6f2fbda6881397b1b247ca7df
@@ -304,6 +310,7 @@ grafana:
 # Exporters
 # ---------------------------------------------------------------------------
 kube-state-metrics:
+  revisionHistoryLimit: 3
   image:
     tag: v2.20.0
     # This chart wants the prefix; the others add it.
@@ -319,6 +326,7 @@ kube-state-metrics:
 # On every node, the Control Plane too (the chart tolerates every taint), so a
 # dead Control Plane node shows.
 prometheus-node-exporter:
+  revisionHistoryLimit: 3
   image:
     tag: v1.12.1   # the chart appends -distroless itself
     digest: sha256:8c9bac11973b94b59be88d6e11fee4429aa743c8846cdc75d65b18db33f6a106

@@ -1484,7 +1484,7 @@ spec:
     matchLabels:
       app.kubernetes.io/name: prometheus-node-exporter
       app.kubernetes.io/instance: kps
-  revisionHistoryLimit: 10
+  revisionHistoryLimit: 3
   updateStrategy:
     rollingUpdate:
       maxUnavailable: 1
@@ -1616,7 +1616,7 @@ metadata:
     app.kubernetes.io/version: "13.3.0"
 spec:
   replicas: 1
-  revisionHistoryLimit: 10
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app.kubernetes.io/name: grafana
@@ -1868,7 +1868,7 @@ spec:
   replicas: 1
   strategy:
     type: RollingUpdate
-  revisionHistoryLimit: 10
+  revisionHistoryLimit: 3
   template:
     metadata:
       labels:
@@ -1957,7 +1957,7 @@ metadata:
     app.kubernetes.io/component: prometheus-operator
 spec:
   replicas: 1
-  revisionHistoryLimit: 10
+  revisionHistoryLimit: 3
   selector:
     matchLabels:
       app: kube-prometheus-stack-operator
