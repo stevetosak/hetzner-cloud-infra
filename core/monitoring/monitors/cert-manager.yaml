@@ -1,0 +1,22 @@
+# Scrapes the cert-manager controller (Service cert-manager, port
+# `http-metrics`, 9402): the expiry, renewal time and readiness of every
+# Certificate.
+#
+# honorLabels: the metrics carry the Certificate's own `namespace` (gateway,
+# cnpg-system). Without it Prometheus renames that label to
+# `exported_namespace` and every alert would group under cert-manager.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cert-manager
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames: [cert-manager]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cert-manager
+      app.kubernetes.io/component: controller
+  endpoints:
+    - port: http-metrics
+      honorLabels: true

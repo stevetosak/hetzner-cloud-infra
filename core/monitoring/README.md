@@ -19,7 +19,14 @@ render that holds a helm hook or a random value.
   kube-proxy bind their metrics to `127.0.0.1` (kubeadm), so their scrapes are
   off. CoreDNS is scraped through kubeadm's own `kube-dns` Service.
 - **No admission webhook.** Its certificate comes from helm-hook Jobs that
-  selfHeal would undo; a CI `promtool check rules` takes its place.
+  selfHeal would undo; `check-rules.sh` (CI `rules-check.yml`) takes its place.
+- **Rules.** The chart's rules minus the deny list in the values file
+  (`defaultRules.disabled`, each with its reason; read it again on every chart
+  upgrade). The custom rules are in `rules/`, each with promtool unit tests in
+  `rules/tests/`: WAL archiving, CNPG health and volume fill, certificates.
+  `./core/monitoring/check-rules.sh` parses every rule and runs the tests.
+- **Monitors.** `monitors/` scrapes what the chart does not know: the
+  PostgreSQL instances (PodMonitor) and cert-manager (ServiceMonitor).
 - **Every image pinned by digest** in the values file. A chart bump needs new
   digests: `docker buildx imagetools inspect <image>:<tag>`.
 - **Grafana's admin login** is the Secret `monitoring/grafana-admin` (Secret

@@ -1,0 +1,63 @@
+# Unit tests of rules/certificates.yaml. Run by core/monitoring/check-rules.sh,
+# which writes the rule file next to this one as certificates.rules.yaml.
+#
+# The test clock starts at 0 s, so the timestamps are small: the wildcard is
+# renewed at 30 days (2592000 s) and expires at 60 days (5184000 s), as a
+# 90-day certificate seen 30 days after its issue.
+rule_files: [certificates.rules.yaml]
+evaluation_interval: 1m
+
+tests:
+  # Healthy: renewal and expiry in the future, Ready.
+  - interval: 1m
+    input_series:
+      - {series: 'certmanager_certificate_renewal_timestamp_seconds{namespace="gateway",name="tosak-net-wildcard"}', values: '2592000x30'}
+      - {series: 'certmanager_certificate_expiration_timestamp_seconds{namespace="gateway",name="tosak-net-wildcard"}', values: '5184000x30'}
+      - {series: 'certmanager_certificate_ready_status{namespace="gateway",name="tosak-net-wildcard",condition="True"}', values: '1x30'}
+      - {series: 'certmanager_certificate_ready_status{namespace="gateway",name="tosak-net-wildcard",condition="False"}', values: '0x30'}
+    alert_rule_test:
+      - {eval_time: 30m, alertname: CertificateRenewalOverdue}
+      - {eval_time: 30m, alertname: CertificateExpiresSoon}
+      - {eval_time: 30m, alertname: CertificateNotReady}
+
+  # The renewal time passed at 1 h and nothing renewed; the certificate has
+  # 6 days left and is not Ready.
+  # A 5-minute step: a wider one leaves gaps over the 5-minute lookback, and
+  # a gap resets the `for`.
+  - interval: 5m
+    input_series:
+      - {series: 'certmanager_certificate_renewal_timestamp_seconds{namespace="gateway",name="tosak-net-wildcard"}', values: '3600x120'}
+      - {series: 'certmanager_certificate_expiration_timestamp_seconds{namespace="gateway",name="tosak-net-wildcard"}', values: '518400x120'}
+      - {series: 'certmanager_certificate_ready_status{namespace="gateway",name="tosak-net-wildcard",condition="True"}', values: '0x120'}
+      - {series: 'certmanager_certificate_ready_status{namespace="gateway",name="tosak-net-wildcard",condition="False"}', values: '1x120'}
+    alert_rule_test:
+      - {eval_time: 6h, alertname: CertificateRenewalOverdue}
+      - eval_time: 8h
+        alertname: CertificateRenewalOverdue
+        exp_alerts:
+          - exp_labels: {severity: warning, namespace: gateway, name: tosak-net-wildcard}
+            exp_annotations:
+              summary: The certificate gateway/tosak-net-wildcard is not renewed.
+              description: >-
+                Its renewal time passed more than 6 hours ago. Read the
+                Certificate's events and the CertificateRequest
+                (kubectl describe certificate -n gateway tosak-net-wildcard).
+                For the wildcard: the DNS-01 token in cert-manager/cloudflare-dns-token.
+      - eval_time: 8h
+        alertname: CertificateExpiresSoon
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: gateway, name: tosak-net-wildcard}
+            exp_annotations:
+              summary: The certificate gateway/tosak-net-wildcard expires in 5d 16h 0m 0s.
+              description: >-
+                Renewal failed for more than 3 weeks. When the wildcard expires,
+                every public host fails TLS at the origin.
+      - eval_time: 8h
+        alertname: CertificateNotReady
+        exp_alerts:
+          - exp_labels: {severity: warning, namespace: gateway, name: tosak-net-wildcard, condition: "False"}
+            exp_annotations:
+              summary: The certificate gateway/tosak-net-wildcard is not Ready.
+              description: >-
+                The Certificate's Ready condition is False. Read
+                its events (kubectl describe certificate -n gateway tosak-net-wildcard).

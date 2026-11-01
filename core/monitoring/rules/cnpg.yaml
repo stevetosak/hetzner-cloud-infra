@@ -1,0 +1,177 @@
+# What the chart does not know about PostgreSQL (ADR 0011): WAL archiving,
+# the health of tosak-pg-cluster, and the fill of its volumes.
+#
+# Metrics from the PodMonitor monitors/cnpg.yaml and the kubelet. Unit tests:
+# rules/tests/cnpg.test.yaml, run by core/monitoring/check-rules.sh (CI
+# rules-check.yml). A change here needs its test.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cnpg
+  namespace: monitoring
+spec:
+  groups:
+    # A base backup is taken from a standby and does not wait for the WAL, so
+    # a broken archiver passes every backup check (ADR 0003). These two rules
+    # are the only thing that sees it before a restore needs the WAL.
+    #
+    # No age rule: an idle database switches no WAL segment, so "no archive
+    # for N minutes" is not a fault by itself.
+    - name: cnpg-wal-archiving
+      rules:
+        - alert: CNPGWALArchivingFailing
+          # PostgreSQL retries a failed segment about every minute, so the
+          # last failure stays newer than the last success until it works.
+          # Single failures right after a start resolve inside the `for`.
+          expr: |
+            cnpg_pg_stat_archiver_last_failed_time
+              > cnpg_pg_stat_archiver_last_archived_time
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: WAL archiving to R2 fails on {{ $labels.pod }}.
+            description: >-
+              The last archive attempt on the primary {{ $labels.pod }} failed,
+              and none has succeeded since. Point-in-time recovery stops at the
+              last archived segment, and pg_wal grows until the volume is full.
+              Read the plugin's log in the instance pod.
+
+        - alert: CNPGWALArchiveStuck
+          # The archiver neither fails nor succeeds: segments wait, nothing
+          # moves. CNPGWALArchivingFailing covers the failing case.
+          expr: |
+            (
+              cnpg_collector_pg_wal_archive_status{value="ready"} > 0
+                and on (namespace, pod)
+              cnpg_pg_stat_archiver_seconds_since_last_archival > 1800
+            )
+              unless on (namespace, pod)
+            (
+              cnpg_pg_stat_archiver_last_failed_time
+                > cnpg_pg_stat_archiver_last_archived_time
+            )
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: WAL archiving is stuck on {{ $labels.pod }}.
+            description: >-
+              {{ $value }} WAL segments wait to be archived on the primary
+              {{ $labels.pod }}, and nothing was archived for more than 30
+              minutes, with no failure reported. Read the plugin's log in the
+              instance pod.
+
+    # tosak-pg-cluster has 3 instances (core/cnpg/cluster/fresh/pg-cluster.yaml),
+    # so the primary streams to 2 standbys. Change the numbers with the Cluster.
+    - name: cnpg-health
+      rules:
+        - alert: CNPGClusterOffline
+          expr: |
+            absent(cnpg_collector_up{cluster="tosak-pg-cluster"} == 1)
+          for: 5m
+          labels:
+            severity: critical
+            namespace: pg-cluster
+          annotations:
+            summary: No PostgreSQL instance of tosak-pg-cluster is up.
+            description: >-
+              No instance of tosak-pg-cluster reports PostgreSQL up, or none
+              can be scraped. Every application that uses the database is down.
+
+        - alert: CNPGNoPrimary
+          # Only while some instance is up; CNPGClusterOffline covers the rest.
+          expr: |
+            absent(cnpg_pg_replication_in_recovery == 0)
+              and on ()
+            count(cnpg_collector_up == 1) > 0
+          for: 5m
+          labels:
+            severity: critical
+            namespace: pg-cluster
+          annotations:
+            summary: tosak-pg-cluster has no primary.
+            description: >-
+              Instances are up but none is the primary for 5 minutes: a
+              failover did not finish. Writes fail. Read the Cluster's status
+              (kubectl cnpg status).
+
+        - alert: CNPGReplicasNotStreaming
+          expr: |
+            max by (namespace) (
+              cnpg_pg_replication_streaming_replicas
+                and on (namespace, pod)
+              cnpg_pg_replication_in_recovery == 0
+            ) < 2
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: The primary streams to {{ $value }} of 2 standbys.
+            description: >-
+              A standby of tosak-pg-cluster does not stream from the primary.
+              A failover has one candidate fewer, and the daily base backup is
+              taken from a standby.
+
+        - alert: CNPGReplicasNotStreaming
+          expr: |
+            max by (namespace) (
+              cnpg_pg_replication_streaming_replicas
+                and on (namespace, pod)
+              cnpg_pg_replication_in_recovery == 0
+            ) < 1
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: The primary streams to no standby.
+            description: >-
+              No standby of tosak-pg-cluster streams from the primary. The
+              cluster has no failover, and the daily base backup has no standby
+              to run on.
+
+        - alert: CNPGReplicationLag
+          # 0 while a standby has replayed all it received.
+          expr: |
+            max by (namespace, pod) (cnpg_pg_replication_lag) > 300
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: The standby {{ $labels.pod }} is {{ $value }} s behind.
+            description: >-
+              The standby {{ $labels.pod }} replays WAL more than 5 minutes
+              behind the primary. A failover to it would lose those writes.
+
+    # Earlier than the chart's KubePersistentVolumeFillingUp (15 % free and
+    # filling, or 3 % free): a full PostgreSQL volume stops every write, and a
+    # failing archiver fills pg_wal.
+    - name: cnpg-storage
+      rules:
+        - alert: CNPGVolumeFillingUp
+          expr: |
+            max by (namespace, persistentvolumeclaim) (kubelet_volume_stats_used_bytes{namespace="pg-cluster"})
+              / max by (namespace, persistentvolumeclaim) (kubelet_volume_stats_capacity_bytes{namespace="pg-cluster"})
+            > 0.80
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: The volume {{ $labels.persistentvolumeclaim }} is {{ $value | humanizePercentage }} full.
+            description: >-
+              Grow storage.size in the Cluster (a Hetzner Volume grows online)
+              or find what fills it: pg_wal grows when archiving fails.
+
+        - alert: CNPGVolumeFillingUp
+          expr: |
+            max by (namespace, persistentvolumeclaim) (kubelet_volume_stats_used_bytes{namespace="pg-cluster"})
+              / max by (namespace, persistentvolumeclaim) (kubelet_volume_stats_capacity_bytes{namespace="pg-cluster"})
+            > 0.90
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: The volume {{ $labels.persistentvolumeclaim }} is {{ $value | humanizePercentage }} full.
+            description: >-
+              PostgreSQL stops when the volume is full. Grow storage.size in
+              the Cluster now, then find what fills it.

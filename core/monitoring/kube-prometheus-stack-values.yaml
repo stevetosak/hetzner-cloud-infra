@@ -52,6 +52,23 @@ windowsMonitoring:
   enabled: false
 
 # ---------------------------------------------------------------------------
+# The chart's rules: all of them, minus the deny list (ADR 0011)
+#
+# The Control Plane rules (etcd, scheduler, controller manager, kube-proxy)
+# are already gone: the chart renders a component's rules only while its
+# scrape is on. The over-commit rules go because the cluster is over-committed
+# by design; KubeMemoryOvercommit fires from the first day (the requests do
+# not fit on two Workers).
+#
+# 🔴 Read this list again on each chart upgrade: a renamed rule comes back on.
+# A new entry needs its reason here. The custom rules are in rules/.
+# ---------------------------------------------------------------------------
+defaultRules:
+  disabled:
+    KubeCPUOvercommit: true
+    KubeMemoryOvercommit: true
+
+# ---------------------------------------------------------------------------
 # Operator
 # ---------------------------------------------------------------------------
 prometheusOperator:
