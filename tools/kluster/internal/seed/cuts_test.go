@@ -40,6 +40,25 @@ func TestEveryRehearsalCutHasAnEntry(t *testing.T) {
 	}
 }
 
+// Each live link names one object or the whole kind, never both or neither.
+func TestEveryLiveLinkNamesOneObjectOrTheKind(t *testing.T) {
+	for _, cut := range RehearsalCuts {
+		for _, l := range cut.Links {
+			if err := l.validate(); err != nil {
+				t.Errorf("core/rehearsal/%s: %v", cut.Dir, err)
+			}
+		}
+	}
+	for _, bad := range []LiveLink{
+		{What: "neither", Kind: "probes.monitoring.coreos.com"},
+		{What: "both", Kind: "probes.monitoring.coreos.com", Name: "x", AnyOfKind: true},
+	} {
+		if bad.validate() == nil {
+			t.Errorf("%s: accepted", bad.What)
+		}
+	}
+}
+
 // cluster answers the reads of the rehearsal-cuts Stage from objects keyed
 // by kind/name; kind/ answers a read of the whole kind.
 type cluster map[string]string

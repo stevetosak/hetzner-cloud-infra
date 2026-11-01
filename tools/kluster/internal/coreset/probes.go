@@ -16,22 +16,36 @@ import (
 // build, and each such target's host is a hostname of one of those routes.
 // A route without a probe would go down unseen; a probe without a route
 // would page for a host nobody serves.
+//
+// A file that cannot be found or read stops the check. A route or Probe that
+// cannot be decoded is named, and the check goes on with the others.
 func checkProbes(fsys fs.FS, core []Element) []error {
-	routes := map[string]string{}  // hostname -> the file of its route
-	targets := map[string]string{} // host -> the file of its Probe
-	var errs []error
+	files, err := syncedRouteFiles(fsys, core)
+	if err != nil {
+		return []error{err}
+	}
+	idx, errs, err := indexHosts(fsys, files)
+	if err != nil {
+		return []error{err}
+	}
+	return append(errs, idx.drift()...)
+}
 
+// syncedRouteFiles returns the files that can hold a synced HTTPRoute or a
+// Probe: every file of each core build, and the httproute.yaml of each
+// listed project.
+func syncedRouteFiles(fsys fs.FS, core []Element) ([]string, error) {
 	var files []string
 	for _, e := range core {
 		built, err := buildFiles(fsys, e.Path)
 		if err != nil {
-			return []error{err}
+			return nil, err
 		}
 		files = append(files, built...)
 	}
 	projects, err := Projects(fsys)
 	if err != nil {
-		return []error{err}
+		return nil, err
 	}
 	for _, p := range projects {
 		f := "projects/" + p + "/httproute.yaml"
@@ -39,43 +53,63 @@ func checkProbes(fsys fs.FS, core []Element) []error {
 			files = append(files, f)
 		}
 	}
+	return files, nil
+}
 
+// hostIndex maps each host to the file that names it.
+type hostIndex struct {
+	routes  map[string]string // hostname -> the file of its HTTPRoute
+	targets map[string]string // host -> the file of its Probe
+}
+
+// indexHosts reads the routes' hostnames and the Probes' target hosts from
+// files. errs names each object that cannot be decoded; err is a file that
+// cannot be read.
+func indexHosts(fsys fs.FS, files []string) (idx hostIndex, errs []error, err error) {
+	idx = hostIndex{routes: map[string]string{}, targets: map[string]string{}}
 	for _, f := range files {
 		objs, err := Objects(fsys, f)
 		if err != nil {
-			return []error{err}
+			return idx, nil, err
 		}
 		for _, o := range objs {
+			var into map[string]string
+			var hosts []string
+			var err error
 			switch o.Kind {
 			case "HTTPRoute":
-				hosts, err := routeHostnames(o)
-				if err != nil {
-					return []error{fmt.Errorf("%s: %w", f, err)}
-				}
-				for _, h := range hosts {
-					routes[h] = f
-				}
+				into = idx.routes
+				hosts, err = routeHostnames(o)
 			case "Probe":
-				hosts, err := probeHosts(o)
-				if err != nil {
-					errs = append(errs, fmt.Errorf("%s: Probe %s: %w", f, o.Metadata.Name, err))
-					continue
-				}
-				for _, h := range hosts {
-					targets[h] = f
-				}
+				into = idx.targets
+				hosts, err = probeHosts(o)
+			default:
+				continue
+			}
+			if err != nil {
+				errs = append(errs, fmt.Errorf("%s: %s %s: %w", f, o.Kind, o.Metadata.Name, err))
+				continue
+			}
+			for _, h := range hosts {
+				into[h] = f
 			}
 		}
 	}
+	return idx, errs, nil
+}
 
-	for _, h := range sortedKeys(routes) {
-		if _, ok := targets[h]; !ok {
-			errs = append(errs, fmt.Errorf("%s: host %s has no probe; add a target to a Probe (core/monitoring/probes/)", routes[h], h))
+// drift names each route host without a probe and each probe target that no
+// route serves.
+func (idx hostIndex) drift() []error {
+	var errs []error
+	for _, h := range sortedKeys(idx.routes) {
+		if _, ok := idx.targets[h]; !ok {
+			errs = append(errs, fmt.Errorf("%s: host %s has no probe; add a target to a Probe (core/monitoring/probes/)", idx.routes[h], h))
 		}
 	}
-	for _, h := range sortedKeys(targets) {
-		if _, ok := routes[h]; !ok {
-			errs = append(errs, fmt.Errorf("%s: a probe targets %s, which no synced HTTPRoute serves", targets[h], h))
+	for _, h := range sortedKeys(idx.targets) {
+		if _, ok := idx.routes[h]; !ok {
+			errs = append(errs, fmt.Errorf("%s: a probe targets %s, which no synced HTTPRoute serves", idx.targets[h], h))
 		}
 	}
 	return errs
