@@ -1,0 +1,24 @@
+# Scrapes every ArgoCD component on its container port `metrics` (the
+# application controller, the API server, the repo server, the ApplicationSet
+# and notifications controllers). argocd-redis has no such port.
+#
+# A PodMonitor, so core/argocd needs no metrics Services. The pinned ArgoCD
+# dashboard filters on the job names those Services would give
+# (argocd-server-metrics, ...), so the job is set to the same name.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: argocd
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames: [argocd]
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: argocd
+  podMetricsEndpoints:
+    - port: metrics
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+          targetLabel: job
+          replacement: ${1}-metrics

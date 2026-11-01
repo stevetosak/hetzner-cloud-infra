@@ -26,7 +26,13 @@ render that holds a helm hook or a random value.
   `rules/tests/`: WAL archiving, CNPG health and volume fill, certificates.
   `./core/monitoring/check-rules.sh` parses every rule and runs the tests.
 - **Monitors.** `monitors/` scrapes what the chart does not know: the
-  PostgreSQL instances (PodMonitor) and cert-manager (ServiceMonitor).
+  PostgreSQL instances, cert-manager, ArgoCD (a PodMonitor, so core/argocd
+  needs no metrics Services) and Envoy Gateway (controller and proxies).
+- **Dashboards.** Only from git. `dashboards/fetch.sh` downloads the pinned
+  ArgoCD, cert-manager, CNPG and Envoy Gateway dashboards and checks each
+  sha256; the kustomization turns each JSON into a ConfigMap the sidecar loads.
+  A dashboard made in the UI is lost on restart unless its JSON is exported
+  into `dashboards/` and listed in the kustomization.
 - **Every image pinned by digest** in the values file. A chart bump needs new
   digests: `docker buildx imagetools inspect <image>:<tag>`.
 - **Grafana's admin login** is the Secret `monitoring/grafana-admin` (Secret

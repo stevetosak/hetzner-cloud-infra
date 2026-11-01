@@ -14,3 +14,22 @@ resources:
   - monitors/cert-manager.yaml
   - rules/cnpg.yaml
   - rules/certificates.yaml
+  - monitors/argocd.yaml
+  - monitors/envoy-gateway.yaml
+
+# The pinned upstream dashboards (dashboards/fetch.sh), one ConfigMap each.
+# Grafana's sidecar loads every ConfigMap with grafana_dashboard: "1".
+# No name hash: the sidecar reads the content, and a hashed name would leave
+# the old ConfigMap behind (prune is off). The CNPG dashboard (250 KB) is near
+# the 256 KB limit of a client-side apply's annotation; core syncs server-side.
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    grafana_dashboard: "1"
+configMapGenerator:
+  - {name: dashboard-argocd, namespace: monitoring, files: [dashboards/argocd.json]}
+  - {name: dashboard-cert-manager, namespace: monitoring, files: [dashboards/cert-manager.json]}
+  - {name: dashboard-cnpg, namespace: monitoring, files: [dashboards/cnpg.json]}
+  - {name: dashboard-envoy-gateway-global, namespace: monitoring, files: [dashboards/envoy-gateway-global.json]}
+  - {name: dashboard-envoy-proxy-global, namespace: monitoring, files: [dashboards/envoy-proxy-global.json]}
+  - {name: dashboard-envoy-clusters, namespace: monitoring, files: [dashboards/envoy-clusters.json]}
