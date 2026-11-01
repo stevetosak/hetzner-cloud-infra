@@ -41,12 +41,15 @@ func TestEveryRehearsalCutHasAnEntry(t *testing.T) {
 }
 
 // cluster answers the reads of the rehearsal-cuts Stage from objects keyed
-// by kind/name.
+// by kind/name; kind/ answers a read of the whole kind.
 type cluster map[string]string
 
 func (c cluster) Run(_ context.Context, cmd string) (string, error) {
 	for key, obj := range c {
 		kind, name, _ := strings.Cut(key, "/")
+		if name == "" {
+			name = "--ignore-not-found"
+		}
 		if strings.Contains(cmd, "'"+kind+"' '"+name+"'") {
 			return obj, nil
 		}
@@ -59,9 +62,10 @@ func (cluster) ReadFile(context.Context, string) (string, error)             { r
 func TestCutsHoldInARehearsal(t *testing.T) {
 	c := &Cuts{Bucket: "tosak-pg-backups-rehearsal"}
 	h := &stage.Host{Name: "cp", Exec: cluster{
-		"deployments.apps/argocd-notifications-controller":  `{"spec":{"replicas":0}}`,
-		"clusterissuers.cert-manager.io/letsencrypt-prod":   `{"spec":{"selfSigned":{}}}`,
-		"objectstores.barmancloud.cnpg.io/tosak-pg-backups": `{"spec":{"configuration":{"destinationPath":"s3://tosak-pg-backups-rehearsal/"}}}`,
+		"deployments.apps/argocd-notifications-controller":     `{"spec":{"replicas":0}}`,
+		"clusterissuers.cert-manager.io/letsencrypt-prod":      `{"spec":{"selfSigned":{}}}`,
+		"objectstores.barmancloud.cnpg.io/tosak-pg-backups":    `{"spec":{"configuration":{"destinationPath":"s3://tosak-pg-backups-rehearsal/"}}}`,
+		"alertmanagers.monitoring.coreos.com/kps-alertmanager": `{"spec":{"replicas":1}}`,
 	}}
 	st, err := c.Probe(context.Background(), h)
 	if err != nil || !st.Done {
@@ -74,12 +78,15 @@ func TestCutsHoldInARehearsal(t *testing.T) {
 func TestCutsNameEveryLiveLink(t *testing.T) {
 	c := &Cuts{Bucket: "tosak-pg-backups-rehearsal"}
 	h := &stage.Host{Name: "cp", Exec: cluster{
-		"deployments.apps/argocd-notifications-controller":  `{"spec":{"replicas":1}}`,
-		"secrets/argocd-notifications-secret":               "secret/argocd-notifications-secret",
-		"applicationsets.argoproj.io/projects":              `{}`,
-		"clusterissuers.cert-manager.io/letsencrypt-prod":   `{"spec":{"acme":{"server":"https://acme-v02.api.letsencrypt.org/directory"}}}`,
-		"secrets/cloudflare-dns-token":                      "secret/cloudflare-dns-token",
-		"objectstores.barmancloud.cnpg.io/tosak-pg-backups": `{"spec":{"configuration":{"destinationPath":"s3://tosak-pg-backups/"}}}`,
+		"deployments.apps/argocd-notifications-controller":     `{"spec":{"replicas":1}}`,
+		"secrets/argocd-notifications-secret":                  "secret/argocd-notifications-secret",
+		"applicationsets.argoproj.io/projects":                 `{}`,
+		"clusterissuers.cert-manager.io/letsencrypt-prod":      `{"spec":{"acme":{"server":"https://acme-v02.api.letsencrypt.org/directory"}}}`,
+		"secrets/cloudflare-dns-token":                         "secret/cloudflare-dns-token",
+		"objectstores.barmancloud.cnpg.io/tosak-pg-backups":    `{"spec":{"configuration":{"destinationPath":"s3://tosak-pg-backups/"}}}`,
+		"secrets/alertmanager-receivers":                       "secret/alertmanager-receivers",
+		"alertmanagers.monitoring.coreos.com/kps-alertmanager": `{"spec":{"secrets":["alertmanager-receivers"]}}`,
+		"probes.monitoring.coreos.com/":                        "probe.monitoring.coreos.com/public-hosts-2xx",
 	}}
 	var out bytes.Buffer
 	err := stage.Run(context.Background(), []stage.Stage{c}, h, stage.Options{Apply: true, Out: &out})
@@ -95,7 +102,7 @@ func TestCutsNameEveryLiveLink(t *testing.T) {
 			}
 		}
 	}
-	if n != 6 || !strings.Contains(err.Error(), "stops here") {
+	if n != 9 || !strings.Contains(err.Error(), "stops here") {
 		t.Errorf("%d links in the table; output:\n%s", n, out.String())
 	}
 }

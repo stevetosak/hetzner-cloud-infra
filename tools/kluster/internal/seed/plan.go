@@ -66,6 +66,19 @@ type Plan struct {
 	// Zone is the last of Stages. kluster up runs it after the database,
 	// at the very end.
 	Zone *Zone
+	// Monitoring is the health test of a rehearsal (nil on live). It is not
+	// in Stages: kluster up runs it after the database, before the zone,
+	// because the CNPG rules fire while no database Cluster exists.
+	Monitoring *Monitoring
+}
+
+// AfterDB is what kluster up runs once the database is built: the
+// monitoring test in a rehearsal, then the zone.
+func (p *Plan) AfterDB() []stage.Stage {
+	if p.Monitoring != nil {
+		return []stage.Stage{p.Monitoring, p.Zone}
+	}
+	return []stage.Stage{p.Zone}
 }
 
 // BeforeZone is every Stage but the zone.
@@ -164,6 +177,7 @@ func Build(in Inputs) (*Plan, error) {
 	// (ADR 0009, Amendment 2026-10-25).
 	if in.Rehearsal {
 		p.Stages = append(p.Stages, &Cuts{Bucket: in.RehearsalBucket})
+		p.Monitoring = &Monitoring{Waiting: wait}
 	}
 	p.Zone = &Zone{Reader: in.Zone, Hosts: p.Hosts, Address: addr, Rehearsal: in.Rehearsal}
 	p.Stages = append(p.Stages,

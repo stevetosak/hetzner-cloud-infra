@@ -1,0 +1,47 @@
+# The rehearsal cut of core/monitoring (ADR 0011). A rehearsal must not reach
+# the live outside world:
+#
+#   Alertmanager config   replaced by alertmanager.yaml: every alert to the
+#                         receiver `null`. No Telegram message, no Watchdog
+#                         ping (the live check would see a second sender).
+#   receivers mount       removed from the Alertmanager; the Secret
+#                         monitoring/alertmanager-receivers is `rehearsal:
+#                         omit` in the Secret Catalog.
+#   Probes                deleted: no probe of the live hosts.
+#                         blackbox-exporter itself stays, so its pod is proven.
+#
+# The Grafana route stays: it attaches to the rehearsal Gateway only, and the
+# zone stage accepts grafana.tosak.net while it points at live.
+#
+# The stage rehearsal-cuts proves each link is gone; monitoring-clean then
+# proves every target is up and no warning or critical alert fires.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../monitoring
+generatorOptions:
+  disableNameSuffixHash: true
+secretGenerator:
+  - name: alertmanager-kps-alertmanager
+    namespace: monitoring
+    behavior: replace
+    files:
+      - alertmanager.yaml
+patches:
+  - target:
+      group: monitoring.coreos.com
+      kind: Alertmanager
+      name: kps-alertmanager
+    patch: |-
+      - op: remove
+        path: /spec/secrets
+  # Every Probe, by kind: a Probe added later is cut too.
+  - target:
+      group: monitoring.coreos.com
+      kind: Probe
+    patch: |-
+      $patch: delete
+      apiVersion: monitoring.coreos.com/v1
+      kind: Probe
+      metadata:
+        name: any

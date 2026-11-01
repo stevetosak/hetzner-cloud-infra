@@ -169,7 +169,7 @@ func TestEachRuleFires(t *testing.T) {
 			// The first listener only: the check reads each one.
 			s := string(m[GatewayFile].Data)
 			m[GatewayFile] = &fstest.MapFile{Data: []byte(strings.Replace(s,
-				"values: [gateway, argocd, authos, doma]", "values: [gateway, argocd, authos]", 1))}
+				"values: [gateway, argocd, authos, doma, monitoring]", "values: [gateway, argocd, authos, monitoring]", 1))}
 		}, "does not admit routes from doma"},
 		{"a component missing from the deploy catalog", func(t *testing.T, m fstest.MapFS) {
 			edit(t, m, AppsFile, `"doma-web"`, `"doma"`)

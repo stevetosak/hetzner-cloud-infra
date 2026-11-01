@@ -42,8 +42,8 @@ func TestBuildReadsTheRepository(t *testing.T) {
 		secrets   []string
 		cuts      []string
 	}{
-		{false, []string{"argocd.tosak.net", "authos-api.tosak.net", "authos-demo.tosak.net", "authos.tosak.net", "doma.tosak.net", "tosak.net", "www.tosak.net"}, nil, nil},
-		{true, []string{"argocd.tosak.net", "tosak.net", "www.tosak.net"}, []string{"pg-cluster/db-credentials", "pg-cluster/r2-backup-credentials", "pg-cluster/r2-source-credentials", "redis/redis"},
+		{false, []string{"argocd.tosak.net", "authos-api.tosak.net", "authos-demo.tosak.net", "authos.tosak.net", "doma.tosak.net", "grafana.tosak.net", "tosak.net", "www.tosak.net"}, nil, nil},
+		{true, []string{"argocd.tosak.net", "grafana.tosak.net", "tosak.net", "www.tosak.net"}, []string{"monitoring/grafana-admin", "pg-cluster/db-credentials", "pg-cluster/r2-backup-credentials", "pg-cluster/r2-source-credentials", "redis/redis"},
 			[]string{"rehearsal-cuts"}},
 	} {
 		p, err := Build(Inputs{Rehearsal: tc.rehearsal, WorkTree: repoRoot, Synced: repoRoot, Catalog: repoCatalog(t), RehearsalBucket: "tosak-pg-backups-rehearsal"})
@@ -60,6 +60,9 @@ func TestBuildReadsTheRepository(t *testing.T) {
 		}
 		if b := p.BeforeZone(); len(b) != len(want)-1 || b[len(b)-1].Name() != "lb-address" {
 			t.Errorf("BeforeZone %d stages, ends with %s", len(b), b[len(b)-1].Name())
+		}
+		if (p.Monitoring != nil) != tc.rehearsal {
+			t.Errorf("rehearsal %t: monitoring-clean planned: %t", tc.rehearsal, p.Monitoring != nil)
 		}
 		if !slices.Equal(p.Hosts, tc.hosts) {
 			t.Errorf("rehearsal %t: hosts %v, want %v", tc.rehearsal, p.Hosts, tc.hosts)
@@ -222,14 +225,14 @@ func TestRehearsalSecretsAreMadeOnce(t *testing.T) {
 	if err := stage.Run(context.Background(), []stage.Stage{s}, h, stage.Options{Out: &out, Apply: true}); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
-	if len(cp.secrets) != 4 {
+	if len(cp.secrets) != 5 {
 		t.Fatalf("made %v", cp.secrets)
 	}
 	first := cp.secrets["redis/redis"]
 	if err := stage.Run(context.Background(), []stage.Stage{s}, h, stage.Options{Out: &out, Apply: true}); err != nil {
 		t.Fatal(err)
 	}
-	if cp.secrets["redis/redis"] != first || len(cp.applied) != 4 {
+	if cp.secrets["redis/redis"] != first || len(cp.applied) != 5 {
 		t.Error("a second seed made a Secret again")
 	}
 	if strings.Contains(out.String(), "data:") {

@@ -6,8 +6,9 @@
 #                              Telegram messages or write the deploy catalog.
 #   projects ApplicationSet    removed: no application runs in a rehearsal.
 #   core ApplicationSet        the rehearsal list: pg-drill out (it restores
-#                              live's backups), cert-manager, argocd, cnpg and
-#                              reloader pointed at their rehearsal cuts; and branch
+#                              live's backups), cert-manager, argocd, cnpg,
+#                              monitoring and reloader pointed at their
+#                              rehearsal cuts; and branch
 #                              `rehearsal` instead of master, so a change is
 #                              rehearsed before it merges. Put it there with
 #                              `git push -f origin HEAD:rehearsal`.
@@ -47,6 +48,7 @@ patches:
           - {dir: cert-manager, path: core/rehearsal/cert-manager, namespace: cert-manager}
           - {dir: cnpg, path: core/rehearsal/cnpg, namespace: cnpg-system}
           - {dir: gateway, path: core/gateway, namespace: envoy-gateway-system}
+          - {dir: monitoring, path: core/rehearsal/monitoring, namespace: monitoring}
           - {dir: redis, path: core/redis, namespace: redis}
           - {dir: reloader, path: core/rehearsal/reloader, namespace: reloader}
       - op: replace

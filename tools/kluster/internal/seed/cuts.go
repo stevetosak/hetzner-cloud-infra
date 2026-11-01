@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/local"
@@ -15,7 +16,8 @@ import (
 type LiveLink struct {
 	What string
 	// Get is the object kubectl reads: kind, namespace ("" when
-	// cluster-scoped) and name. -o name only for a Secret.
+	// cluster-scoped) and name. -o name only for a Secret. An empty Name
+	// reads every object of the kind, by name: found is true when any exists.
 	Kind, Namespace, Name string
 	// Holds reports whether the cut holds, given the object's JSON (or its
 	// name, for a Secret); found is false when there is no such object.
@@ -50,6 +52,14 @@ var RehearsalCuts = []Cut{
 	{Dir: "cnpg", Links: []LiveLink{
 		{What: "a write to the live backups: ObjectStore tosak-pg-backups does not archive to the rehearsal bucket",
 			Kind: "objectstores.barmancloud.cnpg.io", Namespace: "pg-cluster", Name: "tosak-pg-backups", Holds: rehearsalBucket},
+	}},
+	{Dir: "monitoring", Links: []LiveLink{
+		{What: "an alert to Telegram or a ping of the live Watchdog check: the Secret monitoring/alertmanager-receivers exists",
+			Kind: "secrets", Namespace: "monitoring", Name: "alertmanager-receivers", Holds: absent},
+		{What: "an alert to Telegram or a ping of the live Watchdog check: Alertmanager mounts alertmanager-receivers",
+			Kind: "alertmanagers.monitoring.coreos.com", Namespace: "monitoring", Name: "kps-alertmanager", Holds: noReceiversMount},
+		{What: "a probe of the live hosts: a Probe exists in monitoring",
+			Kind: "probes.monitoring.coreos.com", Namespace: "monitoring", Holds: absent},
 	}},
 	{Dir: "reloader", Why: "drops Reloader's Roles in the projects' namespaces, which a rehearsal does not make; no live link"},
 }
@@ -104,12 +114,16 @@ func (c *Cuts) Act(context.Context, *stage.Host) error {
 
 // get reads one object; found is false when it does not exist.
 func get(ctx context.Context, h *stage.Host, l LiveLink) ([]byte, bool, error) {
-	args := []string{"get", l.Kind, l.Name, "--ignore-not-found"}
+	args := []string{"get", l.Kind}
+	if l.Name != "" {
+		args = append(args, l.Name)
+	}
+	args = append(args, "--ignore-not-found")
 	if l.Namespace != "" {
 		args = append(args, "-n", l.Namespace)
 	}
-	// A Secret is read by name only: it holds values.
-	if l.Kind == "secrets" {
+	// A Secret is read by name only: it holds values. A whole kind too.
+	if l.Kind == "secrets" || l.Name == "" {
 		args = append(args, "-o", "name")
 	} else {
 		args = append(args, "-o", "json")
@@ -155,6 +169,23 @@ func noACME(obj []byte, found bool, _ *Cuts) (bool, error) {
 	}
 	_, acme := i.Spec["acme"]
 	return !acme, nil
+}
+
+// noReceiversMount holds when the Alertmanager mounts no Secret
+// alertmanager-receivers, whose files the live config sends with.
+func noReceiversMount(obj []byte, found bool, _ *Cuts) (bool, error) {
+	if !found {
+		return true, nil
+	}
+	var a struct {
+		Spec struct {
+			Secrets []string `json:"secrets"`
+		} `json:"spec"`
+	}
+	if err := json.Unmarshal(obj, &a); err != nil {
+		return false, err
+	}
+	return !slices.Contains(a.Spec.Secrets, "alertmanager-receivers"), nil
 }
 
 func rehearsalBucket(obj []byte, found bool, c *Cuts) (bool, error) {

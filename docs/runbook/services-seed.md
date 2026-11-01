@@ -37,7 +37,7 @@ The helm hook Jobs in the renders are idempotent, which is why the seed and Argo
 
 ## core-healthy
 
-Waits until every `core-<dir>` Application is Synced and Healthy (7 on live, 6 in a rehearsal). Two behaviours matter. The core ApplicationSet carries `compare-options: ServerSideDiff=true` on its Applications, because ArgoCD's legacy diff keeps a Gateway and an HTTPRoute OutOfSync for ever (the API fills defaults inside list items). 🔴 The first compare after that annotation arrives needs one hard refresh of the Application; a refresh without it does nothing. And the ApplicationSet ignores `.spec.syncPolicy`, so an operator may pause one Application by hand and the generator does not undo it. The consequence is that a change of the template's `syncPolicy` does not reach an existing Application; delete the Application (`preserveResourcesOnDeletion` keeps its objects) to make it follow.
+Waits until every `core-<dir>` Application is Synced and Healthy (8 on live, 7 in a rehearsal, since `core-monitoring` joined on 2026-11-01). Two behaviours matter. The core ApplicationSet carries `compare-options: ServerSideDiff=true` on its Applications, because ArgoCD's legacy diff keeps a Gateway and an HTTPRoute OutOfSync for ever (the API fills defaults inside list items). 🔴 The first compare after that annotation arrives needs one hard refresh of the Application; a refresh without it does nothing. And the ApplicationSet ignores `.spec.syncPolicy`, so an operator may pause one Application by hand and the generator does not undo it. The consequence is that a change of the template's `syncPolicy` does not reach an existing Application; delete the Application (`preserveResourcesOnDeletion` keeps its objects) to make it follow.
 
 ## rehearsal-cuts
 
@@ -48,8 +48,21 @@ A rehearsal only, read only, at the end of `core-healthy`. A rehearsal cut is a 
 | `cert-manager` | the ClusterIssuer `letsencrypt-prod` has no `acme`, and the Secret `cert-manager/cloudflare-dns-token` does not exist |
 | `argocd` | the Deployment `argocd-notifications-controller` has 0 replicas, the Secret `argocd-notifications-secret` does not exist, and the ApplicationSet `projects` does not exist |
 | `cnpg` | the ObjectStore `tosak-pg-backups` archives to the rehearsal bucket |
+| `monitoring` | the Secret `monitoring/alertmanager-receivers` does not exist, the Alertmanager `kps-alertmanager` mounts no `alertmanager-receivers`, and no Probe exists in `monitoring` |
 
 The table lives in code next to the cuts (`tools/kluster/internal/seed/cuts.go`), and a test fails when a directory in `core/rehearsal` has no entry. `core/rehearsal/reloader` has an entry with a reason and no link: it only drops Roles in namespaces a rehearsal does not make. A broken link is printed as `core/rehearsal/<dir>: <what>`. Fix the cut in git, push the branch `rehearsal` and run again; `kluster down` clears the rehearsal away. Proof: `up --db fresh` on 2026-10-25 reported that all six links were cut. The negative case, a stage that fails and names every link, is a unit test and was not run against a real cluster.
+
+## monitoring-clean
+
+A rehearsal only, read only. `kluster up` runs it after the database and before the zone, because two CNPG rules use `absent()` and fire while no database Cluster exists; a rehearsal `seed` alone does not run it. It is the health test of a rebuilt cluster ([ADR 0011](../adr/0011-monitoring-runs-in-the-cluster-and-a-heartbeat-outside-watches-it.md)): it reads Prometheus through the API server's service proxy (`kubectl get --raw /api/v1/namespaces/monitoring/services/kps-prometheus:http-web/proxy/api/v1/targets` and `…/alerts`), so it needs no port-forward, and waits until three things hold at once:
+
+- every active scrape target is `up`, and at least one exists;
+- the Watchdog fires, which proves the rules are evaluated;
+- no alert of severity `warning` or `critical` is firing or pending.
+
+Info alerts do not count: they go to the `null` receiver and page nobody (decided 2026-11-01). Pending alerts count, so a fault that has not yet passed its `for` still stops the run; a transient one from the start-up clears while the stage waits. At the timeout (`--timeout`, 30 minutes) it fails and names each target that is not up, with its last scrape error, and each alert with its severity, state and namespace. Whether the dashboards show data stays a check by eye in Grafana; every target up already proves that data comes in.
+
+The rehearsal cut `core/rehearsal/monitoring` sends every alert to `null`, so the stage reads alerts from Prometheus, not from a receiver. Proof: unit tests with recorded API answers (clean, every kind of problem, Prometheus not yet readable). Not yet run against a real rehearsal.
 
 ## lb-address
 
@@ -59,7 +72,7 @@ Waits for the Gateway `tosak` to report its address and takes the one public IPv
 
 Reads the Cloudflare zone `tosak.net` with the read-only token `kluster/cloudflare-zone-read` (Zone:Read and DNS:Read; a POST to `dns_records` gives HTTP 403, proven 2026-10-24) and compares the A records of the hosts the synced routes use. A record that points elsewhere makes the stage refuse success and print `<host>: A <current>; change it to <address>`. **The stage never writes DNS**; writing is a deferred decision.
 
-In `kluster up` the stage runs last, after the database. On live it refuses with the hand changes, and a rerun of `up` resumes. A rehearsal proves the opposite: the zone must still be as live left it. The stage is done when each host has exactly one A record, all hosts hold the same address, and none holds the rehearsal load balancer's address; otherwise it names the host and fails. It cannot compare with the live address, because a rehearsal does not know it and the origin behind Cloudflare stays out of the public repository. In a rehearsal only `argocd.tosak.net` is in scope, because the cut removes the `projects` ApplicationSet (seen in the rehearsal of 2026-10-25). Before 2026-10-25 a rehearsal refused here by design, with the mismatch report.
+In `kluster up` the stage runs last, after the database. On live it refuses with the hand changes, and a rerun of `up` resumes. A rehearsal proves the opposite: the zone must still be as live left it. The stage is done when each host has exactly one A record, all hosts hold the same address, and none holds the rehearsal load balancer's address; otherwise it names the host and fails. It cannot compare with the live address, because a rehearsal does not know it and the origin behind Cloudflare stays out of the public repository. In a rehearsal only the hosts of core routes are in scope (`argocd`, `grafana`, the apex and `www` since 2026-11-01), because the cut removes the `projects` ApplicationSet (seen in the rehearsal of 2026-10-25, when only `argocd.tosak.net` was in scope). Before 2026-10-25 a rehearsal refused here by design, with the mismatch report.
 
 ## Adopt the live cluster
 
