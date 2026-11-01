@@ -288,13 +288,17 @@ grafana:
         cpu: 100m
         memory: 256Mi
 
+  # 256Mi and 500m were too little for Grafana 13 at start (rehearsal of
+  # 2026-11-01): at 255 MiB of 256 and CPU-throttled, its API handlers timed
+  # out, the liveness probe failed and the kubelet killed it (exit 137).
+  # The live rollout measures the real use.
   resources:
     requests:
       cpu: 50m
-      memory: 128Mi
-    limits:
-      cpu: 500m
       memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
 
 # ---------------------------------------------------------------------------
 # Exporters
