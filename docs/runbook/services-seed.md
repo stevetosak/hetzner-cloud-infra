@@ -62,7 +62,7 @@ A rehearsal only, read only. `kluster up` runs it after the database and before 
 
 Info alerts do not count: they go to the `null` receiver and page nobody (decided 2026-11-01). Pending alerts count, so a fault that has not yet passed its `for` still stops the run; a transient one from the start-up clears while the stage waits. At the timeout (`--timeout`, 30 minutes) it fails and names each target that is not up, with its last scrape error, and each alert with its severity, state and namespace. Whether the dashboards show data stays a check by eye in Grafana; every target up already proves that data comes in.
 
-The rehearsal cut `core/rehearsal/monitoring` sends every alert to `null`, so the stage reads alerts from Prometheus, not from a receiver. Proof: unit tests with recorded API answers (clean, every kind of problem, Prometheus not yet readable). Not yet run against a real rehearsal.
+The rehearsal cut `core/rehearsal/monitoring` sends every alert to `null`, so the stage reads alerts from Prometheus, not from a receiver. Proof: unit tests with recorded API answers (clean, every kind of problem, Prometheus not yet readable), and the rehearsal of 2026-11-01, where it held the run for 30 minutes on two real Grafana faults (sidecars OOMKilled, Grafana killed by its liveness probe) and passed with 37 targets up once both were fixed.
 
 ## lb-address
 
