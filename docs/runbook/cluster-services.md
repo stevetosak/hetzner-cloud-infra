@@ -2002,7 +2002,7 @@ so a failed re-run cannot overwrite a month's pass — with at least:
 | `R2_READONLY_ACCESS_KEY_ID`, `R2_READONLY_SECRET_ACCESS_KEY` | R2 **Account** token, **Object Read**, buckets `tosak-pg-backups` and `tosak-drill-results`. The drill (step 17) uses the same token from SOPS |
 | `HCLOUD_READONLY_TOKEN` | Hetzner project token, **Read** |
 | `INFRA_TELEGRAM_BOT_TOKEN`, `INFRA_TELEGRAM_CHAT_ID` | already there, shared with `deploy-catalog.yml` |
-| `HEALTHCHECKS_WATCH_PING_URL` | the ping URL of the healthchecks.io check `recoverability-watch` (Bitwarden `kluster/healthchecks`). Added 2026-11-01, see below |
+| `HEALTHCHECKS_WATCH_PING_URL` | the ping URL of the healthchecks.io check `recoverability-watch` (Bitwarden `kluster/healthchecks`, field `recoverability_ping_url`). Added 2026-11-01, see below |
 
 Set with `gh secret set <NAME>`, which prompts without echo and keeps the value
 out of shell history. Neither new token can delete or change anything.
@@ -2024,7 +2024,7 @@ Two checks, made by hand on the Hobbyist plan and sending through
 | Check | Pinged by | Period | Grace | Ping URL |
 |---|---|---|---|---|
 | `watchdog` | the Alertmanager Watchdog, every minute (the receiver `healthchecks`) | 5 min | 10 min | `kluster/healthchecks`, `watchdog_ping_url` → Secret `monitoring/alertmanager-receivers` |
-| `recoverability-watch` | this workflow, once a day at 06:00 UTC | 1 day | 3 h | `kluster/healthchecks` → repository secret `HEALTHCHECKS_WATCH_PING_URL` |
+| `recoverability-watch` | this workflow, once a day at 06:00 UTC | 1 day | 3 h | `kluster/healthchecks`, `recoverability_ping_url` → repository secret `HEALTHCHECKS_WATCH_PING_URL` |
 
 A run takes about a minute, or 16 minutes when the second volume check waits,
 so 3 hours of grace covers a late GitHub schedule. A check that was never

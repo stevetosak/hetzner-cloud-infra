@@ -168,3 +168,24 @@ rebinding the Control Plane metrics so their rules can come back. The choice is
 worth revisiting if the stack does not fit in memory (victoria-metrics), if the
 free plans change, or if the cluster grows enough that a hosted store becomes
 cheaper than the memory it takes.
+
+
+## Amendments — 2026-11-01, found in the branch review
+
+**The decision does not change.** This is a correction of one phrase.
+
+**1. "No alert but the Watchdog" means no alert that would page on live.** The
+rehearsal check above says that no alert but the Watchdog fires. Read
+literally, that fails every rehearsal: the `InfoInhibitor` always fires, and
+info alerts such as `CPUThrottlingHigh` fire on a small cluster without a fault.
+Neither pages anybody, because the live routing sends them to `null`. The check
+therefore counts exactly the alerts that the live routing sends to Telegram:
+every alert except the Watchdog, the `InfoInhibitor` and those of severity
+`info`. An alert with no severity counts, because the default route sends it to
+Telegram as a rule fault.
+
+The first version of the check counted only `warning` and `critical`, so a
+rehearsal could pass with an unlabelled alert that would page on live. The
+branch review found the gap; the check now follows the routing, and a unit test
+holds an alert with no severity. The [services-seed
+runbook](../runbook/services-seed.md#monitoring-clean) describes the stage.
