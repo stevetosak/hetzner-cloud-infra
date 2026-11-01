@@ -53,6 +53,20 @@ data:
           - 302
         prober: http
         timeout: 10s
+      http_access:
+        http:
+          fail_if_header_not_matches:
+          - header: Location
+            regexp: ^https://[a-z0-9-]+\.cloudflareaccess\.com/cdn-cgi/access/login/
+          follow_redirects: false
+          preferred_ip_protocol: ip4
+          valid_http_versions:
+          - HTTP/1.1
+          - HTTP/2.0
+          valid_status_codes:
+          - 302
+        prober: http
+        timeout: 10s
 
 ---
 # Source: prometheus-blackbox-exporter/templates/service.yaml
@@ -113,7 +127,7 @@ spec:
         app.kubernetes.io/version: "v0.29.1"
         app.kubernetes.io/managed-by: Helm
       annotations:
-        checksum/config: 4bd61475035d6ced50e1823fb7683883ae2b12e17c728e2c74b7ed806acb993f
+        checksum/config: 294c9ecfd98cdbfe715e5af7962493f4d6a78923ac66daaa144e441a888904c5
     spec:
       automountServiceAccountToken: false
       serviceAccountName: blackbox-exporter

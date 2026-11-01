@@ -20,6 +20,8 @@ resources:
   - blackbox-exporter.yaml
   - probes/public-hosts.yaml
   - rules/probes.yaml
+  # grafana.tosak.net, behind Cloudflare Access (ADR 0011).
+  - httproute.yaml
 
 # The pinned upstream dashboards (dashboards/fetch.sh), one ConfigMap each.
 # Grafana's sidecar loads every ConfigMap with grafana_dashboard: "1".

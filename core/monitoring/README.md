@@ -40,6 +40,12 @@ server-side). It refuses a render that holds a helm hook or a random value.
   after 5 minutes. `kluster services check` fails when a host of a synced
   HTTPRoute has no target, or a target has no synced route: a new route adds
   its host here in the same change.
+- **Grafana is public** at `grafana.tosak.net` (`httproute.yaml`), behind
+  Cloudflare Access and then its own login. The Access application and its
+  Emails policy are made in the Cloudflare dashboard; the proxied A record by
+  hand, as for every host. Its probe (module `http_access`) passes only on the
+  302 to the Access login, so it fails when the gate is gone, even if Grafana
+  still answers 302 to `/login`. Prometheus and Alertmanager have no route.
 - **Every image pinned by digest** in the values files. A chart bump needs new
   digests: `docker buildx imagetools inspect <image>:<tag>`.
 - **Grafana's admin login** is the Secret `monitoring/grafana-admin` (Secret

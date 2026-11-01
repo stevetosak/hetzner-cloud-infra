@@ -24,4 +24,6 @@ spec:
               The probe of {{ $labels.instance }} fails
               for 5 minutes. probe_http_status_code shows the answer: 0 is
               no answer (DNS, TLS or a timeout), 52x is Cloudflare without
-              the origin, 503 is Envoy without a ready pod.
+              the origin, 503 is Envoy without a ready pod. On a host behind
+              Cloudflare Access, a 200 or a 302 that fails means the Access
+              gate is gone: check the Access application at once.

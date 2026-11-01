@@ -55,3 +55,25 @@ spec:
       static:
         - https://tosak.net/
         - https://www.tosak.net/
+---
+# The hosts behind Cloudflare Access: the probe passes on the 302 to the
+# Access login, so it proves the gate, not the origin. Cloudflare answers
+# without asking the origin; Grafana's own health is the in-cluster scrape of
+# its pod (the chart's monitors and kube-state-metrics rules). A host that
+# drops Access fails here, also when it still answers 302 (Grafana's /login).
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: public-hosts-access
+  namespace: monitoring
+spec:
+  jobName: public-hosts
+  module: http_access
+  prober:
+    url: blackbox-exporter.monitoring.svc:9115
+  interval: 1m
+  scrapeTimeout: 15s
+  targets:
+    staticConfig:
+      static:
+        - https://grafana.tosak.net/
