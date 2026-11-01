@@ -96,6 +96,7 @@ spec:
     - {server: https://kubernetes.default.svc, namespace: cnpg-system}
     - {server: https://kubernetes.default.svc, namespace: envoy-gateway-system}
     - {server: https://kubernetes.default.svc, namespace: gateway}
+    - {server: https://kubernetes.default.svc, namespace: monitoring}
     - {server: https://kubernetes.default.svc, namespace: pg-cluster}
     - {server: https://kubernetes.default.svc, namespace: pg-drill}
     - {server: https://kubernetes.default.svc, namespace: redis}

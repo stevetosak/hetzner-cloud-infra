@@ -1,0 +1,31 @@
+# grafana.tosak.net (ADR 0011): Grafana behind Cloudflare Access, then its own
+# login. The origin lock of ADR 0008 makes Access a real gate: no request
+# reaches the Gateway without passing Cloudflare first. The Access application
+# and its policy are made in the Cloudflare dashboard, not here.
+#
+# The Gateway admits this route because `monitoring` is in its allowedRoutes
+# (core/gateway/gateway.yaml). No TLS block: the Gateway holds the certificate.
+#
+# Only Grafana is public. Prometheus and Alertmanager have no route; use a
+# port-forward over the VPN.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  parentRefs:
+    - name: tosak
+      namespace: gateway
+      sectionName: https
+  hostnames:
+    - grafana.tosak.net
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        # The chart's Service; Grafana serves plain HTTP on it.
+        - name: kps-grafana
+          port: 80

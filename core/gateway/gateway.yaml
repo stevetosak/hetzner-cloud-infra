@@ -34,7 +34,7 @@ spec:
             matchExpressions:
               - key: kubernetes.io/metadata.name
                 operator: In
-                values: [gateway, argocd, authos, doma]
+                values: [gateway, argocd, authos, doma, monitoring]
     - name: https
       protocol: HTTPS
       port: 443
@@ -50,4 +50,4 @@ spec:
             matchExpressions:
               - key: kubernetes.io/metadata.name
                 operator: In
-                values: [gateway, argocd, authos, doma]
+                values: [gateway, argocd, authos, doma, monitoring]

@@ -1,0 +1,25 @@
+# Scrapes the PostgreSQL instances of tosak-pg-cluster (port `metrics`, 9187).
+#
+# The monitor lives here, not in core/cnpg: the Cluster is never synced
+# (kluster db create builds it), and every scrape the custom rules depend on
+# stays in one directory. Only the instance pods: CNPG's job pods carry the
+# cluster label too. The throw-away Cluster of the restore drill (pg-drill) is
+# not scraped; its job reports its result.
+#
+# The primary alone exports cnpg_pg_stat_archiver_* (proven on the live
+# cluster 2026-11-01: archived_count 11570 under plugin archiving, nothing on
+# the standbys).
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: cnpg-tosak-pg-cluster
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames: [pg-cluster]
+  selector:
+    matchLabels:
+      cnpg.io/cluster: tosak-pg-cluster
+      cnpg.io/podRole: instance
+  podMetricsEndpoints:
+    - port: metrics

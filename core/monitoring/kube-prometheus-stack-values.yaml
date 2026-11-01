@@ -1,0 +1,339 @@
+# Values that produce core/monitoring/kube-prometheus-stack.yaml.
+#
+# Chart: oci://ghcr.io/prometheus-community/charts/kube-prometheus-stack,
+# version 92.17.0 (prometheus-operator v0.94.2).
+# Render with core/monitoring/render.sh. Do not edit the rendered file.
+#
+# The design is ADR 0011. This file holds the chart's shape and the
+# Alertmanager routing. The custom rules (rules/), the dashboards
+# (dashboards/), the monitors (monitors/) and the probes (probes/) are files
+# of their own beside it.
+#
+# Every workload sets revisionHistoryLimit: 3 (CLAUDE.md); each chart's
+# default is 10.
+
+# Short object names: kps-operator, kps-prometheus, kps-grafana, ...
+fullnameOverride: kps
+
+crds:
+  enabled: true   # rendered, then split into crds.yaml; only the seed applies them
+
+# ---------------------------------------------------------------------------
+# Scrape targets in kube-system
+#
+# The core AppProject does not admit kube-system, so the chart must render
+# nothing there. kubeadm binds etcd, the scheduler, the controller manager and
+# kube-proxy (metricsBindAddress "") to 127.0.0.1, so a scrape could never
+# reach them: off (ADR 0011). The Plan item "Rebind the kubeadm Control Plane
+# metrics" brings them back.
+# ---------------------------------------------------------------------------
+kubeEtcd:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+# CoreDNS through kubeadm's own Service kube-dns (port `metrics`, 9153), not a
+# second Service of the chart's in kube-system. The job keeps the name coredns
+# that the chart's dashboard expects.
+coreDns:
+  enabled: true
+  service:
+    enabled: false
+  serviceMonitor:
+    port: metrics
+    selector:
+      matchLabels:
+        k8s-app: kube-dns
+    relabelings:
+      - targetLabel: job
+        replacement: coredns
+
+windowsMonitoring:
+  enabled: false
+
+# ---------------------------------------------------------------------------
+# The chart's rules: all of them, minus the deny list (ADR 0011)
+#
+# The Control Plane rules (etcd, scheduler, controller manager, kube-proxy)
+# are already gone: the chart renders a component's rules only while its
+# scrape is on. The over-commit rules go because the cluster is over-committed
+# by design; KubeMemoryOvercommit fires from the first day (the requests do
+# not fit on two Workers).
+#
+# 🔴 Read this list again on each chart upgrade: a renamed rule comes back on.
+# A new entry needs its reason here. The custom rules are in rules/.
+# ---------------------------------------------------------------------------
+defaultRules:
+  disabled:
+    KubeCPUOvercommit: true
+    KubeMemoryOvercommit: true
+
+# ---------------------------------------------------------------------------
+# Operator
+# ---------------------------------------------------------------------------
+prometheusOperator:
+  revisionHistoryLimit: 3
+  # Off by decision (2026-11-01): the webhook's certificate comes from two
+  # helm-hook Jobs that patch its CA into the webhook config, and ArgoCD's
+  # selfHeal would put the config back. A CI `promtool check rules` replaces
+  # the check at apply time. The operator's own TLS uses the same certificate,
+  # so it goes off too; nothing outside the cluster reaches the operator.
+  admissionWebhooks:
+    enabled: false
+  tls:
+    enabled: false
+
+  image:
+    tag: v0.94.2
+    sha: c7edf0379b7271ef1705dce258d2bb73820e299cc95559369e9f6fc3321639ec
+  prometheusConfigReloader:
+    image:
+      tag: v0.94.2
+      sha: a1897c67478bc23434534e91ad3855280771196b1daf17144db9dbcb655bef71
+    resources:
+      requests:
+        cpu: 10m
+        memory: 24Mi
+      limits:
+        cpu: 50m
+        memory: 48Mi
+
+  resources:
+    requests:
+      cpu: 20m
+      memory: 48Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+# ---------------------------------------------------------------------------
+# Prometheus
+# ---------------------------------------------------------------------------
+prometheus:
+  prometheusSpec:
+    image:
+      tag: v3.15.1-distroless
+      sha: 451a845bae1d51622b41af1780eb2ad911bbb79a9855bc8e9bb67fabbc03f934
+
+    # Read every monitor and rule in the cluster, not only the chart's own:
+    # the CNPG PodMonitor, the probes and the custom rules live elsewhere.
+    ruleSelectorNilUsesHelmValues: false
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    scrapeConfigSelectorNilUsesHelmValues: false
+
+    # History is lost on every restart and every move (ADR 0005, ADR 0011).
+    # retentionSize stays below the emptyDir limit, so Prometheus deletes old
+    # blocks before the kubelet evicts the pod.
+    retention: 3d
+    retentionSize: 3GB
+    storageSpec:
+      emptyDir:
+        sizeLimit: 4Gi
+
+    # No node pin. Prometheus and Alertmanager prefer different nodes, so one
+    # node going down does not take the rule engine and the sender at once.
+    podAntiAffinity: ""
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: alertmanager
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 400Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+
+# ---------------------------------------------------------------------------
+# Alertmanager
+# ---------------------------------------------------------------------------
+alertmanager:
+  # The routing is plain YAML here, so a review can read it. Every secret value
+  # is a file from the Secret monitoring/alertmanager-receivers (Secret
+  # Catalog), mounted by `secrets:` below at /etc/alertmanager/secrets/<name>/.
+  # The chart renders this config into a Secret in the committed file, so it
+  # must never hold a value itself.
+  config:
+    global:
+      resolve_timeout: 5m
+    # The chart's defaults: a critical alert silences the warning and info
+    # alerts of the same name and namespace; InfoInhibitor silences info.
+    inhibit_rules:
+      - source_matchers: ['severity = critical']
+        target_matchers: ['severity =~ warning|info']
+        equal: [namespace, alertname]
+      - source_matchers: ['severity = warning']
+        target_matchers: ['severity = info']
+        equal: [namespace, alertname]
+      - source_matchers: ['alertname = InfoInhibitor']
+        target_matchers: ['severity = info']
+        equal: [namespace]
+      - target_matchers: ['alertname = InfoInhibitor']
+    route:
+      # Anything not routed below goes to the Alert Chat: an alert with no
+      # severity is a rule fault worth seeing, not something to drop.
+      receiver: telegram
+      group_by: [namespace]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
+      routes:
+        # The dead-man's switch (ADR 0011). The Watchdog always fires; its
+        # ping every minute keeps the healthchecks.io check (period 5 min,
+        # grace 10 min) green. Silence means Prometheus, Alertmanager or the
+        # cluster is gone.
+        - receiver: healthchecks
+          matchers: ['alertname = "Watchdog"']
+          group_wait: 0s
+          group_interval: 1m
+          repeat_interval: 1m
+        - receiver: 'null'
+          matchers: ['alertname = "InfoInhibitor"']
+        # info stays in Grafana (ADR 0011).
+        - receiver: 'null'
+          matchers: ['severity = "info"']
+    receivers:
+      - name: 'null'
+      - name: telegram
+        telegram_configs:
+          - bot_token_file: /etc/alertmanager/secrets/alertmanager-receivers/telegram-bot-token
+            chat_id_file: /etc/alertmanager/secrets/alertmanager-receivers/telegram-chat-id
+            send_resolved: true
+      - name: healthchecks
+        webhook_configs:
+          - url_file: /etc/alertmanager/secrets/alertmanager-receivers/watchdog-ping-url
+            send_resolved: false
+    templates:
+      - '/etc/alertmanager/config/*.tmpl'
+
+  alertmanagerSpec:
+    secrets:
+      - alertmanager-receivers
+
+    image:
+      tag: v0.34.2
+      sha: 39d8bb3966c694a124428a3a88fbcffd40bd069129ecd47c059f8a3f17c55f3b
+
+    podAntiAffinity: ""
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: prometheus
+
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+
+# ---------------------------------------------------------------------------
+# Grafana
+#
+# Stateless: no volume, dashboards only from git (ConfigMaps the sidecar
+# loads). The admin login comes from the Secret monitoring/grafana-admin
+# (Secret Catalog), never from values: without existingSecret the chart
+# renders a random password into the committed file.
+# ---------------------------------------------------------------------------
+grafana:
+  revisionHistoryLimit: 3
+  image:
+    tag: 13.3.0-distroless
+    sha: 540b8afb775bf34aefce417e4329039daa5d44b6f2fbda6881397b1b247ca7df
+
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+
+  persistence:
+    enabled: false
+
+  testFramework:
+    enabled: false
+
+  grafana.ini:
+    server:
+      root_url: https://grafana.tosak.net
+    analytics:
+      check_for_updates: false
+      check_for_plugin_updates: false
+      reporting_enabled: false
+
+  sidecar:
+    image:
+      tag: 2.14.1
+      sha: 092dbe0c335fba9af414a27630ca68f34df6185784fa847d9954187e69dbfdd7
+    # 96Mi was too little: both sidecars were OOMKilled at start in the
+    # rehearsal of 2026-11-01 (k8s-sidecar 2.x, Python and the Kubernetes
+    # client). The live rollout measures the real use.
+    resources:
+      requests:
+        cpu: 10m
+        memory: 96Mi
+      limits:
+        cpu: 100m
+        memory: 256Mi
+
+  # 256Mi and 500m were too little for Grafana 13 at start (rehearsal of
+  # 2026-11-01): at 255 MiB of 256 and CPU-throttled, its API handlers timed
+  # out, the liveness probe failed and the kubelet killed it (exit 137).
+  # The live rollout measures the real use.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+# ---------------------------------------------------------------------------
+# Exporters
+# ---------------------------------------------------------------------------
+kube-state-metrics:
+  revisionHistoryLimit: 3
+  image:
+    tag: v2.20.0
+    # This chart wants the prefix; the others add it.
+    sha: sha256:42cfe3723a5f058171c627537fb57a3ea0f26e4380fa18555a95cb1a1b4cfc5b
+  resources:
+    requests:
+      cpu: 10m
+      memory: 48Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+# On every node, the Control Plane too (the chart tolerates every taint), so a
+# dead Control Plane node shows.
+prometheus-node-exporter:
+  revisionHistoryLimit: 3
+  image:
+    tag: v1.12.1   # the chart appends -distroless itself
+    digest: sha256:8c9bac11973b94b59be88d6e11fee4429aa743c8846cdc75d65b18db33f6a106
+  resources:
+    requests:
+      cpu: 10m
+      memory: 24Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi

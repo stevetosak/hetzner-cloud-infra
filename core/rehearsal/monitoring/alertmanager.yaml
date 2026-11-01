@@ -1,0 +1,8 @@
+# The rehearsal's Alertmanager config (core/rehearsal/monitoring): every
+# alert goes to the receiver `null`. No Telegram, no Watchdog ping to
+# healthchecks.io. The stage monitoring-clean reads the alerts from
+# Prometheus, not from a receiver.
+route:
+  receiver: "null"
+receivers:
+  - name: "null"

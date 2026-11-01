@@ -11,7 +11,6 @@
 #
 #   core/hcloud, core/cni   installed by `kluster cp init`, before ArgoCD can run
 #   core/gateway-api        CRDs only; the seed applies it
-#   core/monitoring         parked behind its own grill
 #
 # Each element is {dir, path, namespace}. `path` is separate from `dir` so the
 # rehearsal overlay (core/rehearsal/argocd) can point a directory at its
@@ -43,6 +42,7 @@ spec:
           - {dir: cert-manager, path: core/cert-manager, namespace: cert-manager}
           - {dir: cnpg, path: core/cnpg, namespace: cnpg-system}
           - {dir: gateway, path: core/gateway, namespace: envoy-gateway-system}
+          - {dir: monitoring, path: core/monitoring, namespace: monitoring}
           - {dir: pg-drill, path: core/pg-drill, namespace: pg-drill}
           - {dir: redis, path: core/redis, namespace: redis}
           - {dir: reloader, path: core/reloader, namespace: reloader}

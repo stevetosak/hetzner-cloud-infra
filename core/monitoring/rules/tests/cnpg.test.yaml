@@ -1,0 +1,199 @@
+# Unit tests of rules/cnpg.yaml. Run by core/monitoring/check-rules.sh, which
+# writes the rule file next to this one as cnpg.rules.yaml.
+#
+# pod 1 is the primary, pods 2 and 3 the standbys, as on the live cluster.
+# Times are seconds since the start of the test.
+rule_files: [cnpg.rules.yaml]
+evaluation_interval: 1m
+
+tests:
+  # A healthy cluster fires nothing.
+  - interval: 1m
+    input_series:
+      - {series: 'cnpg_collector_up{cluster="tosak-pg-cluster",namespace="pg-cluster",pod="tosak-pg-cluster-1"}', values: '1x60'}
+      - {series: 'cnpg_collector_up{cluster="tosak-pg-cluster",namespace="pg-cluster",pod="tosak-pg-cluster-2"}', values: '1x60'}
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="pg-cluster",pod="tosak-pg-cluster-1"}', values: '0x60'}
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="pg-cluster",pod="tosak-pg-cluster-2"}', values: '1x60'}
+      - {series: 'cnpg_pg_replication_streaming_replicas{namespace="pg-cluster",pod="tosak-pg-cluster-1"}', values: '2x60'}
+      - {series: 'cnpg_pg_replication_streaming_replicas{namespace="pg-cluster",pod="tosak-pg-cluster-2"}', values: '0x60'}
+      - {series: 'cnpg_pg_replication_lag{namespace="pg-cluster",pod="tosak-pg-cluster-2"}', values: '0x60'}
+      # Nine failures before the start (as live), every segment archived since.
+      - {series: 'cnpg_pg_stat_archiver_last_failed_time{namespace="pg-cluster",pod="tosak-pg-cluster-1"}', values: '100x60'}
+      - {series: 'cnpg_pg_stat_archiver_last_archived_time{namespace="pg-cluster",pod="tosak-pg-cluster-1"}', values: '1000+60x60'}
+      - {series: 'cnpg_pg_stat_archiver_seconds_since_last_archival{namespace="pg-cluster",pod="tosak-pg-cluster-1"}', values: '50x60'}
+      - {series: 'cnpg_collector_pg_wal_archive_status{namespace="pg-cluster",pod="tosak-pg-cluster-1",value="ready"}', values: '0x60'}
+      - {series: 'kubelet_volume_stats_used_bytes{namespace="pg-cluster",persistentvolumeclaim="tosak-pg-cluster-1"}', values: '632631296x60'}
+      - {series: 'kubelet_volume_stats_capacity_bytes{namespace="pg-cluster",persistentvolumeclaim="tosak-pg-cluster-1"}', values: '10464022528x60'}
+    alert_rule_test:
+      - {eval_time: 60m, alertname: CNPGWALArchivingFailing}
+      - {eval_time: 60m, alertname: CNPGWALArchiveStuck}
+      - {eval_time: 60m, alertname: CNPGClusterOffline}
+      - {eval_time: 60m, alertname: CNPGNoPrimary}
+      - {eval_time: 60m, alertname: CNPGReplicasNotStreaming}
+      - {eval_time: 60m, alertname: CNPGReplicationLag}
+      - {eval_time: 60m, alertname: CNPGVolumeFillingUp}
+
+  # Archiving fails from minute 5 and works again at minute 40. A new failure
+  # from minute 56 is still inside the 10-minute `for` at minute 59.
+  - interval: 1m
+    input_series:
+      - {series: 'cnpg_pg_stat_archiver_last_archived_time{namespace="pg-cluster",pod="tosak-pg-cluster-1"}', values: '1000x39 3400x10 4000x10'}
+      - {series: 'cnpg_pg_stat_archiver_last_failed_time{namespace="pg-cluster",pod="tosak-pg-cluster-1"}', values: '100x4 1300+60x34 3340x15 4010x5'}
+      # Segments pile up while it fails; the stuck rule must stay quiet.
+      - {series: 'cnpg_collector_pg_wal_archive_status{namespace="pg-cluster",pod="tosak-pg-cluster-1",value="ready"}', values: '0x4 1+1x34 0x20'}
+      - {series: 'cnpg_pg_stat_archiver_seconds_since_last_archival{namespace="pg-cluster",pod="tosak-pg-cluster-1"}', values: '0+60x39 0x20'}
+    alert_rule_test:
+      - {eval_time: 10m, alertname: CNPGWALArchivingFailing}
+      - eval_time: 20m
+        alertname: CNPGWALArchivingFailing
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: pg-cluster, pod: tosak-pg-cluster-1}
+            exp_annotations:
+              summary: WAL archiving to R2 fails on tosak-pg-cluster-1.
+              description: >-
+                The last archive attempt on the primary tosak-pg-cluster-1 failed,
+                and none has succeeded since. Point-in-time recovery stops at the
+                last archived segment, and pg_wal grows until the volume is full.
+                Read the plugin's log in the instance pod.
+      - {eval_time: 38m, alertname: CNPGWALArchiveStuck}
+      - {eval_time: 45m, alertname: CNPGWALArchivingFailing}
+      - {eval_time: 59m, alertname: CNPGWALArchivingFailing}
+
+  # The archiver hangs from minute 0: segments wait, no failure, no success.
+  - interval: 1m
+    input_series:
+      - {series: 'cnpg_pg_stat_archiver_last_archived_time{namespace="pg-cluster",pod="tosak-pg-cluster-1"}', values: '1000x60'}
+      - {series: 'cnpg_pg_stat_archiver_last_failed_time{namespace="pg-cluster",pod="tosak-pg-cluster-1"}', values: '100x60'}
+      - {series: 'cnpg_collector_pg_wal_archive_status{namespace="pg-cluster",pod="tosak-pg-cluster-1",value="ready"}', values: '3x60'}
+      - {series: 'cnpg_pg_stat_archiver_seconds_since_last_archival{namespace="pg-cluster",pod="tosak-pg-cluster-1"}', values: '0+60x60'}
+    alert_rule_test:
+      - {eval_time: 35m, alertname: CNPGWALArchiveStuck}
+      - eval_time: 45m
+        alertname: CNPGWALArchiveStuck
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: pg-cluster, pod: tosak-pg-cluster-1, value: ready}
+            exp_annotations:
+              summary: WAL archiving is stuck on tosak-pg-cluster-1.
+              description: >-
+                3 WAL segments wait to be archived on the primary
+                tosak-pg-cluster-1, and nothing was archived for more than 30
+                minutes, with no failure reported. Read the plugin's log in the
+                instance pod.
+
+  # Every instance stops answering at minute 10.
+  - interval: 1m
+    input_series:
+      - {series: 'cnpg_collector_up{cluster="tosak-pg-cluster",namespace="pg-cluster",pod="tosak-pg-cluster-1"}', values: '1x9 0x20'}
+      - {series: 'cnpg_collector_up{cluster="tosak-pg-cluster",namespace="pg-cluster",pod="tosak-pg-cluster-2"}', values: '1x9 _x20'}
+    alert_rule_test:
+      - {eval_time: 12m, alertname: CNPGClusterOffline}
+      - eval_time: 20m
+        alertname: CNPGClusterOffline
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: pg-cluster}
+            exp_annotations:
+              summary: No PostgreSQL instance of tosak-pg-cluster is up.
+              description: >-
+                No instance of tosak-pg-cluster reports PostgreSQL up, or none
+                can be scraped. Every application that uses the database is down.
+      - {eval_time: 20m, alertname: CNPGNoPrimary}
+
+  # Both instances are up, both in recovery: a failover that did not finish.
+  - interval: 1m
+    input_series:
+      - {series: 'cnpg_collector_up{cluster="tosak-pg-cluster",namespace="pg-cluster",pod="tosak-pg-cluster-2"}', values: '1x20'}
+      - {series: 'cnpg_collector_up{cluster="tosak-pg-cluster",namespace="pg-cluster",pod="tosak-pg-cluster-3"}', values: '1x20'}
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="pg-cluster",pod="tosak-pg-cluster-2"}', values: '0x4 1x15'}
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="pg-cluster",pod="tosak-pg-cluster-3"}', values: '1x20'}
+    alert_rule_test:
+      - {eval_time: 8m, alertname: CNPGNoPrimary}
+      - eval_time: 12m
+        alertname: CNPGNoPrimary
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: pg-cluster}
+            exp_annotations:
+              summary: tosak-pg-cluster has no primary.
+              description: >-
+                Instances are up but none is the primary for 5 minutes: a
+                failover did not finish. Writes fail. Read the Cluster's status
+                (kubectl cnpg status).
+      - {eval_time: 12m, alertname: CNPGClusterOffline}
+
+  # One standby stops streaming at minute 0, the second at minute 20. A
+  # standby's own count (0) never fires.
+  - interval: 1m
+    input_series:
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="pg-cluster",pod="tosak-pg-cluster-1"}', values: '0x40'}
+      - {series: 'cnpg_pg_replication_in_recovery{namespace="pg-cluster",pod="tosak-pg-cluster-2"}', values: '1x40'}
+      - {series: 'cnpg_pg_replication_streaming_replicas{namespace="pg-cluster",pod="tosak-pg-cluster-1"}', values: '1x19 0x20'}
+      - {series: 'cnpg_pg_replication_streaming_replicas{namespace="pg-cluster",pod="tosak-pg-cluster-2"}', values: '0x40'}
+      - {series: 'cnpg_pg_replication_lag{namespace="pg-cluster",pod="tosak-pg-cluster-2"}', values: '0x9 600x30'}
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: CNPGReplicasNotStreaming
+        exp_alerts:
+          - exp_labels: {severity: warning, namespace: pg-cluster}
+            exp_annotations:
+              summary: The primary streams to 1 of 2 standbys.
+              description: >-
+                A standby of tosak-pg-cluster does not stream from the primary.
+                A failover has one candidate fewer, and the daily base backup is
+                taken from a standby.
+      - eval_time: 35m
+        alertname: CNPGReplicasNotStreaming
+        exp_alerts:
+          - exp_labels: {severity: warning, namespace: pg-cluster}
+            exp_annotations:
+              summary: The primary streams to 0 of 2 standbys.
+              description: >-
+                A standby of tosak-pg-cluster does not stream from the primary.
+                A failover has one candidate fewer, and the daily base backup is
+                taken from a standby.
+          - exp_labels: {severity: critical, namespace: pg-cluster}
+            exp_annotations:
+              summary: The primary streams to no standby.
+              description: >-
+                No standby of tosak-pg-cluster streams from the primary. The
+                cluster has no failover, and the daily base backup has no standby
+                to run on.
+      - {eval_time: 15m, alertname: CNPGReplicationLag}
+      - eval_time: 25m
+        alertname: CNPGReplicationLag
+        exp_alerts:
+          - exp_labels: {severity: warning, namespace: pg-cluster, pod: tosak-pg-cluster-2}
+            exp_annotations:
+              summary: The standby tosak-pg-cluster-2 is 600 s behind.
+              description: >-
+                The standby tosak-pg-cluster-2 replays WAL more than 5 minutes
+                behind the primary. A failover to it would lose those writes.
+
+  # A 10 GiB volume at 85 %, then at 95 %.
+  - interval: 1m
+    input_series:
+      - {series: 'kubelet_volume_stats_used_bytes{namespace="pg-cluster",persistentvolumeclaim="tosak-pg-cluster-1"}', values: '850x20 950x20'}
+      - {series: 'kubelet_volume_stats_capacity_bytes{namespace="pg-cluster",persistentvolumeclaim="tosak-pg-cluster-1"}', values: '1000x40'}
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: CNPGVolumeFillingUp
+        exp_alerts:
+          - exp_labels: {severity: warning, namespace: pg-cluster, persistentvolumeclaim: tosak-pg-cluster-1}
+            exp_annotations:
+              summary: The volume tosak-pg-cluster-1 is 85% full.
+              description: >-
+                Grow storage.size in the Cluster (a Hetzner Volume grows online)
+                or find what fills it: pg_wal grows when archiving fails.
+      - eval_time: 30m
+        alertname: CNPGVolumeFillingUp
+        exp_alerts:
+          - exp_labels: {severity: warning, namespace: pg-cluster, persistentvolumeclaim: tosak-pg-cluster-1}
+            exp_annotations:
+              summary: The volume tosak-pg-cluster-1 is 95% full.
+              description: >-
+                Grow storage.size in the Cluster (a Hetzner Volume grows online)
+                or find what fills it: pg_wal grows when archiving fails.
+          - exp_labels: {severity: critical, namespace: pg-cluster, persistentvolumeclaim: tosak-pg-cluster-1}
+            exp_annotations:
+              summary: The volume tosak-pg-cluster-1 is 95% full.
+              description: >-
+                PostgreSQL stops when the volume is full. Grow storage.size in
+                the Cluster now, then find what fills it.

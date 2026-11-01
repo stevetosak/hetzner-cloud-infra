@@ -10,8 +10,10 @@
 # The rehearsal-age check (ADR 0009) reads the rehearsal project with its own
 # read-only token.
 #
-# Known gap (ADR 0003): GitHub disables a scheduled workflow in a public
-# repository after 60 days without repository activity, silently.
+# Every run ends with a ping to healthchecks.io (ADR 0011): plain when clean,
+# /fail otherwise. That closes the known gap of ADR 0003 — GitHub disables a
+# scheduled workflow in a public repository after 60 days without repository
+# activity, silently — because a disabled schedule is a missing ping.
 name: Recoverability watch
 
 on:
@@ -187,6 +189,28 @@ jobs:
           # Red on purpose: a failed scheduled run also e-mails the repo owner.
           echo "::error::findings sent to Telegram — the message is not printed here"
           exit 1
+
+      # The dead-man's switch (ADR 0011): the healthchecks.io check
+      # `recoverability-watch` (period 1 day, grace 3 h). A clean run pings
+      # it; any other end pings /fail: findings, a crash, a refused Telegram
+      # send, a timeout (GitHub cancels the job) or a hand cancel. So a
+      # finding reaches the Alert Chat even when this run's own Telegram send
+      # fails, and a schedule that GitHub disabled shows as a missing ping.
+      # Before "Report a broken run", so a failed ping is reported too. The
+      # URL is a secret (GitHub masks it); only the public run URL is sent.
+      - name: Ping the dead-man's switch
+        if: always()
+        env:
+          HC_URL: ${{ secrets.HEALTHCHECKS_WATCH_PING_URL }}
+          OUTCOME: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$HC_URL" ]; then
+            echo "::error::secret HEALTHCHECKS_WATCH_PING_URL is not set"; exit 1
+          fi
+          URL="$HC_URL"; [ "$OUTCOME" = success ] || URL="$HC_URL/fail"
+          curl -fsS -o /dev/null -m 10 --retry 5 --data-raw "$RUN_URL" "$URL"
+          echo "pinged: $([ "$OUTCOME" = success ] && echo clean || echo fail)"
 
       # The watcher itself crashed (bad manifest, node error, Telegram refused):
       # that is reported too, or a broken watcher looks exactly like a clean one.

@@ -45,7 +45,8 @@ var upCmd = &cobra.Command{
 		"declares Workers and no dead Worker exists, the Control Plane slot is empty or kluster's " +
 		"own, every Bitwarden item is readable, and the buckets agree with the repository. Then one " +
 		"bootstrap SSH gate covers cp init and every Worker, closed with an API readback before the " +
-		"seed; the seed, db create and the zone check run on the Control Plane. A rerun resumes.",
+		"seed; the seed, db create, the monitoring test (monitoring-clean, a rehearsal only) and the " +
+		"zone check run on the Control Plane. A rerun resumes.",
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		return run(cmd, func(ctx context.Context, a *app) error { return a.up(ctx, cmd) })
@@ -388,8 +389,8 @@ func (a *app) upWorkers(ctx context.Context, r *upRun, cpSrv *cloud.Server) erro
 	return nil
 }
 
-// upServices runs the seed, the database and the zone check on the Control
-// Plane, the zone last (decision 3). A rehearsal reaches it through
+// upServices runs the seed, the database, the monitoring test (a rehearsal
+// only) and the zone check on the Control Plane, the zone last (decision 3). A rehearsal reaches it through
 // bootstrap SSH on its firewall, opened once more here; live through
 // WireGuard.
 func (a *app) upServices(ctx context.Context, r *upRun) error {
@@ -407,7 +408,7 @@ func (a *app) upServices(ctx context.Context, r *upRun) error {
 		if err := a.upDB(ctx, r, cp, opts); err != nil {
 			return err
 		}
-		return stage.Run(ctx, []stage.Stage{r.seed.Zone}, cp, opts)
+		return stage.Run(ctx, r.seed.AfterDB(), cp, opts)
 	})
 }
 
@@ -435,6 +436,6 @@ func (a *app) upDB(ctx context.Context, r *upRun, cp *stage.Host, opts stage.Opt
 // planServices prints what the seed, the database and the zone would run
 // on a Control Plane that cannot be read yet.
 func (a *app) planServices(ctx context.Context, r *upRun) error {
-	all := append(append(r.seed.BeforeZone(), r.db.Stages...), r.seed.Zone)
+	all := append(append(r.seed.BeforeZone(), r.db.Stages...), r.seed.AfterDB()...)
 	return stage.PlanNew(ctx, all, a.cfg.ControlPlane.Name, a.out)
 }

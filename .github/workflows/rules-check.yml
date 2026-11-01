@@ -1,0 +1,32 @@
+# Checks every Prometheus rule core/monitoring deploys and runs the unit tests
+# of the custom ones (core/monitoring/check-rules.sh). It replaces the
+# prometheus-operator admission webhook, which is off (ADR 0011): without it a
+# rule that does not parse reaches the cluster.
+name: Rules check
+
+on:
+  pull_request:
+    paths:
+      - 'core/monitoring/**'
+      - '.github/workflows/rules-check.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'core/monitoring/**'
+      - '.github/workflows/rules-check.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: PyYAML
+        run: python3 -c 'import yaml' || sudo apt-get install -y python3-yaml
+      - name: promtool check rules, promtool test rules
+        run: ./core/monitoring/check-rules.sh
