@@ -14,6 +14,9 @@ unchanged: Envoy Gateway, one shared Gateway, DNS-01 wildcard, Flannel kept.
 Seven statements of fact in this record turned out to be wrong, and one gap was
 found. They are listed under **Amendments** at the end. Read that section
 before acting on any specific field name or ordering claim in the body below.
+**Amended again on 2026-11-02**: the one public entry point is the one for
+HTTP and HTTPS; mail has its own load balancer, and `mta-sts.tosak.net` is the
+one exception to the naming rule.
 
 It supersedes the ingress shape described in `README.md` and in the
 `Active/CLAUDE.md` workspace doctrine. Both were corrected on 2026-09-21.
@@ -320,3 +323,30 @@ decisions, all the operator's:
   proxied and answering 404). 302, not 301, because a browser caches a 301 with
   no end date and the redirect is a placeholder for a later landing page
   ([Log](../logs/2026-10-25-the-apex-and-www-redirect-to-the-docs-site-with-a-302.md)).
+
+### Amendment 2026-11-02 — mail gets its own entry point
+
+[ADR 0012](./0012-mail-is-self-hosted-on-stalwart-and-sent-through-amazon-ses.md)
+puts the inboxes on the platform, and mail cannot share this entry point. **The
+Public Entry Point is now the one entry point for HTTP and HTTPS, not for every
+protocol.** Every web host still enters through the Gateway `tosak`, and nothing
+else in this record changes. The decisions, all the operator's:
+
+- Mail enters through its own Hetzner `lb11` with its own public IP address,
+  created by a `LoadBalancer` Service in the namespace `mail` for ports 25,
+  465 and 993. It sends PROXY protocol straight to Stalwart, which trusts the
+  header only from the load balancer's source range. Envoy is not in the path.
+- The reason is the address. An MX record must publish a real IP address, and
+  on the shared load balancer that address is the web origin that Cloudflare
+  hides; `TCPRoute`s on the Gateway were possible (standard channel since
+  v1.6, item 1 above) and rejected for that, and because SMTP floods would
+  land on the Envoy that serves every web host.
+- `mail.tosak.net` is a DNS-only record that points to the mail load balancer.
+  `mail-admin.tosak.net` is an ordinary proxied host on this Gateway, routed to
+  Stalwart's admin paths only, behind Cloudflare Access and Stalwart's own
+  login, the way Grafana is exposed.
+- 🔴 **`mta-sts.tosak.net` is an exception to the naming rule**
+  `<project>[-<service>].tosak.net`. RFC 8461 fixes the name, so it cannot be
+  `mail-mta-sts`. It is served by this Gateway with an `HTTPRouteFilter` direct
+  response from a ConfigMap, so the exception costs a host name and nothing
+  else. It is the only exception.

@@ -11,7 +11,9 @@ topics: [backups, secrets, gitops, databases]
 
 Accepted, and **amended** on 2026-09-22 (SOPS), 2026-10-01 (the backup
 design) and **2026-10-02, which reverses one 2026-10-01 decision**: the bucket
-lock covers the WAL only. Read **Amendments** at the end before building
+lock covers the WAL only. Later amendments add the run-time password
+manager, the Secret Catalog, the heartbeat (2026-10-25) and the mail phase of
+the Restore Drill (2026-11-02). Read **Amendments** at the end before building
 anything from the body.
 
 ## Context
@@ -461,3 +463,35 @@ watcher's own Telegram send. The WAL archiver, the certificates and the
 database get rules in the in-cluster stack, whose own death the same switch
 sees through the Alertmanager Watchdog. Nothing is built yet; until it is, the
 gap stays open.
+
+**2026-11-02 — the Restore Drill gets a mail phase.**
+[ADR 0012](./0012-mail-is-self-hosted-on-stalwart-and-sent-through-amazon-ses.md)
+stores mail in two places: the metadata in a `mail` database on
+`tosak-pg-cluster`, which the drill already restores, and the message files in
+a versioned Backblaze B2 bucket, which nothing restores yet. A restore that
+brings back the folders without the messages would pass every current
+assertion. So the existing monthly drill gets a second phase, after the
+PostgreSQL assertions and only when they pass. Nothing is built yet. The
+decisions, all the operator's:
+
+- **The blobs are restored as of the replay end**: `rclone --b2-version-at`
+  copies the bucket as it was at the time of the last replayed transaction
+  into a scratch store. The drill already reads the replay end as an LSN from
+  the timeline history; how it turns that into a time is settled in the
+  build. Metadata and files
+  then describe the same instant, which is what a real recovery has to match.
+- **A throw-away Stalwart reads the mail back.** It starts in `pg-drill` on
+  the restored `mail` database and the scratch copy, and the drill reads
+  messages over IMAP. A canary message in the mailbox `drill@tosak.net`, never
+  deleted, must come back with the same sha256 as the one recorded when it was
+  delivered. Twenty random messages (K = 20) must come back with a body; a
+  missing blob fails the phase. The result is one more field in
+  `drill/<UTC timestamp>.json`.
+- 🔴 **The restored server must not be able to reach the world, or touch
+  production.** The restored data store carries the outgoing queue, and a
+  server that sees it will try to send it again. The drill Stalwart gets no
+  SES credentials and no relay route, a read-only B2 key, a blob store that
+  points at the scratch copy only (so a purge or an expiry inside it cannot
+  delete production files), and no Service and no route.
+- The full copy grows with the mail. When it becomes heavy for the drill's
+  time or cost, the drill reports it and the operator decides.
