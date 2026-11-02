@@ -146,11 +146,13 @@ _Avoid_: the API server address, the cluster URL.
 
 ## Public Entry Point
 
-The single place traffic from outside enters the cluster. It owns the listeners,
-the certificate and the load balancer, and it states which namespaces may
-attach a Route to it.
+The single place web traffic (HTTP and HTTPS) from outside enters the cluster.
+It owns the listeners, the certificate and the load balancer, and it states
+which namespaces may attach a Route to it.
 
-There is one, because there is one public address. It belongs to the
+There is one, because there is one public web address. Mail does not enter
+here: it has its own load balancer and address (ADR 0012), because an MX record
+would publish the web origin's address. It belongs to the
 organisation and not to any application, so no application configures it and no
 application holds its certificate.
 
@@ -291,7 +293,9 @@ a refusal under `--apply`.
 
 A scheduled, automated restore of the latest database backup into a throwaway
 cluster, asserting the data is really there. Distinct from a backup **job**,
-which only proves that writing to the bucket succeeded.
+which only proves that writing to the bucket succeeded. Its mail phase also
+restores the message files from their own bucket and reads messages back
+through a throwaway mail server (ADR 0012).
 
 An unverified backup is not a backup.
 
