@@ -6,6 +6,7 @@ _Generated from `history.jsonl` on this branch by `deployments/render-catalog.mj
 
 | App | Version | Commit | Env | Deployed (UTC) |
 | --- | --- | --- | --- | --- |
+| core-metrics-server | unknown | - | dev | 2026-11-03T19:40:27Z |
 | core-monitoring | unknown | - | dev | 2026-11-01T12:07:52Z |
 | core-argocd | unknown | - | dev | 2026-11-01T12:06:30Z |
 | doma-web | v0.3.0-11-g03b3716 | [03b3716](https://github.com/stevetosak/doma/commit/03b371692a8810598a211039654afe362a3cacab) | dev | 2026-10-31T22:19:12Z |
@@ -26,6 +27,7 @@ _Generated from `history.jsonl` on this branch by `deployments/render-catalog.mj
 
 | App | Version | Commit | Env | Deployed (UTC) |
 | --- | --- | --- | --- | --- |
+| core-metrics-server | unknown | - | dev | 2026-11-03T19:40:27Z |
 | core-monitoring | unknown | - | dev | 2026-11-01T12:07:52Z |
 | core-argocd | unknown | - | dev | 2026-11-01T12:06:30Z |
 | doma-web | v0.3.0-11-g03b3716 | [03b3716](https://github.com/stevetosak/doma/commit/03b371692a8810598a211039654afe362a3cacab) | dev | 2026-10-31T22:19:12Z |
@@ -45,6 +47,5 @@ _Generated from `history.jsonl` on this branch by `deployments/render-catalog.mj
 | authos-api | unknown | [e9a30ae](https://github.com/stevetosak/authos/commit/e9a30ae12f993dee38b7e3cfd7a3ab9367857406) | dev | 2026-10-01T18:57:14Z |
 | authos-duster | unknown | [e9a30ae](https://github.com/stevetosak/authos/commit/e9a30ae12f993dee38b7e3cfd7a3ab9367857406) | dev | 2026-10-01T18:56:34Z |
 | authos-demo | unknown | [48f3cad](https://github.com/stevetosak/authos/commit/48f3cadfd01fe5afdd74562904118aead1f1ebba) | dev | 2026-10-01T18:56:30Z |
-| authos-ui | unknown | [79fd738](https://github.com/stevetosak/authos/commit/79fd738af7d1e7c1244fdb6bbef2416afe0142f2) | dev | 2026-10-01T18:56:23Z |
 
 </details>
