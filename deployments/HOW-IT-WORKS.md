@@ -117,7 +117,9 @@ keyed by a hash of `{image set : trigger : recipient}`.
 **Template `app-deployed`** — renders the `POST /dispatches` body:
 `{ event_type: "deploy-live", client_payload: { app, project, revision, image } }`.
 `image` is `{{index .app.status.summary.images 0}}` — the sha rides inside its
-`:alpha-<sha>` suffix.
+`:alpha-<sha>` suffix. An `Application` that runs no image (`core-limit-ranges`
+holds only LimitRanges) sends an empty `image`; the workflow records nothing for
+it and ends green. Before 2026-11-03 such a payload failed the run.
 
 **Subscription** — a single **global** entry in the cm binds `on-deployed → gh-infra`
 for every `Application`. No per-`Application` annotations, so a later ApplicationSet
