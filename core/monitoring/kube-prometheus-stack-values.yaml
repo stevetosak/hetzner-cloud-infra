@@ -149,6 +149,9 @@ prometheus:
                 matchLabels:
                   app.kubernetes.io/name: alertmanager
 
+    # Live, 2026-11-01 to 11-03: the working set peaked at 729 MiB (RSS 606),
+    # over this request. A change here recreates the pod and loses the
+    # emptyDir TSDB, so the Capacity Plan sets it after its snapshots.
     resources:
       requests:
         cpu: 100m
@@ -297,11 +300,12 @@ grafana:
   # 256Mi and 500m were too little for Grafana 13 at start (rehearsal of
   # 2026-11-01): at 255 MiB of 256 and CPU-throttled, its API handlers timed
   # out, the liveness probe failed and the kubelet killed it (exit 137).
-  # The live rollout measures the real use.
+  # Live, 2026-11-01 to 11-03: RSS peaked at 298 MiB, the working set at
+  # 452 MiB (page cache included), so the request is the RSS peak plus ~30 %.
   resources:
     requests:
       cpu: 50m
-      memory: 256Mi
+      memory: 384Mi
     limits:
       cpu: "1"
       memory: 512Mi

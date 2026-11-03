@@ -79,8 +79,12 @@ memory), and Envoy keeps at least 128 Mi for traffic bursts.
       `projects/`. The `imaps` and `wasteio` manifests are not running and keep
       their values until they are deployed.
 - [ ] Right-size the cluster services: Argo CD, Envoy Gateway and its
-      `EnvoyProxy`, the CloudNativePG `Cluster`, Redis and reloader. Grafana's
-      request is set by the monitoring Task on 2026-11-02.
+      `EnvoyProxy`, the CloudNativePG `Cluster`, Redis, reloader and
+      Prometheus. Grafana's request was set by the monitoring Task on
+      2026-11-03 (384Mi). Prometheus peaked at 729 MiB working set against a
+      400Mi request in its first 50 hours; its change waits for the last
+      snapshot, because it recreates the pod and loses the `emptyDir` data
+      the snapshots read.
 - [ ] Give a request to every container that has none: cert-manager, the
       barman-cloud plugin, the hcloud CSI driver. A pod without requests is
       BestEffort, and the kubelet evicts it first under memory pressure.
