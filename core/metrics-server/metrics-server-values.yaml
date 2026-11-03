@@ -1,0 +1,32 @@
+# Values that produce core/metrics-server/metrics-server.yaml.
+#
+# Chart: metrics-server from https://kubernetes-sigs.github.io/metrics-server/,
+# version 3.14.0 (metrics-server v0.9.0). Render with
+# core/metrics-server/render.sh. Do not edit the rendered file.
+#
+# metrics-server serves the metrics API (`kubectl top`, a later
+# HorizontalPodAutoscaler) from the kubelets' resource metrics. It keeps no
+# history: Prometheus does that (ADR 0011).
+
+image:
+  # Pinned by digest (the multi-arch index). The chart writes
+  # repository:tag, so the digest rides in the tag.
+  tag: v0.9.0@sha256:d9862115e7c7881280d3d75ca26bda8ffc0fc213315979575bf23ce9826205c0
+
+revisionHistoryLimit: 3
+
+# 🔴 The kubelets serve self-signed certificates (kubeadm without
+# serverTLSBootstrap), so verifying them fails. The Prometheus kubelet scrape
+# skips verification for the same reason. CA-signed kubelet certificates are a
+# later step that would remove both (decided 2026-11-03).
+args:
+  - --kubelet-insecure-tls
+
+# Assumed from upstream's sizing for a small cluster; the Capacity Plan
+# measures it. No CPU limit on the cluster's own workloads (2026-11-01).
+resources:
+  requests:
+    cpu: 10m
+    memory: 64Mi
+  limits:
+    memory: 128Mi

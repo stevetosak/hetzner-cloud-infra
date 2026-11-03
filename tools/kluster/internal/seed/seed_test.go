@@ -124,6 +124,18 @@ func TestBuildRefusesAnObjectOutsideTheNamespaces(t *testing.T) {
 	}
 }
 
+// kube-system exists without the seed (kubeadm makes it), so an object there
+// passes; a namespace neither the seed nor kubeadm makes is still refused.
+func TestInNamespacesAcceptsTheClusterNamespaces(t *testing.T) {
+	m := []byte("kind: RoleBinding\nmetadata:\n  name: a\n  namespace: kube-system\n---\nkind: Service\nmetadata:\n  name: b\n  namespace: own\n")
+	if err := inNamespaces("core-x", m, []string{"own"}); err != nil {
+		t.Errorf("kube-system and a seeded namespace: %v, want accepted", err)
+	}
+	if err := inNamespaces("core-x", m, nil); err == nil || !strings.Contains(err.Error(), "Service own/b") {
+		t.Errorf("an unseeded namespace: %v, want Service own/b refused", err)
+	}
+}
+
 // fakeCP is a Control Plane: it answers the kubectl commands the Stages
 // run, from state the test sets.
 type fakeCP struct {

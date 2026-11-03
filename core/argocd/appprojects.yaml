@@ -96,6 +96,7 @@ spec:
     - {server: https://kubernetes.default.svc, namespace: cnpg-system}
     - {server: https://kubernetes.default.svc, namespace: envoy-gateway-system}
     - {server: https://kubernetes.default.svc, namespace: gateway}
+    - {server: https://kubernetes.default.svc, namespace: metrics-server}
     - {server: https://kubernetes.default.svc, namespace: monitoring}
     - {server: https://kubernetes.default.svc, namespace: pg-cluster}
     - {server: https://kubernetes.default.svc, namespace: pg-drill}
@@ -103,6 +104,9 @@ spec:
     - {server: https://kubernetes.default.svc, namespace: reloader}
     - {server: https://kubernetes.default.svc, namespace: authos}
     - {server: https://kubernetes.default.svc, namespace: doma}
+    # metrics-server's RoleBinding to extension-apiserver-authentication-reader
+    # lives there. Little extra privilege: ClusterRoleBinding is already allowed.
+    - {server: https://kubernetes.default.svc, namespace: kube-system}
   clusterResourceWhitelist:
     - {group: rbac.authorization.k8s.io, kind: ClusterRole}
     - {group: rbac.authorization.k8s.io, kind: ClusterRoleBinding}
@@ -111,6 +115,7 @@ spec:
     - {group: gateway.networking.k8s.io, kind: GatewayClass}
     - {group: cert-manager.io, kind: ClusterIssuer}
     - {group: storage.k8s.io, kind: StorageClass}
+    - {group: apiregistration.k8s.io, kind: APIService}
   namespaceResourceWhitelist:
     - group: '*'
       kind: '*'

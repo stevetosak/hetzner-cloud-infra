@@ -203,10 +203,15 @@ func concat(fsys fs.FS, files []string) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
+// clusterNamespaces exist on every cluster without the seed: kubeadm makes
+// them. core-metrics-server puts its auth-reader RoleBinding in kube-system.
+var clusterNamespaces = []string{"kube-system"}
+
 // inNamespaces refuses a build that puts an object into a namespace the
-// environment makes no Namespace for: ArgoCD would retry its sync for ever. A
-// rehearsal syncs no project, so a core object in a project's namespace needs
-// a rehearsal cut (core/rehearsal/reloader is one).
+// environment makes no Namespace for and the cluster does not have from the
+// start: ArgoCD would retry its sync for ever. A rehearsal syncs no project,
+// so a core object in a project's namespace needs a rehearsal cut
+// (core/rehearsal/reloader is one).
 func inNamespaces(app string, manifest []byte, namespaces []string) error {
 	dec := yaml.NewDecoder(bytes.NewReader(manifest))
 	for {
@@ -223,7 +228,7 @@ func inNamespaces(app string, manifest []byte, namespaces []string) error {
 			}
 			return err
 		}
-		if ns := o.Metadata.Namespace; ns != "" && !slices.Contains(namespaces, ns) {
+		if ns := o.Metadata.Namespace; ns != "" && !slices.Contains(namespaces, ns) && !slices.Contains(clusterNamespaces, ns) {
 			return fmt.Errorf("%s puts %s %s/%s into a namespace this environment makes no Namespace for", app, o.Kind, ns, o.Metadata.Name)
 		}
 	}
