@@ -42,6 +42,7 @@ spec:
           - {dir: cert-manager, path: core/cert-manager, namespace: cert-manager}
           - {dir: cnpg, path: core/cnpg, namespace: cnpg-system}
           - {dir: gateway, path: core/gateway, namespace: envoy-gateway-system}
+          - {dir: metrics-server, path: core/metrics-server, namespace: metrics-server}
           - {dir: monitoring, path: core/monitoring, namespace: monitoring}
           - {dir: pg-drill, path: core/pg-drill, namespace: pg-drill}
           - {dir: redis, path: core/redis, namespace: redis}

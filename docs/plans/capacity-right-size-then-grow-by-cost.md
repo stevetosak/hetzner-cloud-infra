@@ -71,6 +71,11 @@ memory), and Envoy keeps at least 128 Mi for traffic bursts.
       CPU 5-minute rate, restarts and `OOMKilled`), on 2026-11-04, 2026-11-07
       and 2026-11-10. Check `prometheus_tsdb_lowest_timestamp` at each one to
       prove the window really covers 3 days. Record them in the Task Record.
+      [`capacity-snapshot.py`](../../core/monitoring/capacity-snapshot.py)
+      runs the same queries each time (`python3 -I
+      core/monitoring/capacity-snapshot.py 3d`). A snapshot over the first
+      53 hours on 2026-11-03, a direction only, put the workers' summed
+      peaks times 1.3 at 5990 MiB against 7440 MiB on two workers.
 - [ ] Settle the sizing rule and write it into the `Resource defaults` of
       `CLAUDE.md` and the kalfa `manifests` rule (its source module, not the
       built file). The `200m` / `512Mi` default goes, and so does the CPU

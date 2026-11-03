@@ -48,6 +48,7 @@ patches:
           - {dir: cert-manager, path: core/rehearsal/cert-manager, namespace: cert-manager}
           - {dir: cnpg, path: core/rehearsal/cnpg, namespace: cnpg-system}
           - {dir: gateway, path: core/gateway, namespace: envoy-gateway-system}
+          - {dir: metrics-server, path: core/metrics-server, namespace: metrics-server}
           - {dir: monitoring, path: core/rehearsal/monitoring, namespace: monitoring}
           - {dir: redis, path: core/redis, namespace: redis}
           - {dir: reloader, path: core/rehearsal/reloader, namespace: reloader}
