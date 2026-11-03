@@ -60,8 +60,13 @@ jobs:
             const payload = JSON.parse(e.EVENT === "workflow_dispatch" ? e.REPLAYED : e.DISPATCHED)
             const entry = require("./deployments/apps.json")[payload.app] ?? {}
             const repo = entry.repo ?? ""
+            // An Application that runs no image (core-limit-ranges: only
+            // LimitRanges) deployed nothing the catalog records.
+            const record = payload.image ? "true" : "false"
+            if (record === "false") console.log(`::notice::${payload.app} runs no image; nothing to record`)
             appendFileSync(e.GITHUB_OUTPUT, [
               `payload=${JSON.stringify(payload)}`,
+              `record=${record}`,
               `repo=${repo}`,
               `owner=${repo.split("/")[0] ?? ""}`,
               `name=${repo.split("/")[1] ?? ""}`,
@@ -70,7 +75,7 @@ jobs:
           '
 
       - name: Clone the app repo (for git describe)
-        if: steps.p.outputs.repo != ''
+        if: steps.p.outputs.record == 'true' && steps.p.outputs.repo != ''
         env:
           REPO: ${{ steps.p.outputs.repo }}
         run: |
@@ -79,6 +84,7 @@ jobs:
 
       - name: Build the row
         id: row
+        if: steps.p.outputs.record == 'true'
         env:
           PAYLOAD: ${{ steps.p.outputs.payload }}
         run: |
@@ -90,6 +96,7 @@ jobs:
 
       - name: Record + regenerate
         id: rec
+        if: steps.p.outputs.record == 'true'
         env:
           ROW: ${{ steps.row.outputs.row }}
         run: |
@@ -127,7 +134,7 @@ jobs:
       # unreported in silence; the replay is idempotent (see the next step).
       - name: Token for the app repo
         id: status-token
-        if: steps.p.outputs.repo != ''
+        if: steps.p.outputs.record == 'true' && steps.p.outputs.repo != ''
         uses: actions/create-github-app-token@v3
         with:
           client-id: Iv23liSHYlhhQXMHAyuW # tosak-deploy-status, not a secret
@@ -137,7 +144,7 @@ jobs:
           permission-deployments: write
 
       - name: GitHub Deployment on the app repo
-        if: steps.p.outputs.repo != ''
+        if: steps.p.outputs.record == 'true' && steps.p.outputs.repo != ''
         env:
           GH_TOKEN: ${{ steps.status-token.outputs.token }}
           ROW: ${{ steps.row.outputs.row }}
