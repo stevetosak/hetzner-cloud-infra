@@ -93,9 +93,17 @@ memory), and Envoy keeps at least 128 Mi for traffic bursts.
 - [ ] Give a request to every container that has none: cert-manager, the
       barman-cloud plugin, the hcloud CSI driver. A pod without requests is
       BestEffort, and the kubelet evicts it first under memory pressure.
-- [ ] Add a LimitRange to every application namespace, so a manifest without
+- [x] Add a LimitRange to every application namespace, so a manifest without
       resources gets a small default instead of none. The same object is the
-      default for every future client namespace.
+      default for every future client namespace. **Done 2026-11-03**:
+      [`core/limit-ranges`](../../core/limit-ranges/README.md) gives a
+      container without resources a request of `10m` / `64Mi` and a memory
+      limit of `128Mi`, and no CPU limit; a client namespace adds its CPU limit
+      in its own directory. `kluster services check` fails when a project
+      has no directory there. Proven on live: `core-limit-ranges` Synced and
+      Healthy; a server dry-run pod in `doma` without resources got exactly
+      those values, and one with a `256Mi` request and no limit was refused.
+      No running pod changed.
 - [x] Install metrics-server under `core/`, synced by Argo CD, with a pinned
       chart and image. It serves `kubectl top` and is the base for a
       HorizontalPodAutoscaler later. **Done 2026-11-03**:
