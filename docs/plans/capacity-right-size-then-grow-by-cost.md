@@ -96,9 +96,16 @@ memory), and Envoy keeps at least 128 Mi for traffic bursts.
 - [ ] Add a LimitRange to every application namespace, so a manifest without
       resources gets a small default instead of none. The same object is the
       default for every future client namespace.
-- [ ] Install metrics-server under `core/`, synced by Argo CD, with a pinned
+- [x] Install metrics-server under `core/`, synced by Argo CD, with a pinned
       chart and image. It serves `kubectl top` and is the base for a
-      HorizontalPodAutoscaler later.
+      HorizontalPodAutoscaler later. **Done 2026-11-03**:
+      [`core/metrics-server`](../../core/metrics-server/README.md), chart
+      3.14.0, v0.9.0 by digest, with `--kubelet-insecure-tls` (the kubelets
+      serve self-signed certificates). Proven by `kubectl get apiservice
+      v1beta1.metrics.k8s.io` (`Available True`), `core-metrics-server`
+      Synced and Healthy, and `kubectl top nodes` answering for all four
+      nodes. It used 13 MiB at start against its 64 Mi request. Prometheus
+      did not restart, so the snapshot window is kept.
 - [ ] Prove N+1: confirm the requested memory fits on two workers, then drain
       one worker, wait for every pod to be Ready, and uncordon it. The drain is
       a write to the live cluster and runs only with the operator's yes.
