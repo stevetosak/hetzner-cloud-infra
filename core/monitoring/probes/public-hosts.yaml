@@ -14,7 +14,6 @@
 #   authos-api  /  and /health/live are 404 (Spring, no health path on the
 #               route); /.well-known/openid-configuration is 200.
 #   doma        /api/health/live is the Deployment's liveness path.
-#   argocd      /healthz is argocd-server's health path.
 apiVersion: monitoring.coreos.com/v1
 kind: Probe
 metadata:
@@ -30,7 +29,6 @@ spec:
   targets:
     staticConfig:
       static:
-        - https://argocd.tosak.net/healthz
         - https://authos.tosak.net/
         - https://authos-api.tosak.net/.well-known/openid-configuration
         - https://authos-demo.tosak.net/
@@ -61,6 +59,7 @@ spec:
 # without asking the origin; Grafana's own health is the in-cluster scrape of
 # its pod (the chart's monitors and kube-state-metrics rules). A host that
 # drops Access fails here, also when it still answers 302 (Grafana's /login).
+# argocd.tosak.net went behind Access on 2026-11-01.
 apiVersion: monitoring.coreos.com/v1
 kind: Probe
 metadata:
@@ -76,4 +75,5 @@ spec:
   targets:
     staticConfig:
       static:
+        - https://argocd.tosak.net/
         - https://grafana.tosak.net/
