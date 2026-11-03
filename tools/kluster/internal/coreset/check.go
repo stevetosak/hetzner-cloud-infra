@@ -207,24 +207,34 @@ func checkKustomization(fsys fs.FS, dir string) []error {
 	return errs
 }
 
-// kustomizationResources returns the resources list of dir's
-// kustomization.yaml, as written.
-func kustomizationResources(fsys fs.FS, dir string) ([]string, error) {
+// kustomization is the part of a kustomization.yaml the checks read.
+type kustomization struct {
+	Namespace string   `yaml:"namespace"`
+	Resources []string `yaml:"resources"`
+}
+
+// readKustomization reads dir's kustomization.yaml, as written.
+func readKustomization(fsys fs.FS, dir string) (kustomization, error) {
 	file := dir + "/kustomization.yaml"
 	objs, err := Objects(fsys, file)
 	if err != nil {
-		return nil, err
+		return kustomization{}, err
 	}
 	if len(objs) != 1 {
-		return nil, fmt.Errorf("%s: want one document", file)
+		return kustomization{}, fmt.Errorf("%s: want one document", file)
 	}
-	var k struct {
-		Resources []string `yaml:"resources"`
-	}
+	var k kustomization
 	if err := objs[0].Node.Decode(&k); err != nil {
-		return nil, fmt.Errorf("%s: %w", file, err)
+		return kustomization{}, fmt.Errorf("%s: %w", file, err)
 	}
-	return k.Resources, nil
+	return k, nil
+}
+
+// kustomizationResources returns the resources list of dir's
+// kustomization.yaml, as written.
+func kustomizationResources(fsys fs.FS, dir string) ([]string, error) {
+	k, err := readKustomization(fsys, dir)
+	return k.Resources, err
 }
 
 // forbidden says why a resource path must never be in a synced build, or "".
@@ -302,6 +312,10 @@ func checkProjects(fsys fs.FS, coreDests []string) []error {
 	if err != nil {
 		return []error{err}
 	}
+	limitRanges, err := kustomizationResources(fsys, LimitRangesDir)
+	if err != nil {
+		return []error{err}
+	}
 
 	var errs []error
 	for _, p := range projects {
@@ -313,6 +327,7 @@ func checkProjects(fsys fs.FS, coreDests []string) []error {
 		if _, err := find(fsys, "projects/"+p+"/namespace.yaml", "Namespace", p); err != nil {
 			errs = append(errs, err)
 		}
+		errs = append(errs, checkLimitRange(fsys, p, limitRanges, coreDests)...)
 		for name, nss := range listeners {
 			if !slices.Contains(nss, p) {
 				errs = append(errs, fmt.Errorf("%s: listener %s does not admit routes from %s", GatewayFile, name, p))
@@ -339,6 +354,27 @@ func checkProjects(fsys fs.FS, coreDests []string) []error {
 				errs = append(errs, fmt.Errorf("%s: %s has a Deployment Reloader restarts, but is not a destination of the core AppProject", AppProjectsFile, p))
 			}
 		}
+	}
+	return errs
+}
+
+// checkLimitRange refuses a project whose namespace has no LimitRange
+// directory: core/limit-ranges lists core/limit-ranges/<project>, which sets
+// the namespace <project>, and the core AppProject admits that namespace, or
+// core-limit-ranges cannot sync it.
+func checkLimitRange(fsys fs.FS, project string, listed, coreDests []string) []error {
+	dir := LimitRangesDir + "/" + project
+	if !slices.Contains(listed, project) {
+		return []error{fmt.Errorf("%s/kustomization.yaml: does not list %s; every project namespace gets the LimitRange", LimitRangesDir, project)}
+	}
+	var errs []error
+	if k, err := readKustomization(fsys, dir); err != nil {
+		errs = append(errs, err)
+	} else if k.Namespace != project {
+		errs = append(errs, fmt.Errorf("%s/kustomization.yaml: namespace %q, want %q", dir, k.Namespace, project))
+	}
+	if !slices.Contains(coreDests, project) {
+		errs = append(errs, fmt.Errorf("%s: %s gets a LimitRange from core-limit-ranges, but is not a destination of the core AppProject", AppProjectsFile, project))
 	}
 	return errs
 }

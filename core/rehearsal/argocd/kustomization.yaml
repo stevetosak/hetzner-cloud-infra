@@ -6,7 +6,8 @@
 #                              Telegram messages or write the deploy catalog.
 #   projects ApplicationSet    removed: no application runs in a rehearsal.
 #   core ApplicationSet        the rehearsal list: pg-drill out (it restores
-#                              live's backups), cert-manager, argocd, cnpg,
+#                              live's backups), limit-ranges out (it writes
+#                              only into application namespaces), cert-manager, argocd, cnpg,
 #                              monitoring and reloader pointed at their
 #                              rehearsal cuts; and branch
 #                              `rehearsal` instead of master, so a change is

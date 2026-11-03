@@ -180,6 +180,15 @@ func TestEachRuleFires(t *testing.T) {
 		{"a reloaded project outside the core AppProject", func(t *testing.T, m fstest.MapFS) {
 			edit(t, m, AppProjectsFile, "    - {server: https://kubernetes.default.svc, namespace: doma}\n", "")
 		}, "doma has a Deployment Reloader restarts, but is not a destination"},
+		{"a project without a LimitRange", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, LimitRangesDir+"/kustomization.yaml", "  - doma\n", "")
+		}, "core/limit-ranges/kustomization.yaml: does not list doma"},
+		{"a LimitRange directory for another namespace", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, LimitRangesDir+"/doma/kustomization.yaml", "namespace: doma\n", "namespace: authos\n")
+		}, `core/limit-ranges/doma/kustomization.yaml: namespace "authos", want "doma"`},
+		{"a LimitRange namespace outside the core AppProject", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, AppProjectsFile, "    - {server: https://kubernetes.default.svc, namespace: doma}\n", "")
+		}, "doma gets a LimitRange from core-limit-ranges, but is not a destination"},
 		{"an element namespace no namespace file makes", func(t *testing.T, m fstest.MapFS) {
 			delete(m, "core/redis/namespace.yaml")
 		}, "namespace redis of core-redis is in no namespace file"},

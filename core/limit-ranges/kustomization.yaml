@@ -1,0 +1,8 @@
+# Synced by the Application core-limit-ranges (ADR 0010). One directory per
+# application namespace, each the base with its namespace set; a new project
+# adds its directory here.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - authos
+  - doma
