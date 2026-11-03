@@ -27,6 +27,7 @@ const (
 	GatewayFile         = "core/gateway/gateway.yaml"
 	ReloaderFile        = "core/reloader/reloader.yaml"
 	AppsFile            = "deployments/apps.json"
+	LimitRangesDir      = "core/limit-ranges"
 
 	// RehearsalDir holds the rehearsal cuts; it is not a core directory.
 	RehearsalDir = "core/rehearsal"

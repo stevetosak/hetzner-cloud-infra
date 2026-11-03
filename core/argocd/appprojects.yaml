@@ -76,7 +76,8 @@ spec:
 #   Namespace                 the seed owns every Namespace; ArgoCD owns none.
 #
 # The destinations name each namespace a core build writes to. `authos` and
-# `doma` are there for Reloader's scoped Roles (core/reloader). This list is
+# `doma` are there for Reloader's scoped Roles (core/reloader) and the
+# LimitRanges (core/limit-ranges). This list is
 # tidiness, not a security boundary: the whitelist admits ClusterRoleBinding,
 # so a core Application could grant itself anything. The boundary is who can
 # merge to master. `kluster services check` keeps this list in step with the

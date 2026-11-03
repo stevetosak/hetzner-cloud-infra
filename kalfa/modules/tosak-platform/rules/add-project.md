@@ -54,7 +54,7 @@ Deleting the ApplicationSet does not delete the workloads (`preserveResourcesOnD
 
 ## Adding a project
 
-1. **Four entries:** one line in the generator list, one `AppProject` in `core/argocd/appprojects.yaml`, one `projects/<project>/namespace.yaml`, and the namespace in `allowedRoutes` in `core/gateway/gateway.yaml`. A Deployment with the Reloader annotation also needs its namespace in Reloader's `--namespaces`, a Role and RoleBinding in `core/reloader/reloader.yaml`, and the `core` AppProject destinations. `kluster services check` (CI `services-check.yml`) fails when one is missing.
+1. **Five entries:** one line in the generator list, one `AppProject` in `core/argocd/appprojects.yaml`, one `projects/<project>/namespace.yaml`, the namespace in `allowedRoutes` in `core/gateway/gateway.yaml`, and the LimitRange: a directory `core/limit-ranges/<project>/` (a copy of `doma/` with the namespace changed), listed in `core/limit-ranges/kustomization.yaml`, with the namespace in the `core` AppProject destinations. A Deployment with the Reloader annotation also needs its namespace in Reloader's `--namespaces`, a Role and RoleBinding in `core/reloader/reloader.yaml`, and the `core` AppProject destinations. `kluster services check` (CI `services-check.yml`) fails when one is missing.
 2. **The component files** (see the `manifests` rule).
 3. **A database**, if needed: `core/cnpg/databases/<project>.yaml`, listed in `core/cnpg/kustomization.yaml`; `core-cnpg` syncs it.
 

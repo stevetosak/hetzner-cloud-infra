@@ -43,6 +43,7 @@ spec:
           - {dir: cnpg, path: core/cnpg, namespace: cnpg-system}
           - {dir: gateway, path: core/gateway, namespace: envoy-gateway-system}
           - {dir: metrics-server, path: core/metrics-server, namespace: metrics-server}
+          - {dir: limit-ranges, path: core/limit-ranges, namespace: authos}
           - {dir: monitoring, path: core/monitoring, namespace: monitoring}
           - {dir: pg-drill, path: core/pg-drill, namespace: pg-drill}
           - {dir: redis, path: core/redis, namespace: redis}

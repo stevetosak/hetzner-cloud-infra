@@ -1,0 +1,24 @@
+# The defaults of an application namespace (Capacity Plan, Phase 1). A
+# LimitRange acts at pod admission only: a container that sets its own
+# requests and limits keeps them, and a running pod is never changed.
+#
+# A container without resources gets the sizing rule's shape: a small request
+# and a memory limit of twice the request. No CPU limit: the cluster's own
+# workloads carry none (decided 2026-11-01). A client namespace adds one in its
+# own overlay.
+#
+# 🔴 A container that sets a memory request over 128Mi but no limit is refused
+# at admission (the default limit would be under its request). Set both, as
+# every manifest here does.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: container-defaults
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: 10m
+        memory: 64Mi
+      default:
+        memory: 128Mi
