@@ -97,3 +97,52 @@ tests:
                 Pod coredns-1. Raise its memory request and limit by the
                 sizing rule (ADR 0013: peak x 1.3, limit 2x) in git. Above its
                 request it is the first to be evicted under memory pressure.
+
+  # N+1 on three workers of 1000 MiB. Each runs 600 MiB of movable pods and a
+  # 50 MiB DaemonSet pod: after a drain 1900 MiB must fit in 2000 MiB. A
+  # finished Job pod and the control plane's pods do not count. At 20 m a
+  # 200 MiB pod waits unscheduled: 2100 MiB no longer fits, 100 MiB short,
+  # and the warning fires an hour later.
+  - interval: 1m
+    input_series:
+      - {series: 'kube_node_status_allocatable{node="k8s-cp",resource="memory"}', values: '1048576000x120'}
+      - {series: 'kube_node_role{node="k8s-cp",role="control-plane"}', values: '1x120'}
+      - {series: 'kube_pod_container_resource_requests{namespace="kube-system",pod="etcd-k8s-cp",container="etcd",node="k8s-cp",resource="memory"}', values: '1048576000x120'}
+      - {series: 'kube_pod_status_phase{namespace="kube-system",pod="etcd-k8s-cp",phase="Running"}', values: '1x120'}
+      - {series: 'kube_node_status_allocatable{node="wk1",resource="memory"}', values: '1048576000x120'}
+      - {series: 'kube_node_status_allocatable{node="wk2",resource="memory"}', values: '1048576000x120'}
+      - {series: 'kube_node_status_allocatable{node="wk3",resource="memory"}', values: '1048576000x120'}
+      - {series: 'kube_pod_container_resource_requests{namespace="doma",pod="app-1",container="app",node="wk1",resource="memory"}', values: '629145600x120'}
+      - {series: 'kube_pod_container_resource_requests{namespace="doma",pod="app-2",container="app",node="wk2",resource="memory"}', values: '629145600x120'}
+      - {series: 'kube_pod_container_resource_requests{namespace="doma",pod="app-3",container="app",node="wk3",resource="memory"}', values: '629145600x120'}
+      - {series: 'kube_pod_status_phase{namespace="doma",pod="app-1",phase="Running"}', values: '1x120'}
+      - {series: 'kube_pod_status_phase{namespace="doma",pod="app-2",phase="Running"}', values: '1x120'}
+      - {series: 'kube_pod_status_phase{namespace="doma",pod="app-3",phase="Running"}', values: '1x120'}
+      - {series: 'kube_pod_container_resource_requests{namespace="kube-flannel",pod="ds-1",container="kube-flannel",node="wk1",resource="memory"}', values: '52428800x120'}
+      - {series: 'kube_pod_container_resource_requests{namespace="kube-flannel",pod="ds-2",container="kube-flannel",node="wk2",resource="memory"}', values: '52428800x120'}
+      - {series: 'kube_pod_container_resource_requests{namespace="kube-flannel",pod="ds-3",container="kube-flannel",node="wk3",resource="memory"}', values: '52428800x120'}
+      - {series: 'kube_pod_status_phase{namespace="kube-flannel",pod="ds-1",phase="Running"}', values: '1x120'}
+      - {series: 'kube_pod_status_phase{namespace="kube-flannel",pod="ds-2",phase="Running"}', values: '1x120'}
+      - {series: 'kube_pod_status_phase{namespace="kube-flannel",pod="ds-3",phase="Running"}', values: '1x120'}
+      - {series: 'kube_pod_owner{namespace="kube-flannel",pod="ds-1",owner_kind="DaemonSet"}', values: '1x120'}
+      - {series: 'kube_pod_owner{namespace="kube-flannel",pod="ds-2",owner_kind="DaemonSet"}', values: '1x120'}
+      - {series: 'kube_pod_owner{namespace="kube-flannel",pod="ds-3",owner_kind="DaemonSet"}', values: '1x120'}
+      - {series: 'kube_pod_container_resource_requests{namespace="pg-drill",pod="job-1",container="drill",node="wk1",resource="memory"}', values: '1048576000x120'}
+      - {series: 'kube_pod_status_phase{namespace="pg-drill",pod="job-1",phase="Running"}', values: '0x120'}
+      - {series: 'kube_pod_status_phase{namespace="pg-drill",pod="job-1",phase="Succeeded"}', values: '1x120'}
+      - {series: 'kube_pod_container_resource_requests{namespace="doma",pod="app-4",container="app",node="",resource="memory"}', values: '_x20 209715200x100'}
+      - {series: 'kube_pod_status_phase{namespace="doma",pod="app-4",phase="Pending"}', values: '_x20 1x100'}
+    alert_rule_test:
+      - {eval_time: 15m, alertname: WorkersLoseNPlusOne}
+      - {eval_time: 70m, alertname: WorkersLoseNPlusOne}
+      - eval_time: 85m
+        alertname: WorkersLoseNPlusOne
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: "The workers are 100MiB short of N+1."
+              description: >-
+                The memory the workers' pods request no longer fits on the
+                workers if one of them is drained. Lower a request that is
+                above its measured peak (ADR 0013), or buy a worker by the
+                Capacity Plan's order of purchase.

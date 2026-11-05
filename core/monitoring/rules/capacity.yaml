@@ -15,8 +15,21 @@
 # rules: kubeadm sets their requests (etcd 100Mi, about 96 % used), the node is
 # tainted so no workload competes with them, and a change needs the static
 # manifest on k8s-cp. The Capacity Plan's Phase 2 sizes the control plane; the
-# OOM-kill rule still covers them. Unit tests: rules/tests/capacity.test.yaml,
-# run by check-rules.sh.
+# OOM-kill rule still covers them.
+#
+# WorkersLoseNPlusOne is the trigger to buy a worker (Capacity Plan, Phase 2):
+# it fires when the memory the workers' pods request no longer fits on the
+# workers if any one of them is drained. Its value is the shortfall in bytes.
+#
+#   requested on the workers                 (Running and Pending pods, and
+#                                             Pending pods not yet on a node)
+#   - allocatable of the workers that stay
+#   - the drained worker's DaemonSet pods    (they stop, they do not move)
+#
+# taken for the worker whose loss costs the most. It is a sum test: it does
+# not prove that each pod fits on one node, which only a drain proves. Init
+# containers are not counted. Unit tests: rules/tests/capacity.test.yaml, run
+# by check-rules.sh.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -76,3 +89,46 @@ spec:
               Pod {{ $labels.pod }} restarted after an OOM kill in the last 15
               minutes. Raise its memory limit in git; a JVM or Redis also needs
               its own cap checked (ADR 0013).
+
+        - alert: WorkersLoseNPlusOne
+          expr: |
+            (
+              sum(
+                (
+                  sum by (namespace, pod, node) (kube_pod_container_resource_requests{resource="memory"})
+                    * on (namespace, pod) group_left ()
+                  max by (namespace, pod) (kube_pod_status_phase{phase=~"Pending|Running"})
+                )
+                  unless on (node) kube_node_role{role="control-plane"}
+              )
+              - sum(
+                max by (node) (kube_node_status_allocatable{resource="memory"})
+                  unless on (node) kube_node_role{role="control-plane"}
+              )
+              + max(
+                (
+                  max by (node) (kube_node_status_allocatable{resource="memory"})
+                    unless on (node) kube_node_role{role="control-plane"}
+                )
+                - on (node) (
+                  sum by (node) (
+                    sum by (namespace, pod, node) (kube_pod_container_resource_requests{resource="memory"})
+                      * on (namespace, pod) group_left ()
+                    max by (namespace, pod) (kube_pod_owner{owner_kind="DaemonSet"})
+                      * on (namespace, pod) group_left ()
+                    max by (namespace, pod) (kube_pod_status_phase{phase=~"Pending|Running"})
+                  )
+                  or on (node) 0 * max by (node) (kube_node_status_allocatable{resource="memory"})
+                )
+              )
+            ) > 0
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "The workers are {{ $value | humanize1024 }}B short of N+1."
+            description: >-
+              The memory the workers' pods request no longer fits on the
+              workers if one of them is drained. Lower a request that is
+              above its measured peak (ADR 0013), or buy a worker by the
+              Capacity Plan's order of purchase.
