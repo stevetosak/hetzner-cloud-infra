@@ -1,0 +1,60 @@
+# Values for hcloud-csi. See README.md in this directory for the exact
+# command that renders csi.yaml from them.
+#
+# Sized by ADR 0013 from the 2026-11-01..06 peaks (Capacity Plan Snapshots 0
+# and 1, and Prometheus since 2026-11-05). The chart sets no requests, so each
+# container was BestEffort, the first to be evicted. No CPU limit.
+
+controller:
+  resources:
+    csiAttacher:
+      requests:
+        cpu: 10m
+        memory: 48Mi
+      limits:
+        memory: 96Mi
+    csiResizer:
+      requests:
+        cpu: 10m
+        memory: 48Mi
+      limits:
+        memory: 96Mi
+    csiProvisioner:
+      requests:
+        cpu: 10m
+        memory: 48Mi
+      limits:
+        memory: 96Mi
+    livenessProbe:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 64Mi
+    hcloudCSIDriver:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 64Mi
+
+node:
+  resources:
+    csiNodeDriverRegistrar:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 64Mi
+    livenessProbe:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 64Mi
+    hcloudCSIDriver:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 64Mi

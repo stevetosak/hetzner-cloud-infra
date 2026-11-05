@@ -1,7 +1,8 @@
 # Flannel v0.28.9 — vendored from
 #   https://github.com/flannel-io/flannel/releases/download/v0.28.9/kube-flannel.yml
 #
-# Two local edits, both required by ADR 0001. Keep them across any upgrade:
+# Three local edits. Keep them across any upgrade; 1 and 2 are required by
+# ADR 0001:
 #
 #   1. Backend.MTU = 1450. This is the UNDERLAY MTU — the MTU of the Hetzner
 #      private network itself. Flannel subtracts the 50-byte VXLAN overhead
@@ -15,6 +16,10 @@
 #      network, and the derived MTU would be wrong as well. The pattern matches
 #      the private address 10.0.x.x only: the public address does not match, the
 #      WireGuard address 10.100.0.1 does not match, and loopback does not match.
+#
+#   3. The kube-flannel container's resources, sized by ADR 0013 from the
+#      2026-11-01..06 peaks (peak 21 MiB, 19m CPU), against upstream's 100m /
+#      50Mi with no limit. No CPU limit.
 #
 # The pod CIDR 10.244.0.0/16 is upstream's own default and already correct.
 #
@@ -171,8 +176,10 @@ spec:
         name: kube-flannel
         resources:
           requests:
-            cpu: 100m
-            memory: 50Mi
+            cpu: 25m
+            memory: 32Mi
+          limits:
+            memory: 64Mi
         securityContext:
           capabilities:
             add:

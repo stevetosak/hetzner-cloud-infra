@@ -1,8 +1,8 @@
 # core/cni — Flannel
 
-`flannel.yaml` is upstream `kube-flannel.yml` v0.28.9 with two local edits. The
+`flannel.yaml` is upstream `kube-flannel.yml` v0.28.9 with three local edits. The
 header comment in the file names them; read it before any upgrade, because a
-straight re-download drops both.
+straight re-download drops all three.
 
 - **`Backend.MTU = 1450`** — this is the **UNDERLAY** MTU, the MTU of the
   Hetzner private network. Flannel subtracts VXLAN's 50 bytes itself, so pods
@@ -15,6 +15,9 @@ straight re-download drops both.
   traffic would leave the private network and the derived MTU would be wrong.
   The pattern matches `10.0.x.x` only. The public address, the WireGuard
   address `10.100.0.1` and loopback all fail to match.
+- **The kube-flannel container's resources** — `25m` / `32Mi`, limit `64Mi`,
+  sized by ADR 0013 from measured peaks. Upstream's `100m` / `50Mi` comes back
+  with a re-download.
 
 Pod CIDR `10.244.0.0/16` is upstream's own default and already matches
 `kubeadm init --pod-network-cidr` (ADR 0001).
