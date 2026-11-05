@@ -1621,7 +1621,7 @@ spec:
       app.kubernetes.io/name: grafana
       app.kubernetes.io/instance: kps
   strategy:
-    type: RollingUpdate
+    type: Recreate
   template:
     metadata:
       labels:
@@ -1805,7 +1805,7 @@ spec:
             - name: GF_UNIFIED_STORAGE_INDEX_PATH
               value: /var/lib/grafana-search/bleve
             - name: GOMEMLIMIT
-              value: "1065MiB"
+              value: "1180MiB"
           livenessProbe:
             failureThreshold: 10
             httpGet:
@@ -1819,10 +1819,10 @@ spec:
               port: grafana
           resources:
             limits:
-              memory: 1184Mi
+              memory: 1312Mi
             requests:
               cpu: 67m
-              memory: 592Mi
+              memory: 656Mi
       volumes:
         - name: tmp
           emptyDir: {}
