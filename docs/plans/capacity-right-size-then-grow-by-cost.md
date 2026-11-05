@@ -53,8 +53,9 @@ server is cheaper from the first purchase.**
 memory request set by the sizing rule (no container is left without one), the
 memory the workers' pods request fits on two workers (proven by a Prometheus
 query), one worker has been drained with every pod Ready again, every
-application namespace has a LimitRange, and `kubectl top nodes` answers
-from metrics-server.
+application namespace has a LimitRange, `kubectl top nodes` answers
+from metrics-server, and an alert reaches the Alert Chat when a container
+nears its memory request or limit (added by the operator on 2026-11-05).
 
 The sizing rule, settled in
 [ADR 0013](../adr/0013-requests-follow-measured-peaks-and-the-clusters-own-workloads-carry-no-cpu-limit.md):
@@ -66,7 +67,7 @@ workloads carry no CPU limit (decided 2026-11-01, below). PostgreSQL keeps at le
 384 Mi (128 MB `shared_buffers`, the CloudNativePG default, plus its working
 memory), and Envoy keeps at least 128 Mi for traffic bursts.
 
-- [ ] Measure the peaks over at least 7 days. Prometheus keeps only 3 days
+- [x] Measure the peaks over at least 7 days. Prometheus keeps only 3 days
       (`retention: 3d`, `retentionSize: 3GB`, on an `emptyDir` that a
       rescheduled pod loses), so a single 7-day query is not possible. Take
       three snapshots of the 3-day maximum per container (memory working set,
@@ -78,6 +79,15 @@ memory), and Envoy keeps at least 128 Mi for traffic bursts.
       core/monitoring/capacity-snapshot.py 3d`). A snapshot over the first
       53 hours on 2026-11-03, a direction only, put the workers' summed
       peaks times 1.3 at 5990 MiB against 7440 MiB on two workers.
+      **Done 2026-11-05 with two snapshots, not three**: Snapshot 0 (from
+      2026-11-01 12:06 UTC) and Snapshot 1 (3 days to 2026-11-05 20:17 UTC)
+      join into 4.3 days without a gap, and their peaks differ by less than
+      10 MiB for most containers. Snapshot 1 put the summed peaks times 1.3
+      at 6120 MiB against 7440 MiB on two workers. The operator chose to size
+      from these two; the later snapshots still run, as a check that can
+      raise a value, not as a gate. A longer window would not have shown the
+      startup peaks either (almost every pod started before Prometheus), so
+      ADR 0013 checks each new pod's first hour instead.
 - [x] Settle the sizing rule and write it into the `Resource defaults` of
       `CLAUDE.md` and the kalfa `manifests` rule (its source module, not the
       built file). The `200m` / `512Mi` default goes, and so does the CPU
@@ -95,11 +105,16 @@ memory), and Envoy keeps at least 128 Mi for traffic bursts.
       their values until they are deployed.
 - [ ] Right-size the cluster services: Argo CD, Envoy Gateway and its
       `EnvoyProxy`, the CloudNativePG `Cluster`, Redis, reloader and
-      Prometheus. Grafana's request was set by the monitoring Task on
-      2026-11-03 (384Mi). Prometheus peaked at 729 MiB working set against a
-      400Mi request in its first 50 hours; its change waits for the last
-      snapshot, because it recreates the pod and loses the `emptyDir` data
-      the snapshots read.
+      Prometheus. Prometheus peaked at 848 MiB working set against a 400Mi
+      request, Grafana at 453 MiB against 384Mi. Prometheus changes first:
+      the change recreates its pod and loses the `emptyDir` data, so it
+      must run again before the other pods roll and their first hour is
+      measured.
+- [ ] Alert in the Alert Chat when a container's working set stays above
+      90 % of its request or 85 % of its limit, and on any OOM kill. The
+      right-sized requests leave little slack, and the applications' memory
+      use will only grow. Raising the value automatically is the deferred
+      [Autoscaling Plan](./autoscaling-workloads-grow-without-a-manual-resize.md).
 - [ ] Give a request to every container that has none: cert-manager, the
       barman-cloud plugin, the hcloud CSI driver. A pod without requests is
       BestEffort, and the kubelet evicts it first under memory pressure.
