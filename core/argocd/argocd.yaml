@@ -1526,10 +1526,10 @@ spec:
               protocol: TCP
           resources:
             limits:
-              memory: 128Mi
+              memory: 192Mi
             requests:
               cpu: 15m
-              memory: 64Mi
+              memory: 96Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -1692,10 +1692,10 @@ spec:
             protocol: TCP
           resources:
             limits:
-              memory: 96Mi
+              memory: 192Mi
             requests:
               cpu: 10m
-              memory: 48Mi
+              memory: 96Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -2097,10 +2097,10 @@ spec:
           failureThreshold: 3
         resources:
           limits:
-            memory: 256Mi
+            memory: 384Mi
           requests:
             cpu: 16m
-            memory: 128Mi
+            memory: 192Mi
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:

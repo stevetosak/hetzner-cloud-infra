@@ -29,14 +29,16 @@ patches:
       - op: test
         path: /spec/template/spec/containers/0/name
         value: manager
+      # Memory raised from 64Mi: the new pod held 81 MiB from its start
+      # (ADR 0013 first-hour check, 2026-11-05).
       - op: replace
         path: /spec/template/spec/containers/0/resources
         value:
           requests:
             cpu: 10m
-            memory: 64Mi
+            memory: 112Mi
           limits:
-            memory: 128Mi
+            memory: 224Mi
   - target:
       group: apps
       kind: Deployment

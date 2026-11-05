@@ -104,13 +104,14 @@ controller:
 
 repoServer:
   # Clones the infra repository and runs `kustomize build` on each overlay.
-  # Bursty rather than steady.
+  # Bursty rather than steady. Memory raised from 128Mi: the new pod held
+  # 143 MiB from its start (ADR 0013 first-hour check, 2026-11-05).
   resources:
     requests:
       cpu: 16m
-      memory: 128Mi
+      memory: 192Mi
     limits:
-      memory: 256Mi
+      memory: 384Mi
   # The init container that copies the argocd binary. The chart gives it the
   # repo-server's values when this is empty, and an init container's request
   # counts for the pod, so it gets its own small one.
@@ -123,12 +124,14 @@ repoServer:
         memory: 64Mi
 
 applicationSet:
+  # Memory raised from 64Mi: the new pod held 74 MiB from its start (ADR 0013
+  # first-hour check, 2026-11-05).
   resources:
     requests:
       cpu: 15m
-      memory: 64Mi
+      memory: 96Mi
     limits:
-      memory: 128Mi
+      memory: 192Mi
 
 redis:
   # ArgoCD keeps its OWN Redis, and does not use the shared one in namespace
@@ -252,9 +255,11 @@ notifications:
       triggers:
         - on-deployed
 
+  # Memory raised from 48Mi: the new pod held 62 MiB from its start (ADR 0013
+  # first-hour check, 2026-11-05).
   resources:
     requests:
       cpu: 10m
-      memory: 48Mi
-    limits:
       memory: 96Mi
+    limits:
+      memory: 192Mi
