@@ -56,7 +56,9 @@ query), one worker has been drained with every pod Ready again, every
 application namespace has a LimitRange, and `kubectl top nodes` answers
 from metrics-server.
 
-The sizing rule, to confirm in the first step: the memory request is the
+The sizing rule, settled in
+[ADR 0013](../adr/0013-requests-follow-measured-peaks-and-the-clusters-own-workloads-carry-no-cpu-limit.md):
+the memory request is the
 measured peak working set times 1.3, rounded up to 16 Mi, and never under
 32 Mi; the memory limit is twice the request. The CPU request is the measured
 peak 5-minute rate times 1.3, never under `10m`, and the cluster's own
@@ -76,10 +78,18 @@ memory), and Envoy keeps at least 128 Mi for traffic bursts.
       core/monitoring/capacity-snapshot.py 3d`). A snapshot over the first
       53 hours on 2026-11-03, a direction only, put the workers' summed
       peaks times 1.3 at 5990 MiB against 7440 MiB on two workers.
-- [ ] Settle the sizing rule and write it into the `Resource defaults` of
+- [x] Settle the sizing rule and write it into the `Resource defaults` of
       `CLAUDE.md` and the kalfa `manifests` rule (its source module, not the
       built file). The `200m` / `512Mi` default goes, and so does the CPU
       limit. Record the rule and the CPU-limit choice as a Decision page.
+      **Done 2026-11-05**:
+      [ADR 0013](../adr/0013-requests-follow-measured-peaks-and-the-clusters-own-workloads-carry-no-cpu-limit.md).
+      The measurements hold no startup peak (almost every pod started before
+      Prometheus), so each resize checks the new pod's first hour against its
+      new request. Redis and JVM workloads keep the limit their cap needs, and
+      the restore drill waits for a measured run. Sizes come from the larger
+      peak of the first two snapshots and are checked again against the later
+      ones before each merge.
 - [ ] Right-size the applications: the `authos` and `doma` deployments under
       `projects/`. The `imaps` and `wasteio` manifests are not running and keep
       their values until they are deployed.

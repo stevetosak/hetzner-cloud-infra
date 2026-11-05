@@ -76,13 +76,12 @@ spec:
               port: http
             initialDelaySeconds: 3
             periodSeconds: 10
-          resources:
+          resources:             # a first guess; resized by the sizing rule below
             requests:
-              cpu: 200m
-              memory: 512Mi
+              cpu: 50m
+              memory: 256Mi
             limits:
-              cpu: 500m
-              memory: 1Gi
+              memory: 512Mi       # 2x the request; no CPU limit
       volumes:
         - name: tmp
           emptyDir: {}
@@ -90,7 +89,18 @@ spec:
     type: Recreate
 ```
 
-A lightweight internal service can use smaller resources (for example requests `100m`/`256Mi`, limits `500m`/`512Mi`).
+## Resources: the sizing rule
+
+Requests follow measured peaks, not a house default (cloud-infra ADR 0013):
+
+- Memory request: the peak working set times 1.3, rounded up to 16 Mi, never under 32 Mi. Memory limit: twice the request.
+- CPU request: the peak 5-minute rate times 1.3, never under `10m`. No CPU limit on the cluster's own workloads; a client namespace gets one through its LimitRange.
+- The peak comes from Prometheus over at least 3 days: `python3 -I core/monitoring/capacity-snapshot.py 3d`.
+- A new component starts from a guess (the template's `50m` / `256Mi`, limit `512Mi`) and is resized once 3 days of data exist.
+- After a resize, check the new pod's peak over its first hour against the new request; raise the request if the peak is higher.
+- A process that sizes itself from a cap keeps the limit its cap needs: Redis `maxmemory` stays below the limit, and a JVM takes its heap from the limit. Only its request follows the rule.
+- A periodic workload (a CronJob) keeps its values until a measured window holds one of its runs.
+- Floors: PostgreSQL at least 384 Mi, Envoy at least 128 Mi.
 
 ## `manifests/base/kustomization.yaml`
 
