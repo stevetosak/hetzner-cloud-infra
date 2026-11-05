@@ -24,13 +24,13 @@ spec:
           envFrom:
             - configMapRef:
                 name: authos-ui-config
+          # Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots 0 and 1).
           resources:
             requests:
-              cpu: 200m
-              memory: 512Mi
+              cpu: 10m
+              memory: 32Mi
             limits:
-              cpu: 500m
-              memory: 1Gi
+              memory: 64Mi
   strategy:
     type: Recreate
       

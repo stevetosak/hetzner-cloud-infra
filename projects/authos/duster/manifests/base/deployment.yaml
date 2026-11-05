@@ -71,12 +71,13 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 3
+          # Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots 0 and 1).
+          # The limit stays 512Mi: the JVM takes its heap as 75 % of it (MaxRAMPercentage).
           resources:
             requests:
-              cpu: 100m
-              memory: 256Mi
+              cpu: 10m
+              memory: 208Mi
             limits:
-              cpu: 500m
               memory: 512Mi
       volumes:
         - name: tmp

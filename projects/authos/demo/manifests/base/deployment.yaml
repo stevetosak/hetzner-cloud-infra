@@ -39,12 +39,12 @@ spec:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 30
+          # Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots 0 and 1).
           resources:
             requests:
               cpu: 10m
               memory: 32Mi
             limits:
-              cpu: 200m
-              memory: 96Mi
+              memory: 64Mi
   strategy:
     type: Recreate

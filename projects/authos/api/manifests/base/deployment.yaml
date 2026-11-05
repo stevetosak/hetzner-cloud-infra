@@ -36,13 +36,13 @@ spec:
             - secretRef:
                 name: keystore-pass
 
+          # Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots 0 and 1).
           resources:
-           requests:
-             cpu: 200m
-             memory: 512Mi
-           limits:
-            cpu: 500m
-            memory: 1Gi
+            requests:
+              cpu: 39m
+              memory: 400Mi
+            limits:
+              memory: 800Mi
 
       volumes:
         - name: keystore
