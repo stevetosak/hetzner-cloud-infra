@@ -34,3 +34,29 @@ config:
 global:
   leaderElection:
     namespace: cert-manager
+
+# Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots 0
+# and 1). The chart sets no requests, so each pod was BestEffort, the first to
+# be evicted. No CPU limit.
+resources:
+  requests:
+    cpu: 10m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
+
+cainjector:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 80Mi
+    limits:
+      memory: 160Mi
+
+webhook:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 64Mi

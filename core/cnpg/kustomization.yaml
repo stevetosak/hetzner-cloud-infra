@@ -15,3 +15,41 @@ resources:
   - source-objectstore.yaml
   - scheduled-backup.yaml
   - databases/doma.yaml
+
+# Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots 0
+# and 1). Patches, because operator.yaml and plugin-barman-cloud.yaml are
+# upstream text that render.sh writes again on an upgrade. Each `test` fails
+# the build if upstream moves the container.
+patches:
+  - target:
+      group: apps
+      kind: Deployment
+      name: cnpg-controller-manager
+    patch: |-
+      - op: test
+        path: /spec/template/spec/containers/0/name
+        value: manager
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests:
+            cpu: 10m
+            memory: 64Mi
+          limits:
+            memory: 128Mi
+  - target:
+      group: apps
+      kind: Deployment
+      name: barman-cloud
+    patch: |-
+      - op: test
+        path: /spec/template/spec/containers/0/name
+        value: barman-cloud
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            memory: 64Mi

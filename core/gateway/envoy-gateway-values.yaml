@@ -24,3 +24,14 @@ crds:
     safeUpgradePolicy:
       # Owned by core/gateway-api/crds.yaml.
       enabled: false
+
+deployment:
+  envoyGateway:
+    # Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots
+    # 0 and 1), against the chart's 100m / 256Mi, limit 1024Mi. No CPU limit.
+    resources:
+      requests:
+        cpu: 10m
+        memory: 112Mi
+      limits:
+        memory: 224Mi

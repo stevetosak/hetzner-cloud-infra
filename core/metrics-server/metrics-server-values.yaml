@@ -22,11 +22,11 @@ revisionHistoryLimit: 3
 args:
   - --kubelet-insecure-tls
 
-# Assumed from upstream's sizing for a small cluster; the Capacity Plan
-# measures it. No CPU limit on the cluster's own workloads (2026-11-01).
+# Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots 0
+# and 1). No CPU limit.
 resources:
   requests:
     cpu: 10m
-    memory: 64Mi
+    memory: 32Mi
   limits:
-    memory: 128Mi
+    memory: 64Mi

@@ -32,6 +32,16 @@ spec:
         # traffic to a node that actually runs an Envoy pod; one replica would
         # make a single node a single point of failure.
         replicas: 2
+        # Sized by ADR 0013: the Envoy floor of 128Mi (peak 38 MiB on
+        # 2026-11-01..05, Capacity Plan Snapshots 0 and 1). Envoy Gateway's
+        # default was 512Mi with no limit. No CPU limit.
+        container:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
       envoyService:
         annotations:
           load-balancer.hetzner.cloud/name: "tosak-lb"

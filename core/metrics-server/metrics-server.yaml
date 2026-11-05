@@ -231,10 +231,10 @@ spec:
               mountPath: /tmp
           resources:
             limits:
-              memory: 128Mi
+              memory: 64Mi
             requests:
               cpu: 10m
-              memory: 64Mi
+              memory: 32Mi
       volumes:
         - name: tmp
           emptyDir: {}
