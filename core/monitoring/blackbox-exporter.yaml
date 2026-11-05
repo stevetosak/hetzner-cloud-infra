@@ -154,7 +154,7 @@ spec:
             memory: 64Mi
           requests:
             cpu: 10m
-            memory: 24Mi
+            memory: 32Mi
         ports:
         - containerPort: 9115
           name: http

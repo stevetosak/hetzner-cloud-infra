@@ -1,0 +1,78 @@
+# Unit tests of rules/capacity.yaml. Run by core/monitoring/check-rules.sh,
+# which writes the rule file next to this one as capacity.rules.yaml.
+rule_files: [capacity.rules.yaml]
+evaluation_interval: 1m
+
+tests:
+  # Healthy: 100 MiB used of a 128 MiB request and a 256 MiB limit.
+  - interval: 1m
+    input_series:
+      - {series: 'container_memory_working_set_bytes{namespace="doma",pod="doma-1",container="doma"}', values: '104857600x60'}
+      - {series: 'container_memory_working_set_bytes{namespace="doma",pod="doma-1",container="POD"}', values: '999999999x60'}
+      - {series: 'kube_pod_container_resource_requests{namespace="doma",pod="doma-1",container="doma",resource="memory"}', values: '134217728x60'}
+      - {series: 'kube_pod_container_resource_limits{namespace="doma",pod="doma-1",container="doma",resource="memory"}', values: '268435456x60'}
+      - {series: 'kube_pod_container_status_restarts_total{namespace="doma",pod="doma-1",container="doma"}', values: '0x60'}
+    alert_rule_test:
+      - {eval_time: 60m, alertname: ContainerMemoryNearRequest}
+      - {eval_time: 60m, alertname: ContainerMemoryNearLimit}
+      - {eval_time: 60m, alertname: ContainerOOMKilled}
+
+  # 122 MiB of a 128 MiB request (95 %) and 48 % of the limit: the warning
+  # fires after 30 minutes, the critical one does not.
+  - interval: 1m
+    input_series:
+      - {series: 'container_memory_working_set_bytes{namespace="doma",pod="doma-1",container="doma"}', values: '127926272x60'}
+      - {series: 'kube_pod_container_resource_requests{namespace="doma",pod="doma-1",container="doma",resource="memory"}', values: '134217728x60'}
+      - {series: 'kube_pod_container_resource_limits{namespace="doma",pod="doma-1",container="doma",resource="memory"}', values: '268435456x60'}
+    alert_rule_test:
+      - {eval_time: 20m, alertname: ContainerMemoryNearRequest}
+      - eval_time: 40m
+        alertname: ContainerMemoryNearRequest
+        exp_alerts:
+          - exp_labels: {severity: warning, namespace: doma, pod: doma-1, container: doma}
+            exp_annotations:
+              summary: "doma/doma uses 95.31% of its memory request."
+              description: >-
+                Pod doma-1. Raise its memory request and limit by the
+                sizing rule (ADR 0013: peak x 1.3, limit 2x) in git. Above its
+                request it is the first to be evicted under memory pressure.
+      - {eval_time: 40m, alertname: ContainerMemoryNearLimit}
+
+  # 230 MiB of a 256 MiB limit (90 %): the critical alert fires after 10 minutes.
+  - interval: 1m
+    input_series:
+      - {series: 'container_memory_working_set_bytes{namespace="doma",pod="doma-1",container="doma"}', values: '241172480x30'}
+      - {series: 'kube_pod_container_resource_limits{namespace="doma",pod="doma-1",container="doma",resource="memory"}', values: '268435456x30'}
+    alert_rule_test:
+      - {eval_time: 5m, alertname: ContainerMemoryNearLimit}
+      - eval_time: 15m
+        alertname: ContainerMemoryNearLimit
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: doma, pod: doma-1, container: doma}
+            exp_annotations:
+              summary: "doma/doma uses 89.84% of its memory limit."
+              description: >-
+                Pod doma-1. At its limit the kernel OOM-kills it.
+                Raise its memory limit (and request) in git now.
+
+  # A restart at 20 m after an OOM kill fires at once and clears 15 minutes
+  # later; a restart for another reason does not fire.
+  - interval: 1m
+    input_series:
+      - {series: 'kube_pod_container_status_restarts_total{namespace="doma",pod="doma-1",container="doma"}', values: '0x20 1x40'}
+      - {series: 'kube_pod_container_status_last_terminated_reason{namespace="doma",pod="doma-1",container="doma",reason="OOMKilled"}', values: '0x20 1x40'}
+      - {series: 'kube_pod_container_status_restarts_total{namespace="authos",pod="duster-1",container="duster"}', values: '0x20 1x40'}
+      - {series: 'kube_pod_container_status_last_terminated_reason{namespace="authos",pod="duster-1",container="duster",reason="Error"}', values: '0x20 1x40'}
+    alert_rule_test:
+      - {eval_time: 10m, alertname: ContainerOOMKilled}
+      - eval_time: 25m
+        alertname: ContainerOOMKilled
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: doma, pod: doma-1, container: doma}
+            exp_annotations:
+              summary: "doma/doma was OOM-killed."
+              description: >-
+                Pod doma-1 restarted after an OOM kill in the last 15
+                minutes. Raise its memory limit in git; a JVM or Redis also needs
+                its own cap checked (ADR 0013).
+      - {eval_time: 40m, alertname: ContainerOOMKilled}

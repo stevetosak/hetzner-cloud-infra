@@ -14,10 +14,11 @@ image:
 
 revisionHistoryLimit: 3
 
+# Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots 0 and 1): 21 MiB.
 resources:
   requests:
     cpu: 10m
-    memory: 24Mi
+    memory: 32Mi
   limits:
     memory: 64Mi
 

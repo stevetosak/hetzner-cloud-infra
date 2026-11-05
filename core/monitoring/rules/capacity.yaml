@@ -1,0 +1,65 @@
+# Memory of each container against its request and its limit (ADR 0013).
+#
+# Requests are set at the measured peak plus 30 %, so there is little slack,
+# and the applications' memory use only grows. These alerts are the
+# notification; raising the value is a manual change in git until the
+# Autoscaling Plan (docs/plans/autoscaling-workloads-grow-without-a-manual-resize.md)
+# makes it automatic.
+#
+# A container above its request is the first to be evicted when a node runs
+# short; a container at its limit is OOM-killed. A container without a request
+# or limit (the control-plane static pods) has no series to compare and never
+# fires. Unit tests: rules/tests/capacity.test.yaml, run by check-rules.sh.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: capacity
+  namespace: monitoring
+spec:
+  groups:
+    - name: capacity
+      rules:
+        - alert: ContainerMemoryNearRequest
+          expr: |
+            max by (namespace, pod, container) (container_memory_working_set_bytes{container!="", container!="POD"})
+              / on (namespace, pod, container)
+            max by (namespace, pod, container) (kube_pod_container_resource_requests{resource="memory"})
+              > 0.9
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.container }} uses {{ $value | humanizePercentage }} of its memory request."
+            description: >-
+              Pod {{ $labels.pod }}. Raise its memory request and limit by the
+              sizing rule (ADR 0013: peak x 1.3, limit 2x) in git. Above its
+              request it is the first to be evicted under memory pressure.
+
+        - alert: ContainerMemoryNearLimit
+          expr: |
+            max by (namespace, pod, container) (container_memory_working_set_bytes{container!="", container!="POD"})
+              / on (namespace, pod, container)
+            max by (namespace, pod, container) (kube_pod_container_resource_limits{resource="memory"})
+              > 0.85
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.container }} uses {{ $value | humanizePercentage }} of its memory limit."
+            description: >-
+              Pod {{ $labels.pod }}. At its limit the kernel OOM-kills it.
+              Raise its memory limit (and request) in git now.
+
+        - alert: ContainerOOMKilled
+          expr: |
+            (kube_pod_container_status_restarts_total - kube_pod_container_status_restarts_total offset 15m >= 1)
+              and on (namespace, pod, container)
+            kube_pod_container_status_last_terminated_reason{reason="OOMKilled"} == 1
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.container }} was OOM-killed."
+            description: >-
+              Pod {{ $labels.pod }} restarted after an OOM kill in the last 15
+              minutes. Raise its memory limit in git; a JVM or Redis also needs
+              its own cap checked (ADR 0013).

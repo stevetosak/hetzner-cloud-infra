@@ -1555,11 +1555,10 @@ spec:
             timeoutSeconds: 1
           resources:
             limits:
-              cpu: 100m
               memory: 64Mi
             requests:
               cpu: 10m
-              memory: 24Mi
+              memory: 32Mi
           volumeMounts:
             - name: proc
               mountPath: /host/proc
@@ -1678,11 +1677,10 @@ spec:
               value: POST
           resources:
             limits:
-              cpu: 100m
               memory: 256Mi
             requests:
-              cpu: 10m
-              memory: 96Mi
+              cpu: 38m
+              memory: 128Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -1724,11 +1722,10 @@ spec:
               value: POST
           resources:
             limits:
-              cpu: 100m
               memory: 256Mi
             requests:
-              cpu: 10m
-              memory: 96Mi
+              cpu: 38m
+              memory: 128Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -1808,7 +1805,7 @@ spec:
             - name: GF_UNIFIED_STORAGE_INDEX_PATH
               value: /var/lib/grafana-search/bleve
             - name: GOMEMLIMIT
-              value: "460MiB"
+              value: "1065MiB"
           livenessProbe:
             failureThreshold: 10
             httpGet:
@@ -1822,11 +1819,10 @@ spec:
               port: grafana
           resources:
             limits:
-              cpu: "1"
-              memory: 512Mi
+              memory: 1184Mi
             requests:
-              cpu: 50m
-              memory: 384Mi
+              cpu: 67m
+              memory: 592Mi
       volumes:
         - name: tmp
           emptyDir: {}
@@ -1925,8 +1921,7 @@ spec:
           timeoutSeconds: 5
         resources:
           limits:
-            cpu: 100m
-            memory: 128Mi
+            memory: 96Mi
           requests:
             cpu: 10m
             memory: 48Mi
@@ -1988,9 +1983,9 @@ spec:
             - --localhost=127.0.0.1
             - --prometheus-config-reloader=quay.io/prometheus-operator/prometheus-config-reloader:v0.94.2@sha256:a1897c67478bc23434534e91ad3855280771196b1daf17144db9dbcb655bef71
             - --config-reloader-cpu-request=10m
-            - --config-reloader-cpu-limit=50m
-            - --config-reloader-memory-request=24Mi
-            - --config-reloader-memory-limit=48Mi
+            - --config-reloader-cpu-limit=0
+            - --config-reloader-memory-request=32Mi
+            - --config-reloader-memory-limit=64Mi
             - --thanos-default-base-image=quay.io/thanos/thanos:v0.42.5
             - --secret-field-selector=type!=kubernetes.io/dockercfg,type!=helm.sh/release.v1
             - --web.enable-tls=false
@@ -2003,10 +1998,9 @@ spec:
             value: "30"
           resources:
             limits:
-              cpu: 200m
-              memory: 128Mi
+              memory: 96Mi
             requests:
-              cpu: 20m
+              cpu: 11m
               memory: 48Mi
           securityContext:
             allowPrivilegeEscalation: false
@@ -2088,7 +2082,6 @@ spec:
     {}
   resources:
     limits:
-      cpu: 100m
       memory: 64Mi
     requests:
       cpu: 10m
@@ -2153,11 +2146,10 @@ spec:
   enableAdminAPI: false
   resources:
     limits:
-      cpu: 500m
-      memory: 1Gi
+      memory: 2208Mi
     requests:
-      cpu: 100m
-      memory: 400Mi
+      cpu: 106m
+      memory: 1104Mi
   retention: "3d"
   retentionSize: "3GB"
   tsdb:
