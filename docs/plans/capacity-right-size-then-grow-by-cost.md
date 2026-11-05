@@ -129,7 +129,13 @@ memory), and Envoy keeps at least 128 Mi for traffic bursts.
       cert-manager, the CloudNativePG operator and its barman-cloud plugin,
       Envoy Gateway and the `EnvoyProxy`, metrics-server, Redis and reloader,
       about 1270 Mi less requested. Only the application-controller grows
-      (512 to 624 Mi). The CloudNativePG Deployments take their values from
+      (512 to 624 Mi). The first-hour check raised four more: the new pods
+      of the CloudNativePG operator, the repo-server, the
+      applicationset-controller and the notifications-controller held 12 to
+      30 % above the new request from their start, more than the old pods'
+      3-day peak. Each is raised to that peak × 1.3 (64 to 112, 128 to 192,
+      64 to 96 and 48 to 96 Mi), which leaves about 1080 Mi less requested.
+      The CloudNativePG Deployments take their values from
       kustomize patches, because their manifests are upstream text. **A field
       that a second field manager also owns stays when git removes it, and
       Argo CD still reports Synced.** The seed's `kubectl` and kluster's
