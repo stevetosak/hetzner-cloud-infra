@@ -100,21 +100,39 @@ memory), and Envoy keeps at least 128 Mi for traffic bursts.
       the restore drill waits for a measured run. Sizes come from the larger
       peak of the first two snapshots and are checked again against the later
       ones before each merge.
-- [ ] Right-size the applications: the `authos` and `doma` deployments under
+- [x] Right-size the applications: the `authos` and `doma` deployments under
       `projects/`. The `imaps` and `wasteio` manifests are not running and keep
-      their values until they are deployed.
+      their values until they are deployed. **Done 2026-11-05** (PR #84): the
+      five application containers went from 1824 Mi requested to 800 Mi.
+      The first-hour check raised `doma` from 96 to 128 Mi: the new pod
+      held about 92 MiB from its start, where the long-running one had held
+      60 MiB.
 - [ ] Right-size the cluster services: Argo CD, Envoy Gateway and its
       `EnvoyProxy`, the CloudNativePG `Cluster`, Redis, reloader and
       Prometheus. Prometheus peaked at 848 MiB working set against a 400Mi
-      request, Grafana at 453 MiB against 384Mi. Prometheus changes first:
-      the change recreates its pod and loses the `emptyDir` data, so it
-      must run again before the other pods roll and their first hour is
-      measured.
-- [ ] Alert in the Alert Chat when a container's working set stays above
+      request, Grafana at 453 MiB against 384Mi. Monitoring changed first
+      (PR #83), because recreating Prometheus loses its `emptyDir` data and
+      the other pods' first hour has to be measured by the new one. That
+      order cost about 9 minutes without monitoring: the new Prometheus
+      (1136 Mi) found no worker with that much free, and stayed Pending until
+      the requests of `doma` and `authos-ui` were lowered in place
+      (`kubectl patch pod --subresource resize`). **A request that grows
+      needs that much free on one node, not across the cluster: shrink the
+      others first.** Grafana now rolls with `Recreate` for the same reason,
+      and its first hour raised it from 592 to 656 Mi (499 MiB in 30
+      minutes).
+- [x] Alert in the Alert Chat when a container's working set stays above
       90 % of its request or 85 % of its limit, and on any OOM kill. The
       right-sized requests leave little slack, and the applications' memory
       use will only grow. Raising the value automatically is the deferred
       [Autoscaling Plan](./autoscaling-workloads-grow-without-a-manual-resize.md).
+      **Done 2026-11-05**:
+      [`rules/capacity.yaml`](../../core/monitoring/rules/capacity.yaml)
+      (PR #83), proven loaded with 0 evaluation failures; it reported `doma`
+      above its new request within minutes of the roll. The kubeadm
+      static pods on the control plane are left out of the two memory rules
+      until Phase 2 sizes them (PR #84): etcd holds 96 % of kubeadm's
+      100 Mi request on a node no workload competes for.
 - [ ] Give a request to every container that has none: cert-manager, the
       barman-cloud plugin, the hcloud CSI driver. A pod without requests is
       BestEffort, and the kubelet evicts it first under memory pressure.

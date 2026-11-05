@@ -54,13 +54,15 @@ spec:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 30
-          # Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots 0 and 1).
+          # Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots 0 and 1),
+          # then raised after the roll: a fresh pod holds about 92 MiB, the long-running
+          # one held 60 MiB (2026-11-05).
           resources:
             requests:
               cpu: 10m
-              memory: 96Mi
+              memory: 128Mi
             limits:
-              memory: 192Mi
+              memory: 256Mi
       volumes:
         - name: tmp
           emptyDir: {}

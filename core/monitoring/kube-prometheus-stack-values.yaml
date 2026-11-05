@@ -258,6 +258,12 @@ alertmanager:
 # ---------------------------------------------------------------------------
 grafana:
   revisionHistoryLimit: 3
+  # Recreate, not RollingUpdate: Grafana holds no state (emptyDir, dashboards
+  # from the sidecars), and a rolling update needs the old and the new pod's
+  # requests on the workers at once. On 2026-11-05 no worker had 912Mi free
+  # for a second Grafana pod.
+  deploymentStrategy:
+    type: Recreate
   image:
     tag: 13.3.0-distroless
     sha: 540b8afb775bf34aefce417e4329039daa5d44b6f2fbda6881397b1b247ca7df
@@ -301,13 +307,14 @@ grafana:
   # out, the liveness probe failed and the kubelet killed it (exit 137).
   # Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots 0 and 1): working set
   # 453 MiB (RSS 298, the rest page cache), 51m. The old 512Mi limit was at
-  # 88 % of it.
+  # 88 % of it. Raised after the roll (roll and check, ADR 0013): the new pod
+  # peaked at 499 MiB in its first 30 minutes on 2026-11-05.
   resources:
     requests:
       cpu: 67m
-      memory: 592Mi
+      memory: 656Mi
     limits:
-      memory: 1184Mi
+      memory: 1312Mi
 
 # ---------------------------------------------------------------------------
 # Exporters
