@@ -94,21 +94,21 @@ prometheusOperator:
     image:
       tag: v0.94.2
       sha: a1897c67478bc23434534e91ad3855280771196b1daf17144db9dbcb655bef71
+    # Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots 0 and 1): 18 MiB.
     resources:
       requests:
         cpu: 10m
-        memory: 24Mi
+        memory: 32Mi
       limits:
-        cpu: 50m
-        memory: 48Mi
+        memory: 64Mi
 
+  # Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots 0 and 1): 32 MiB, 8m.
   resources:
     requests:
-      cpu: 20m
+      cpu: 11m
       memory: 48Mi
     limits:
-      cpu: 200m
-      memory: 128Mi
+      memory: 96Mi
 
 # ---------------------------------------------------------------------------
 # Prometheus
@@ -149,16 +149,15 @@ prometheus:
                 matchLabels:
                   app.kubernetes.io/name: alertmanager
 
-    # Live, 2026-11-01 to 11-03: the working set peaked at 729 MiB (RSS 606),
-    # over this request. A change here recreates the pod and loses the
-    # emptyDir TSDB, so the Capacity Plan sets it after its snapshots.
+    # Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots 0 and 1): 848 MiB, 81m.
+    # The working set grows with the series count; the memory alerts
+    # (rules/capacity.yaml) report when it nears this request.
     resources:
       requests:
-        cpu: 100m
-        memory: 400Mi
+        cpu: 106m
+        memory: 1104Mi
       limits:
-        cpu: 500m
-        memory: 1Gi
+        memory: 2208Mi
 
 # ---------------------------------------------------------------------------
 # Alertmanager
@@ -241,12 +240,12 @@ alertmanager:
                 matchLabels:
                   app.kubernetes.io/name: prometheus
 
+    # Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots 0 and 1): 21 MiB.
     resources:
       requests:
         cpu: 10m
         memory: 32Mi
       limits:
-        cpu: 100m
         memory: 64Mi
 
 # ---------------------------------------------------------------------------
@@ -288,27 +287,27 @@ grafana:
       sha: 092dbe0c335fba9af414a27630ca68f34df6185784fa847d9954187e69dbfdd7
     # 96Mi was too little: both sidecars were OOMKilled at start in the
     # rehearsal of 2026-11-01 (k8s-sidecar 2.x, Python and the Kubernetes
-    # client). The live rollout measures the real use.
+    # client). Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots 0 and 1):
+    # 91 MiB, 29m (both sidecars share these values).
     resources:
       requests:
-        cpu: 10m
-        memory: 96Mi
+        cpu: 38m
+        memory: 128Mi
       limits:
-        cpu: 100m
         memory: 256Mi
 
   # 256Mi and 500m were too little for Grafana 13 at start (rehearsal of
   # 2026-11-01): at 255 MiB of 256 and CPU-throttled, its API handlers timed
   # out, the liveness probe failed and the kubelet killed it (exit 137).
-  # Live, 2026-11-01 to 11-03: RSS peaked at 298 MiB, the working set at
-  # 452 MiB (page cache included), so the request is the RSS peak plus ~30 %.
+  # Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots 0 and 1): working set
+  # 453 MiB (RSS 298, the rest page cache), 51m. The old 512Mi limit was at
+  # 88 % of it.
   resources:
     requests:
-      cpu: 50m
-      memory: 384Mi
+      cpu: 67m
+      memory: 592Mi
     limits:
-      cpu: "1"
-      memory: 512Mi
+      memory: 1184Mi
 
 # ---------------------------------------------------------------------------
 # Exporters
@@ -319,13 +318,13 @@ kube-state-metrics:
     tag: v2.20.0
     # This chart wants the prefix; the others add it.
     sha: sha256:42cfe3723a5f058171c627537fb57a3ea0f26e4380fa18555a95cb1a1b4cfc5b
+  # Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots 0 and 1): 27 MiB.
   resources:
     requests:
       cpu: 10m
       memory: 48Mi
     limits:
-      cpu: 100m
-      memory: 128Mi
+      memory: 96Mi
 
 # On every node, the Control Plane too (the chart tolerates every taint), so a
 # dead Control Plane node shows.
@@ -334,10 +333,10 @@ prometheus-node-exporter:
   image:
     tag: v1.12.1   # the chart appends -distroless itself
     digest: sha256:8c9bac11973b94b59be88d6e11fee4429aa743c8846cdc75d65b18db33f6a106
+  # Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots 0 and 1): 16 MiB.
   resources:
     requests:
       cpu: 10m
-      memory: 24Mi
+      memory: 32Mi
     limits:
-      cpu: 100m
       memory: 64Mi
