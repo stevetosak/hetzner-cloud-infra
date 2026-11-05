@@ -125,6 +125,18 @@ memory), and Envoy keeps at least 128 Mi for traffic bursts.
       Deployment kept its defaulted `rollingUpdate` fields, the server-side
       apply was refused, and Argo CD reported the Application Synced after a
       failed diff. Proven by a server-side dry run.
+      The Argo CD-synced platform services follow in one change: Argo CD,
+      cert-manager, the CloudNativePG operator and its barman-cloud plugin,
+      Envoy Gateway and the `EnvoyProxy`, metrics-server, Redis and reloader,
+      about 1270 Mi less requested. Only the application-controller grows
+      (512 to 624 Mi). The CloudNativePG Deployments take their values from
+      kustomize patches, because their manifests are upstream text. **A field
+      that a second field manager also owns stays when git removes it, and
+      Argo CD still reports Synced.** The seed's `kubectl` and kluster's
+      `cloud-infra` co-owned `limits.cpu` on seven Deployments; their stale
+      `managedFields` entries are removed before the merge, which changes no
+      pod. Removed after the merge, the field would have no owner and stay.
+      `core/hcloud` and `core/cni` are applied by hand and follow separately.
 - [x] Alert in the Alert Chat when a container's working set stays above
       90 % of its request or 85 % of its limit, and on any OOM kill. The
       right-sized requests leave little slack, and the applications' memory

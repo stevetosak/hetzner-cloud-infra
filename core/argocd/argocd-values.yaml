@@ -82,50 +82,53 @@ server:
     servicePortHttp2: 8080
     servicePortHttp2AppProtocol: kubernetes.io/h2c
 
-  # Modest requests and limits on every component, against the chart default of
-  # none. ArgoCD is the control plane for every deploy in this cluster, and a
-  # pod with no requests is BestEffort and so is evicted first. Two workers
-  # already request 46% and 57% of their memory, and an unbounded
-  # application-controller could push a node into memory pressure and take
-  # CloudNativePG or Redis with it. Neither has a backup (Phase 6).
+  # Every component is sized by ADR 0013 from the 2026-11-01..05 peaks
+  # (Capacity Plan Snapshots 0 and 1): a request on each, because a pod with
+  # no requests is BestEffort and so is evicted first, and no CPU limit.
   resources:
     requests:
-      cpu: 100m
-      memory: 128Mi
+      cpu: 10m
+      memory: 80Mi
     limits:
-      cpu: 500m
-      memory: 512Mi
+      memory: 160Mi
 
 controller:
   # The application-controller is the heavy component: it holds the state of
   # every Application and every resource each one owns.
   resources:
     requests:
-      cpu: 250m
-      memory: 512Mi
+      cpu: 184m
+      memory: 624Mi
     limits:
-      cpu: 1000m
-      memory: 1Gi
+      memory: 1248Mi
 
 repoServer:
   # Clones the infra repository and runs `kustomize build` on each overlay.
   # Bursty rather than steady.
   resources:
     requests:
-      cpu: 100m
-      memory: 256Mi
+      cpu: 16m
+      memory: 128Mi
     limits:
-      cpu: 500m
-      memory: 1Gi
+      memory: 256Mi
+  # The init container that copies the argocd binary. The chart gives it the
+  # repo-server's values when this is empty, and an init container's request
+  # counts for the pod, so it gets its own small one.
+  copyutil:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 64Mi
 
 applicationSet:
   resources:
     requests:
-      cpu: 50m
-      memory: 128Mi
+      cpu: 15m
+      memory: 64Mi
     limits:
-      cpu: 200m
-      memory: 256Mi
+      memory: 128Mi
 
 redis:
   # ArgoCD keeps its OWN Redis, and does not use the shared one in namespace
@@ -153,12 +156,13 @@ redis:
     - 192mb
     - --maxmemory-policy
     - allkeys-lru
+  # The limit stays at 256Mi for `--maxmemory` 192mb (ADR 0013); only the
+  # request follows the peak.
   resources:
     requests:
-      cpu: 50m
-      memory: 64Mi
+      cpu: 10m
+      memory: 32Mi
     limits:
-      cpu: 200m
       memory: 256Mi
 
 redisSecretInit:
@@ -250,8 +254,7 @@ notifications:
 
   resources:
     requests:
-      cpu: 50m
-      memory: 128Mi
+      cpu: 10m
+      memory: 48Mi
     limits:
-      cpu: 200m
-      memory: 256Mi
+      memory: 96Mi

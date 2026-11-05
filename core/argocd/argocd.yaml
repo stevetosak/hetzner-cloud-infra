@@ -1526,11 +1526,10 @@ spec:
               protocol: TCP
           resources:
             limits:
-              cpu: 200m
-              memory: 256Mi
-            requests:
-              cpu: 50m
               memory: 128Mi
+            requests:
+              cpu: 15m
+              memory: 64Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -1693,11 +1692,10 @@ spec:
             protocol: TCP
           resources:
             limits:
-              cpu: 200m
-              memory: 256Mi
+              memory: 96Mi
             requests:
-              cpu: 50m
-              memory: 128Mi
+              cpu: 10m
+              memory: 48Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -2099,11 +2097,10 @@ spec:
           failureThreshold: 3
         resources:
           limits:
-            cpu: 500m
-            memory: 1Gi
-          requests:
-            cpu: 100m
             memory: 256Mi
+          requests:
+            cpu: 16m
+            memory: 128Mi
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
@@ -2124,11 +2121,10 @@ spec:
         name: copyutil
         resources:
           limits:
-            cpu: 500m
-            memory: 1Gi
+            memory: 64Mi
           requests:
-            cpu: 100m
-            memory: 256Mi
+            cpu: 10m
+            memory: 32Mi
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
@@ -2591,11 +2587,10 @@ spec:
           failureThreshold: 3
         resources:
           limits:
-            cpu: 500m
-            memory: 512Mi
+            memory: 160Mi
           requests:
-            cpu: 100m
-            memory: 128Mi
+            cpu: 10m
+            memory: 80Mi
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
@@ -2726,11 +2721,10 @@ spec:
           protocol: TCP
         resources:
           limits:
-            cpu: 200m
             memory: 256Mi
           requests:
-            cpu: 50m
-            memory: 64Mi
+            cpu: 10m
+            memory: 32Mi
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
@@ -3108,11 +3102,10 @@ spec:
           failureThreshold: 3
         resources:
           limits:
-            cpu: 1000m
-            memory: 1Gi
+            memory: 1248Mi
           requests:
-            cpu: 250m
-            memory: 512Mi
+            cpu: 184m
+            memory: 624Mi
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:

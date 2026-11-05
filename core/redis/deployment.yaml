@@ -106,12 +106,14 @@ spec:
                 - 'redis-cli --no-auth-warning -a "$REDIS_PASSWORD" ping | grep -q PONG'
             initialDelaySeconds: 3
             periodSeconds: 10
+          # Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan
+          # Snapshots 0 and 1). The limit stays at 512Mi for `--maxmemory`
+          # 384mb; only the request follows the peak. No CPU limit.
           resources:
             requests:
-              cpu: '100m'
-              memory: '256Mi'
+              cpu: '11m'
+              memory: '32Mi'
             limits:
-              cpu: '500m'
               memory: '512Mi'
       volumes:
         # The image's WORKDIR. Nothing is written here while persistence is
