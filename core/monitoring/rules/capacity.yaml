@@ -8,8 +8,15 @@
 #
 # A container above its request is the first to be evicted when a node runs
 # short; a container at its limit is OOM-killed. A container without a request
-# or limit (the control-plane static pods) has no series to compare and never
-# fires. Unit tests: rules/tests/capacity.test.yaml, run by check-rules.sh.
+# or limit has no series to compare and never fires.
+#
+# The kubeadm static pods on the control plane (etcd, kube-apiserver,
+# kube-controller-manager, kube-scheduler) are left out of the two memory
+# rules: kubeadm sets their requests (etcd 100Mi, about 96 % used), the node is
+# tainted so no workload competes with them, and a change needs the static
+# manifest on k8s-cp. The Capacity Plan's Phase 2 sizes the control plane; the
+# OOM-kill rule still covers them. Unit tests: rules/tests/capacity.test.yaml,
+# run by check-rules.sh.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -21,7 +28,10 @@ spec:
       rules:
         - alert: ContainerMemoryNearRequest
           expr: |
-            max by (namespace, pod, container) (container_memory_working_set_bytes{container!="", container!="POD"})
+            max by (namespace, pod, container) (
+              container_memory_working_set_bytes{container!="", container!="POD"}
+                unless container_memory_working_set_bytes{namespace="kube-system", container=~"etcd|kube-apiserver|kube-controller-manager|kube-scheduler"}
+            )
               / on (namespace, pod, container)
             max by (namespace, pod, container) (kube_pod_container_resource_requests{resource="memory"})
               > 0.9
@@ -37,7 +47,10 @@ spec:
 
         - alert: ContainerMemoryNearLimit
           expr: |
-            max by (namespace, pod, container) (container_memory_working_set_bytes{container!="", container!="POD"})
+            max by (namespace, pod, container) (
+              container_memory_working_set_bytes{container!="", container!="POD"}
+                unless container_memory_working_set_bytes{namespace="kube-system", container=~"etcd|kube-apiserver|kube-controller-manager|kube-scheduler"}
+            )
               / on (namespace, pod, container)
             max by (namespace, pod, container) (kube_pod_container_resource_limits{resource="memory"})
               > 0.85

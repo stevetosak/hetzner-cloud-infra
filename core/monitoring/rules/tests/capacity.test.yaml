@@ -76,3 +76,24 @@ tests:
                 minutes. Raise its memory limit in git; a JVM or Redis also needs
                 its own cap checked (ADR 0013).
       - {eval_time: 40m, alertname: ContainerOOMKilled}
+
+  # The control-plane etcd at 96 % of kubeadm's 100 MiB request and no limit:
+  # left out until Phase 2 sizes the control plane. coredns in the same
+  # namespace at 95 % still fires.
+  - interval: 1m
+    input_series:
+      - {series: 'container_memory_working_set_bytes{namespace="kube-system",pod="etcd-k8s-cp",container="etcd"}', values: '100663296x60'}
+      - {series: 'kube_pod_container_resource_requests{namespace="kube-system",pod="etcd-k8s-cp",container="etcd",resource="memory"}', values: '104857600x60'}
+      - {series: 'container_memory_working_set_bytes{namespace="kube-system",pod="coredns-1",container="coredns"}', values: '69206016x60'}
+      - {series: 'kube_pod_container_resource_requests{namespace="kube-system",pod="coredns-1",container="coredns",resource="memory"}', values: '73400320x60'}
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: ContainerMemoryNearRequest
+        exp_alerts:
+          - exp_labels: {severity: warning, namespace: kube-system, pod: coredns-1, container: coredns}
+            exp_annotations:
+              summary: "kube-system/coredns uses 94.29% of its memory request."
+              description: >-
+                Pod coredns-1. Raise its memory request and limit by the
+                sizing rule (ADR 0013: peak x 1.3, limit 2x) in git. Above its
+                request it is the first to be evicted under memory pressure.
