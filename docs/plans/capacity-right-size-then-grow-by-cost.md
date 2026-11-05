@@ -118,9 +118,13 @@ memory), and Envoy keeps at least 128 Mi for traffic bursts.
       the requests of `doma` and `authos-ui` were lowered in place
       (`kubectl patch pod --subresource resize`). **A request that grows
       needs that much free on one node, not across the cluster: shrink the
-      others first.** Grafana now rolls with `Recreate` for the same reason,
-      and its first hour raised it from 592 to 656 Mi (499 MiB in 30
-      minutes).
+      others first.** For the same reason Grafana now stops its old pod
+      before it starts the new one (`maxSurge: 0`), and its first hour
+      raised it from 592 to 656 Mi (499 MiB in 30 minutes). A first try with
+      `type: Recreate` (PR #85) never reached the cluster: the live
+      Deployment kept its defaulted `rollingUpdate` fields, the server-side
+      apply was refused, and Argo CD reported the Application Synced after a
+      failed diff. Proven by a server-side dry run.
 - [x] Alert in the Alert Chat when a container's working set stays above
       90 % of its request or 85 % of its limit, and on any OOM kill. The
       right-sized requests leave little slack, and the applications' memory

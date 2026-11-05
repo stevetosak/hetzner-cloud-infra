@@ -258,12 +258,19 @@ alertmanager:
 # ---------------------------------------------------------------------------
 grafana:
   revisionHistoryLimit: 3
-  # Recreate, not RollingUpdate: Grafana holds no state (emptyDir, dashboards
-  # from the sidecars), and a rolling update needs the old and the new pod's
-  # requests on the workers at once. On 2026-11-05 no worker had 912Mi free
-  # for a second Grafana pod.
+  # The old pod stops before the new one starts (maxSurge 0): Grafana holds no
+  # state (emptyDir, dashboards from the sidecars), and a surge needs the old
+  # and the new pod's requests on the workers at once. On 2026-11-05 no worker
+  # had 912Mi free for a second Grafana pod.
+  # Not `type: Recreate`: the live Deployment keeps the defaulted
+  # rollingUpdate fields, which no field manager owns, so a server-side apply
+  # of Recreate is refused ("rollingUpdate: Forbidden") and Argo CD's
+  # server-side diff fails without an OutOfSync.
   deploymentStrategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   image:
     tag: 13.3.0-distroless
     sha: 540b8afb775bf34aefce417e4329039daa5d44b6f2fbda6881397b1b247ca7df
