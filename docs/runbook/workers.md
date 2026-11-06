@@ -51,11 +51,19 @@ the lowest free private and VPN address (the VPN pool skips the hub, the probe
 and every peer in `kluster.yaml`). Then it stops. kluster runs no Terraform on a
 Worker set git does not hold, because the state in R2 is shared by every clone
 and an uncommitted Worker would read as a planned destroy from any other
-checkout. Commit that file alone, then run again:
+checkout. The entry's server type is `workers.serverType` from `kluster.yaml`,
+or the one `--server-type` names on that first run, so a `cpx32` can join the
+`cx23` Workers. Before it writes, kluster asks the Hetzner API whether that type
+is offered, in stock and not deprecated in the Control Plane's location, where
+the Workers must sit beside the PostgreSQL volumes
+([ADR 0005](../adr/0005-storage-and-worker-identity.md)); a type it
+cannot create is refused before git holds it. On the second run the flag can
+only repeat the declared type. Commit that file alone, then run again:
 
 ```sh
 cd tools/kluster
 ./kluster node add k8swk4 --apply          # run 1: the entry, then stop
+                                           #   (--server-type cpx32 for another type)
 git add ../../infra/workers/terraform.tfvars && git commit -m "…"
 ./kluster node add k8swk4                  # Plan Mode: the plan and every Stage
 ./kluster node add k8swk4 --apply          # run 2: create, build, join

@@ -20,6 +20,7 @@ type fakeAPI struct {
 	setRulesBody  string
 	primaryIPs    string // JSON array
 	servers       string // JSON array; empty: none
+	serverTypes   string // JSON array; empty: none
 	// assignedFor is how many deletes of primary IP 8 Hetzner answers with
 	// must_be_unassigned before it lets one through.
 	assignedFor, ipDeletes int
@@ -54,6 +55,11 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			f.servers = "[]"
 		}
 		io.WriteString(w, `{"servers":`+f.servers+`,"meta":{"pagination":{"page":1,"per_page":50,"total_entries":1}}}`)
+	case r.Method == http.MethodGet && r.URL.Path == "/server_types":
+		if f.serverTypes == "" {
+			f.serverTypes = "[]"
+		}
+		io.WriteString(w, `{"server_types":`+f.serverTypes+`,"meta":{"pagination":{"page":1,"per_page":50,"total_entries":1}}}`)
 	default:
 		http.Error(w, `{"error":{"code":"not_found","message":"`+r.URL.Path+`"}}`, http.StatusNotFound)
 	}
