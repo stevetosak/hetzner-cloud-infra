@@ -19,6 +19,7 @@ type Server struct {
 	PublicIP         string
 	PrivateIPs       []string
 	PrivateMAC       string // the NIC on the private network
+	Location         string // e.g. hel1
 	DeleteProtected  bool
 	RebuildProtected bool
 	Created          time.Time
@@ -57,6 +58,9 @@ func toServer(s *hcloud.Server) *Server {
 		DeleteProtected:  s.Protection.Delete,
 		RebuildProtected: s.Protection.Rebuild,
 		Created:          s.Created,
+	}
+	if s.Location != nil {
+		out.Location = s.Location.Name
 	}
 	if s.PublicNet.IPv4.IP != nil {
 		out.PublicIP = s.PublicNet.IPv4.IP.String()

@@ -42,12 +42,34 @@ func TestNextWorkerSkipsTakenAndPeerAddresses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w, err := nextWorker(nodeAddConfig(), set, "k8swk2")
+	w, err := nextWorker(nodeAddConfig(), set, "k8swk2", "cpx32")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if w.PrivateIP != "10.0.2.7" || w.VpnIP != "10.100.0.4" || w.ServerType != "cx23" {
-		t.Fatalf("got %+v; want 10.0.2.7, 10.100.0.4 (10.100.0.3 is the laptop)", w)
+	if w.PrivateIP != "10.0.2.7" || w.VpnIP != "10.100.0.4" || w.ServerType != "cpx32" {
+		t.Fatalf("got %+v; want 10.0.2.7, 10.100.0.4 (10.100.0.3 is the laptop), cpx32", w)
+	}
+}
+
+// --server-type picks a new Worker's type; without it the configured
+// default holds.
+func TestServerTypeFlagOverridesTheDefault(t *testing.T) {
+	c := nodeAddConfig()
+	if got := serverType(c, ""); got != "cx23" {
+		t.Errorf("no flag: %s, want the default cx23", got)
+	}
+	if got := serverType(c, "cpx32"); got != "cpx32" {
+		t.Errorf("--server-type cpx32: %s", got)
+	}
+}
+
+// A declared Worker keeps its type: the flag may repeat it, never change it.
+func TestCheckDeclaredTypeRefusesAnotherType(t *testing.T) {
+	w := workerset.Worker{Name: "k8swk4", ServerType: "cpx32"}
+	for flag, ok := range map[string]bool{"": true, "cpx32": true, "cx23": false} {
+		if err := checkDeclaredType(w, flag, "t.tfvars"); (err == nil) != ok {
+			t.Errorf("--server-type %q: err = %v, want ok %v", flag, err, ok)
+		}
 	}
 }
 

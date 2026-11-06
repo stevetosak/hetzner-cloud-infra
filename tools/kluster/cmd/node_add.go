@@ -27,15 +27,23 @@ import (
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/workerset"
 )
 
+var nodeAddFlags struct {
+	serverType string
+}
+
 func init() {
 	nodeCmd.AddCommand(nodeAddCmd)
+	nodeAddCmd.Flags().StringVar(&nodeAddFlags.serverType, "server-type", "",
+		"the new Worker's Hetzner server type (default: workers.serverType in kluster.yaml); it goes into the Worker set on the first run")
 }
 
 var nodeAddCmd = &cobra.Command{
 	Use:   "add <name>",
 	Short: "Add one Worker: declare it in the Worker set, then create, build and join it (docs/runbook/workers.md)",
 	Long: "Run twice. A name the environment's Worker set does not declare gets its entry first: the " +
-		"lowest free private and VPN address, written to the set under --apply. kluster then stops, " +
+		"lowest free private and VPN address and the server type (--server-type, or workers.serverType), " +
+		"written to the set under --apply. A server type Hetzner cannot deliver in the Control Plane's " +
+		"location is refused before the write. kluster then stops, " +
 		"because it runs no Terraform on a Worker set git does not hold: commit the edit and run again. " +
 		"The second run creates exactly that server with a seeded host key, rotates the key, runs the " +
 		"Workers runbook as Stages, adds the Worker to the hub, joins it with a 15-minute token and waits " +
@@ -86,7 +94,10 @@ func nodeAdd(ctx context.Context, a *app, name string) error {
 		if srv != nil {
 			return fmt.Errorf("a server %s exists at %s but %s does not declare it: Terraform would refuse the duplicate name, so node add refuses", name, srv.PublicIP, path)
 		}
-		return a.declareWorker(ctx, set, name)
+		return a.declareWorker(ctx, set, name, serverType(a.cfg, nodeAddFlags.serverType))
+	}
+	if err := checkDeclaredType(w, nodeAddFlags.serverType, path); err != nil {
+		return err
 	}
 
 	// The commit gate runs before anything opens.
@@ -205,13 +216,55 @@ func (a *app) createAndBuild(ctx context.Context, workers *tf.Module, w workerse
 	return a.buildWorker(ctx, w, srv, cpSrv, cp)
 }
 
+// serverType is the server type a new Worker gets: the flag's, or the
+// configured default.
+func serverType(c *config.Config, flag string) string {
+	if flag != "" {
+		return flag
+	}
+	return c.Workers.ServerType
+}
+
+// checkDeclaredType refuses a --server-type that differs from the type the
+// Worker set already declares: the flag only fills a new entry, and a run
+// that seemed to change the type would build the old one.
+func checkDeclaredType(w workerset.Worker, flag, path string) error {
+	if flag != "" && flag != w.ServerType {
+		return fmt.Errorf("%s declares %s as %s, not %s: --server-type only fills a new entry; edit the set (node replace builds the server again)",
+			path, w.Name, w.ServerType, flag)
+	}
+	return nil
+}
+
+// checkServerType asks the Hetzner API whether a new server of type st can
+// be had where the Control Plane is: the Workers must sit in its location,
+// beside the PostgreSQL volumes (ADR 0005).
+func (a *app) checkServerType(ctx context.Context, st string) error {
+	cp, err := a.api.Server(ctx, a.cfg.ControlPlane.Name)
+	if err != nil {
+		return err
+	}
+	if cp == nil || cp.Location == "" {
+		fmt.Fprintf(a.out, "not checked that %s can be had: the project has no %s to take the location from\n", st, a.cfg.ControlPlane.Name)
+		return nil
+	}
+	if err := a.api.CheckServerType(ctx, st, cp.Location); err != nil {
+		return fmt.Errorf("%w: node add declares no Worker it cannot create", err)
+	}
+	fmt.Fprintf(a.out, "read back: server type %s is available in %s\n", st, cp.Location)
+	return nil
+}
+
 // declareWorker writes a new Worker's entry into the Worker set, on top of
 // a set git holds, so the commit the operator makes is exactly that entry.
-func (a *app) declareWorker(ctx context.Context, set *workerset.Set, name string) error {
+func (a *app) declareWorker(ctx context.Context, set *workerset.Set, name, st string) error {
 	if err := workerset.CheckCommitted(ctx, set.Path, a.out); err != nil {
 		return err
 	}
-	w, err := nextWorker(a.cfg, set, name)
+	if err := a.checkServerType(ctx, st); err != nil {
+		return err
+	}
+	w, err := nextWorker(a.cfg, set, name, st)
 	if err != nil {
 		return err
 	}
@@ -257,9 +310,10 @@ func writeSet(path string, updated []byte, ok func(*workerset.Set) bool) error {
 	return nil
 }
 
-// nextWorker is the entry a new Worker gets: the lowest free address of
-// each pool, skipping the hub, kluster's probe peer and every operator peer.
-func nextWorker(c *config.Config, set *workerset.Set, name string) (workerset.Worker, error) {
+// nextWorker is the entry a new Worker of server type st gets: the lowest
+// free address of each pool, skipping the hub, kluster's probe peer and
+// every operator peer.
+func nextWorker(c *config.Config, set *workerset.Set, name, st string) (workerset.Worker, error) {
 	private, err := workerset.ParsePool(c.Workers.PrivateIPs)
 	if err != nil {
 		return workerset.Worker{}, fmt.Errorf("workers.privateIPs: %w", err)
@@ -272,7 +326,7 @@ func nextWorker(c *config.Config, set *workerset.Set, name string) (workerset.Wo
 	if err != nil {
 		return workerset.Worker{}, err
 	}
-	return set.Next(name, c.Workers.ServerType, private, vpn, reserved)
+	return set.Next(name, st, private, vpn, reserved)
 }
 
 func reservedVPN(c *config.Config) ([]netip.Addr, error) {
