@@ -25,6 +25,7 @@ provisioner: csi.hetzner.cloud
 volumeBindingMode: WaitForFirstConsumer
 allowVolumeExpansion: true
 reclaimPolicy: "Delete"
+
 ---
 # Source: hcloud-csi/templates/controller/clusterrole.yaml
 kind: ClusterRole
@@ -176,8 +177,11 @@ spec:
             - name: registration-dir
               mountPath: /registration
           resources:
-            limits: {}
-            requests: {}
+            limits:
+              memory: 64Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
         - name: liveness-probe
           image: registry.k8s.io/sig-storage/livenessprobe:v2.18.0
           imagePullPolicy: IfNotPresent
@@ -185,8 +189,11 @@ spec:
           - mountPath: /run/csi
             name: plugin-dir
           resources:
-            limits: {}
-            requests: {}
+            limits:
+              memory: 64Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
         - name: hcloud-csi-driver
           image: docker.io/hetznercloud/hcloud-csi-driver:v2.23.0 # x-releaser-pleaser-version
           imagePullPolicy: IfNotPresent
@@ -212,8 +219,11 @@ spec:
               protocol: TCP
               containerPort: 9808
           resources:
-            limits: {}
-            requests: {}
+            limits:
+              memory: 64Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
           livenessProbe:
             failureThreshold: 5
             initialDelaySeconds: 10
@@ -310,8 +320,11 @@ spec:
                   name: hcloud
                   key: token
           resources:
-            limits: {}
-            requests: {}
+            limits:
+              memory: 64Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
           ports:
             - name: healthz
               protocol: TCP
@@ -332,8 +345,11 @@ spec:
           image: registry.k8s.io/sig-storage/csi-attacher:v4.11.0
           imagePullPolicy: IfNotPresent
           resources:
-            limits: {}
-            requests: {}
+            limits:
+              memory: 96Mi
+            requests:
+              cpu: 10m
+              memory: 48Mi
           args:
             - --default-fstype=ext4
           volumeMounts:
@@ -344,8 +360,11 @@ spec:
           image: registry.k8s.io/sig-storage/csi-resizer:v2.1.0
           imagePullPolicy: IfNotPresent
           resources:
-            limits: {}
-            requests: {}
+            limits:
+              memory: 96Mi
+            requests:
+              cpu: 10m
+              memory: 48Mi
           volumeMounts:
           - name: socket-dir
             mountPath: /run/csi
@@ -354,8 +373,11 @@ spec:
           image: registry.k8s.io/sig-storage/csi-provisioner:v6.2.0
           imagePullPolicy: IfNotPresent
           resources:
-            limits: {}
-            requests: {}
+            limits:
+              memory: 96Mi
+            requests:
+              cpu: 10m
+              memory: 48Mi
           args:
             - --feature-gates=Topology=true
             - --default-fstype=ext4
@@ -369,8 +391,11 @@ spec:
           image: registry.k8s.io/sig-storage/livenessprobe:v2.18.0
           imagePullPolicy: IfNotPresent
           resources:
-            limits: {}
-            requests: {}
+            limits:
+              memory: 64Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
           volumeMounts:
           - mountPath: /run/csi
             name: socket-dir

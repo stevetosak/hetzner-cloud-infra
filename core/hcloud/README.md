@@ -8,6 +8,7 @@ credentials.
 | `ccm.yaml` | chart `hcloud-cloud-controller-manager` | v1.37.0 |
 | `ccm-values.yaml` | the values that produced it | — |
 | `csi.yaml` | chart `hcloud-csi` | v2.23.0 |
+| `csi-values.yaml` | the values that produced it | — |
 
 The YAML is rendered, not hand-written. Do not edit it in place: change the
 values file and render again, so the file always matches a named chart version.
@@ -66,17 +67,25 @@ kubectl apply -f core/hcloud/csi.yaml
 
 ## Re-rendering after a version bump
 
+Both charts are pulled from Hetzner's chart repository first and rendered
+from the local copy (the `oci://ghcr.io` path answered 403 on 2026-11-06, and
+`helm template` on an `oci://` chart prints its pull messages into the
+render). Both renders take a values file: `csi-values.yaml` holds the CSI
+containers' resources (ADR 0013).
+
 ```sh
-helm template hccm \
-  oci://ghcr.io/hetznercloud/charts/hcloud-cloud-controller-manager \
-  --version <new-version> \
+helm pull hcloud-cloud-controller-manager --repo https://charts.hetzner.cloud \
+  --version <new-version> --untar --untardir /tmp/charts
+helm pull hcloud-csi --repo https://charts.hetzner.cloud \
+  --version <new-version> --untar --untardir /tmp/charts
+
+helm template hccm /tmp/charts/hcloud-cloud-controller-manager \
   --namespace kube-system \
   --values core/hcloud/ccm-values.yaml > core/hcloud/ccm.yaml
 
-helm template hcloud-csi \
-  oci://ghcr.io/hetznercloud/charts/hcloud-csi \
-  --version <new-version> \
-  --namespace kube-system > core/hcloud/csi.yaml
+helm template hcloud-csi /tmp/charts/hcloud-csi \
+  --namespace kube-system \
+  --values core/hcloud/csi-values.yaml > core/hcloud/csi.yaml
 ```
 
 Then check the diff for the route-controller setting before committing.

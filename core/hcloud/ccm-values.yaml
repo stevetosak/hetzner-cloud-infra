@@ -23,3 +23,12 @@ env:
   # swapping a CNI.
   HCLOUD_NETWORK_ROUTES_ENABLED:
     value: "false"
+
+# Sized by ADR 0013 from the 2026-11-01..06 peaks (peak 18 MiB, 3m CPU),
+# against the chart's 100m / 50Mi with no limit. No CPU limit.
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    memory: 64Mi
