@@ -162,6 +162,7 @@ spec:
           operator: Exists
         - key: CriticalAddonsOnly
           operator: Exists
+      priorityClassName: "system-node-critical"
       securityContext:
         fsGroup: 1001
       initContainers:
@@ -295,6 +296,7 @@ spec:
                 values:
                 - cloud
             weight: 1
+      priorityClassName: "system-cluster-critical"
       securityContext:
         fsGroup: 1001
       initContainers:

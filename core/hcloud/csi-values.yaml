@@ -4,8 +4,16 @@
 # Sized by ADR 0013 from the 2026-11-01..06 peaks (Capacity Plan Snapshots 0
 # and 1, and Prometheus since 2026-11-05). The chart sets no requests, so each
 # container was BestEffort, the first to be evicted. No CPU limit.
+#
+# Both get a system priority class (the chart sets none). With requests and
+# priority 0, the node pod of a full worker stayed Pending on 2026-11-06: the
+# old pod took no room, and the scheduler could not preempt for the new one.
+# The node pod mounts every volume on its node, as flannel and kube-proxy
+# carry the network, so it takes system-node-critical as they do; the
+# controller takes system-cluster-critical, as the CCM does.
 
 controller:
+  priorityClassName: system-cluster-critical
   resources:
     csiAttacher:
       requests:
@@ -39,6 +47,7 @@ controller:
         memory: 64Mi
 
 node:
+  priorityClassName: system-node-critical
   resources:
     csiNodeDriverRegistrar:
       requests:
