@@ -1,0 +1,70 @@
+# Values for the Vertical Pod Autoscaler chart (ADR 0014), rendered by
+# core/vpa/render.sh into vertical-pod-autoscaler.yaml. One replica of each
+# component: leader election turns itself off, and a PodDisruptionBudget of
+# minAvailable 1 on a single pod would block every drain of its node, so the
+# chart's PDBs are off.
+#
+# Resources: a new component starts from the ADR 0013 guess (50m / 256Mi,
+# limit 512Mi) and is resized once three days of data exist. No CPU limit.
+#
+# Images are pinned by digest (the multi-arch index). The chart writes
+# repository:tag, so the digest rides in the tag.
+
+admissionController:
+  replicas: 1
+  image:
+    tag: 1.8.1@sha256:13304735dbffe3bdf4bc3865f093690a32d0048f61b5e4be7f634ed51cb9ff2b
+  # The webhook certificate comes from cert-manager, which the cluster runs:
+  # the chart's other ways are a hook Job (certGen; Argo CD would run it as a
+  # hook) or a key made by helm at render time (tls.create), which changes on
+  # every render and would keep the sync from settling.
+  certGen:
+    enabled: false
+  certManager:
+    enabled: true
+    createSelfSignedIssuer:
+      enabled: true
+  # While the webhook is down, a pod starts with its value from git; the
+  # updater corrects it later.
+  mutatingWebhookConfiguration:
+    failurePolicy: Ignore
+  podDisruptionBudget:
+    enabled: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+recommender:
+  replicas: 1
+  image:
+    tag: 1.8.1@sha256:edf874b830984d1df9d60f839874eba42de3465051922b929754edc42ea0f69b
+  podDisruptionBudget:
+    enabled: false
+  # The recommender's own floors default to 250 MB and 25m, which would grow
+  # every small container. Each VerticalPodAutoscaler object sets minAllowed
+  # at the ADR 0013 floors; these only keep out of their way.
+  extraArgs:
+    - --pod-recommendation-min-memory-mb=32
+    - --pod-recommendation-min-cpu-millicores=10
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+updater:
+  replicas: 1
+  image:
+    tag: 1.8.1@sha256:b4a03d56131cc6f6c44cd91982b6db5961496f18b9bc24abe1c4b6160aefe04a
+  podDisruptionBudget:
+    enabled: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      memory: 512Mi

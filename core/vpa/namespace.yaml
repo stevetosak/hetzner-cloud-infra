@@ -1,0 +1,9 @@
+# The chart expects `helm install --create-namespace` and emits no Namespace of
+# its own. `kluster services seed` applies this file; Argo CD never creates a
+# namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vpa
+  labels:
+    app.kubernetes.io/name: vertical-pod-autoscaler

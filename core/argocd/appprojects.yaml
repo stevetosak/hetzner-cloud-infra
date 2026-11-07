@@ -103,11 +103,15 @@ spec:
     - {server: https://kubernetes.default.svc, namespace: pg-drill}
     - {server: https://kubernetes.default.svc, namespace: redis}
     - {server: https://kubernetes.default.svc, namespace: reloader}
+    - {server: https://kubernetes.default.svc, namespace: vpa}
     - {server: https://kubernetes.default.svc, namespace: authos}
     - {server: https://kubernetes.default.svc, namespace: doma}
     # metrics-server's RoleBinding to extension-apiserver-authentication-reader
     # lives there. Little extra privilege: ClusterRoleBinding is already allowed.
     - {server: https://kubernetes.default.svc, namespace: kube-system}
+    # The VerticalPodAutoscaler object of the flannel DaemonSet (core/vpa,
+    # ADR 0014); flannel itself is installed by `kluster cp init`.
+    - {server: https://kubernetes.default.svc, namespace: kube-flannel}
   clusterResourceWhitelist:
     - {group: rbac.authorization.k8s.io, kind: ClusterRole}
     - {group: rbac.authorization.k8s.io, kind: ClusterRoleBinding}
