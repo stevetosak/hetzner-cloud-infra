@@ -184,8 +184,8 @@ spec:
               containerPort: 8233
           resources:
             limits:
-              memory: 64Mi
+              memory: 160Mi
             requests:
               cpu: 10m
-              memory: 32Mi
+              memory: 80Mi
       priorityClassName: "system-cluster-critical"

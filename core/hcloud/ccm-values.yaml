@@ -24,11 +24,13 @@ env:
   HCLOUD_NETWORK_ROUTES_ENABLED:
     value: "false"
 
-# Sized by ADR 0013 from the 2026-11-01..06 peaks (peak 18 MiB, 3m CPU),
-# against the chart's 100m / 50Mi with no limit. No CPU limit.
+# Sized by ADR 0013, no CPU limit. The 2026-11-01..06 peaks of the running pod
+# were 18 MiB and 3m CPU, but a fresh start holds more: after the k8swk2 drain
+# of 2026-11-07 the new pod sat at 60 MiB, against a 64Mi limit. The request
+# follows that start (60 × 1.3, rounded up to 16 Mi), the limit twice that.
 resources:
   requests:
     cpu: 10m
-    memory: 32Mi
+    memory: 80Mi
   limits:
-    memory: 64Mi
+    memory: 160Mi
