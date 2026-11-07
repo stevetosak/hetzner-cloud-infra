@@ -16,8 +16,8 @@ three times (PRs #88, #97, #99). The design session of 2026-11-05 chose the
 Vertical Pod Autoscaler for the raise and the node's memory as the ceiling;
 [ADR 0014](../adr/0014-the-vertical-pod-autoscaler-sizes-the-clusters-own-workloads-and-node-memory-is-their-ceiling.md)
 records the choice and the options it beat. This Plan builds it, in the order
-the ADR sets: everything in `Off` for three days first, then resizes and no
-memory limits, then the kubelet reserve.
+the ADR sets: everything in `Off` for three days first, then the kubelet
+reserve, then resizes and no memory limits.
 
 ## The Vertical Pod Autoscaler sizes the own workloads
 
@@ -53,13 +53,14 @@ live by driving one container past its request.
       MemoryPressure (critical); a node's requests above 90 % of allocatable
       for 30 minutes; any memory-pressure eviction; and a recommendation more
       than twice or less than half its Git value for 7 days.
-- [ ] Move the cluster services and applications to `InPlaceOrRecreate` and
-      remove their memory limits. PostgreSQL, Redis (`maxmemory` below its
-      limit) and the JVMs (`authos-api` at `-Xmx256m`, `duster` at
-      `-XX:MaxRAMPercentage=75`) stay in `Off` and keep their limits.
 - [ ] Measure the kubelet and system memory on each worker and set
       `kubeReserved`, `systemReserved` and a soft eviction threshold through
       kluster, one node at a time.
+- [ ] Move the cluster services and applications to `InPlaceOrRecreate` and
+      remove their memory limits, once every worker has its reserve.
+      PostgreSQL, Redis (`maxmemory` below its limit) and the JVMs
+      (`authos-api` at `-Xmx256m`, `duster` at `-XX:MaxRAMPercentage=75`)
+      stay in `Off` and keep their limits.
 - [ ] Prove it on live: one container driven past its request, the resize
       seen in the Alert Chat, and Git brought back in line.
 

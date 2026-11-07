@@ -89,10 +89,12 @@ automatically: every purchase waits for the operator's yes.**
 
 The change lands in three steps. First VPA and every object run in `Off` for
 3 days, and the recommendations are compared with the capacity snapshots that
-set the ADR 0013 values. Then the cluster services and applications move to
-`InPlaceOrRecreate` and their memory limits are removed. Then each worker gets
-its measured `kubeReserved`/`systemReserved` and a soft eviction threshold
-through kluster, one node at a time. On 2026-11-06 a worker ran 64–78 MiB of
+set the ADR 0013 values. Then each worker gets its measured
+`kubeReserved`/`systemReserved` and a soft eviction threshold through kluster,
+one node at a time. Only then do the cluster services and applications move to
+`InPlaceOrRecreate` and lose their memory limits: without the reserve, one
+leaking container could fill its node before the kubelet acts (the operator
+set this order on 2026-11-07). On 2026-11-06 a worker ran 64–78 MiB of
 kubelet and 650–800 MiB of node working set outside the pods (mostly kernel
 and page cache), with the kubeadm defaults: no reserve, hard eviction at
 100 MiB available, no soft eviction (kubelet summary API).
