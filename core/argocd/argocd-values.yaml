@@ -125,13 +125,14 @@ repoServer:
 
 applicationSet:
   # Memory raised from 64Mi: the new pod held 74 MiB from its start (ADR 0013
-  # first-hour check, 2026-11-05).
+  # first-hour check, 2026-11-05). Raised again from 96Mi after the k8swk2
+  # drain of 2026-11-07: the new pod held 108 MiB from its first minute.
   resources:
     requests:
       cpu: 15m
-      memory: 96Mi
+      memory: 144Mi
     limits:
-      memory: 192Mi
+      memory: 288Mi
 
 redis:
   # ArgoCD keeps its OWN Redis, and does not use the shared one in namespace
