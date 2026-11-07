@@ -107,7 +107,7 @@ memory), and Envoy keeps at least 128 Mi for traffic bursts.
       The first-hour check raised `doma` from 96 to 128 Mi: the new pod
       held about 92 MiB from its start, where the long-running one had held
       60 MiB.
-- [ ] Right-size the cluster services: Argo CD, Envoy Gateway and its
+- [x] Right-size the cluster services: Argo CD, Envoy Gateway and its
       `EnvoyProxy`, the CloudNativePG `Cluster`, Redis, reloader and
       Prometheus. Prometheus peaked at 848 MiB working set against a 400Mi
       request, Grafana at 453 MiB against 384Mi. Monitoring changed first
@@ -143,6 +143,20 @@ memory), and Envoy keeps at least 128 Mi for traffic bursts.
       `managedFields` entries are removed before the merge, which changes no
       pod. Removed after the merge, the field would have no owner and stay.
       `core/hcloud` and `core/cni` are applied by hand and follow separately.
+      **Done 2026-11-07** with the CloudNativePG `Cluster` (PR #94): each
+      PostgreSQL instance went from 500m / 1 Gi to 28m / 384 Mi (the
+      PostgreSQL floor; its peak was 153 MiB), limit 768 Mi, no CPU limit,
+      and the barman-cloud sidecar got 43m / 160 Mi, limit 320 Mi (peak
+      120 MiB). The sidecar's values live on the `ObjectStore`, which Argo CD
+      syncs, and a change there can roll the whole Cluster by itself, so the
+      merge and the hand apply of the Cluster ran in one slot: the
+      `ObjectStore` synced first, then the Cluster was applied, and one
+      rolling restart carried both. The primary restarted in place, last,
+      and took no writes from 10:59:04 to 11:02:19 UTC. Proven on the live
+      pods (new resources, Burstable, 0 restarts), both replicas streaming,
+      and the first WAL segment after the restart archived by the new
+      sidecar at 11:07 UTC (plugin log and `pg_stat_archiver`; the bucket
+      itself was not listed). `WorkersLoseNPlusOne` cleared.
 - [x] Alert in the Alert Chat when a container's working set stays above
       90 % of its request or 85 % of its limit, and on any OOM kill. The
       right-sized requests leave little slack, and the applications' memory
@@ -155,9 +169,15 @@ memory), and Envoy keeps at least 128 Mi for traffic bursts.
       static pods on the control plane are left out of the two memory rules
       until Phase 2 sizes them (PR #84): etcd holds 96 % of kubeadm's
       100 Mi request on a node no workload competes for.
-- [ ] Give a request to every container that has none: cert-manager, the
+- [x] Give a request to every container that has none: cert-manager, the
       barman-cloud plugin, the hcloud CSI driver. A pod without requests is
       BestEffort, and the kubelet evicts it first under memory pressure.
+      **Done 2026-11-07**: cert-manager and the barman-cloud plugin in
+      PR #87, the hcloud CSI driver, the cloud controller manager and
+      flannel in PR #89 (with system priority classes in PR #92, after a
+      CSI node pod stayed Pending on a full worker), and the barman-cloud
+      sidecar in PR #94. kube-proxy and the kubeadm static pods are left to
+      Phase 2, with the control plane.
 - [x] Add a LimitRange to every application namespace, so a manifest without
       resources gets a small default instead of none. The same object is the
       default for every future client namespace. **Done 2026-11-03**:
@@ -207,10 +227,15 @@ configured default.
       missed it. Two recording rules now give every container's request and
       limit with the native sidecars included, and all three rules read them;
       the unit tests that cover the sidecar fail on the first version.
-- [ ] Add a `--server-type` flag to `kluster node add`. The worker set already
+- [x] Add a `--server-type` flag to `kluster node add`. The worker set already
       stores a server type per worker (`internal/workerset`), but `node add`
       always takes `workers.serverType` from `kluster.yaml`, so a `cpx32` or a
       `cx33` (when back in stock) cannot be added beside the `cx23` workers.
+      **Done 2026-11-07** (PR #91): the type is checked against the Hetzner
+      API (it exists, is offered and is not deprecated in the Control
+      Plane's location) before it is written to the Worker set. Proven by a
+      live Plan Mode run: `cpx32` read back as available in `hel1`, and
+      `cx99` was refused.
 - [ ] Measure the control plane's peak memory and record a trigger for a larger
       server. The `k8s-cp` node used about 60 % of its 4 GB on 2026-11-01, and
       `kube-apiserver` alone peaked at about 1.6 GiB without a memory request.
