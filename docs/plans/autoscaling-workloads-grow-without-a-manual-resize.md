@@ -1,60 +1,67 @@
 ---
 title: "Autoscaling: workloads grow without a manual resize"
-description: "How a container's memory is raised before it runs out, once the right-sized requests leave little slack: the options weighed so far and the questions a design session has to settle."
+description: "The steps that let the Vertical Pod Autoscaler raise and lower the cluster's own containers before they run out, with node memory as their ceiling, and then let the first application scale its replicas on load."
 type: plan
-status: proposed
+status: active
 topics: [kubernetes, monitoring, gitops]
 ---
 
-**Deferred on 2026-11-05: this work gets its own design session.** The
-[Capacity Plan](./capacity-right-size-then-grow-by-cost.md) sets every
+The [Capacity Plan](./capacity-right-size-then-grow-by-cost.md) set every
 request from a measured peak
 ([ADR 0013](../adr/0013-requests-follow-measured-peaks-and-the-clusters-own-workloads-carry-no-cpu-limit.md)),
-which removes the slack the old `512Mi` default gave by accident. The
-applications see little traffic today, so their memory use will only go up,
-and every rise past the request makes a container an eviction candidate; a
-rise past the limit is an OOM kill.
+which removed the slack the old `512Mi` default gave by accident, and added
+alerts when a container nears its request or its limit. The raise after the
+alert was still a person editing Git, and in the first days it was needed
+three times (PRs #88, #97, #99). The design session of 2026-11-05 chose the
+Vertical Pod Autoscaler for the raise and the node's memory as the ceiling;
+[ADR 0014](../adr/0014-the-vertical-pod-autoscaler-sizes-the-clusters-own-workloads-and-node-memory-is-their-ceiling.md)
+records the choice and the options it beat. This Plan builds it, in the order
+the ADR sets: everything in `Off` for three days first, then resizes and no
+memory limits, then the kubelet reserve.
 
-Phase 1 of the Capacity Plan ships the notification: alerts in the Alert Chat
-when a container's working set nears its request or its limit, and on any OOM
-kill. What it does not ship is the raise. Today a person reads the alert and
-changes the value in Git. This Plan makes the raise automatic, with the
-notification first and the new value after it.
+## The Vertical Pod Autoscaler sizes the own workloads
 
-The difficulty is where the values live. A container's resources are written
-in three kinds of source: Helm values files rendered by `render.sh` (Argo CD,
-monitoring, cert-manager, metrics-server), Kustomize deployments (the
-applications under `projects/`), and the CloudNativePG `Cluster`, whose pods
-the operator owns. An automatic raise either edits all three in Git, or
-changes the running pods and lets Git fall behind.
+**Done when:** VPA runs under `core/vpa`, synced by Argo CD; every own workload
+(static pods and client namespaces excepted) has a `VerticalPodAutoscaler`
+object; the cluster services and applications run in `InPlaceOrRecreate`
+without memory limits while PostgreSQL, Redis and the JVMs stay in `Off`; the
+resize notifications and node alerts are live; each worker has a measured
+kubelet reserve and soft eviction threshold; and a resize has been proven on
+live by driving one container past its request.
 
-## Memory raise after an alert
-
-**Done when:** a container whose working set nears its limit gets a higher
-request and limit without a person editing a file, the Alert Chat says so
-before or as it happens, Git and the live values agree again within a known
-time, and the raise has been proven on live by driving one container over
-its threshold.
-
-- [ ] Decide the mechanism in a design session and record it as a Decision
-      page. Options weighed on 2026-11-05:
-      the Vertical Pod Autoscaler (kubernetes/autoscaler) in
-      `InPlaceOrRecreate` mode raises request and limit on the running pod
-      with no restart (in-place resize is GA on the cluster's v1.37), with a
-      `minAllowed` per container at the ADR 0013 floors, PostgreSQL excluded,
-      three more pods (about 200 MiB) and an admission webhook, and Git behind
-      the live pods until a fold-back PR; an in-cluster job that opens a PR
-      with the new value for the operator to merge, which keeps Git the truth
-      but needs a writer for each of the three sources and raises nothing at
-      night; or the alert alone with the suggested value.
-- [ ] Build the chosen mechanism under `core/`, synced by Argo CD, with a
-      pinned chart and image.
-- [ ] Handle the capped processes: Redis keeps `maxmemory` below its limit
-      and a JVM takes its heap from the limit (`duster` runs
-      `-XX:MaxRAMPercentage=75`), so a raise there changes the process's own
-      cap or is excluded.
-- [ ] Prove it on live: one container driven past its threshold, the alert
-      seen, the raise applied, Git brought back in line.
+- [x] Decide the mechanism in a design session and record it as a Decision
+      page. Done 2026-11-07:
+      [ADR 0014](../adr/0014-the-vertical-pod-autoscaler-sizes-the-clusters-own-workloads-and-node-memory-is-their-ceiling.md),
+      from the operator's answers of 2026-11-05 (VPA in mixed modes, no memory
+      limits on own workloads, raise and lower, Git as the start value with a
+      drift alert) and of 2026-11-07 (objects next to their workload).
+- [ ] Install VPA 1.8.1 under `core/vpa` from the pinned chart
+      `vertical-pod-autoscaler` 0.15.0 through a `render.sh`: one replica each
+      of recommender, updater and admission controller, the webhook
+      certificate from cert-manager, the recommender's floors lowered to
+      32 MiB and `10m`, the CRDs in `crds.yaml` for `kluster services seed`,
+      and `core-vpa` in the `core` ApplicationSet.
+- [ ] Add one `VerticalPodAutoscaler` per own workload in `Off`, with
+      `minAllowed` at the ADR 0013 floors: next to the workload in
+      `core/<dir>/` and under `projects/`, and in `core/vpa` for the
+      kube-system and kube-flannel workloads.
+- [ ] After three days in `Off`, compare each recommendation with the capacity
+      snapshots and the current requests, and record the result.
+- [ ] Add the alerts: each resize as a notification grouped by namespace over
+      5 minutes; an Infeasible resize, a Pending pod and an OOM kill at once;
+      node memory available under 15 % (warning) and under 8 % or
+      MemoryPressure (critical); a node's requests above 90 % of allocatable
+      for 30 minutes; any memory-pressure eviction; and a recommendation more
+      than twice or less than half its Git value for 7 days.
+- [ ] Move the cluster services and applications to `InPlaceOrRecreate` and
+      remove their memory limits. PostgreSQL, Redis (`maxmemory` below its
+      limit) and the JVMs (`authos-api` at `-Xmx256m`, `duster` at
+      `-XX:MaxRAMPercentage=75`) stay in `Off` and keep their limits.
+- [ ] Measure the kubelet and system memory on each worker and set
+      `kubeReserved`, `systemReserved` and a soft eviction threshold through
+      kluster, one node at a time.
+- [ ] Prove it on live: one container driven past its request, the resize
+      seen in the Alert Chat, and Git brought back in line.
 
 ## Horizontal scaling
 
@@ -70,10 +77,5 @@ replica.
 
 ## Open questions
 
-- Does an automatic raise need the operator's approval, or is the
-  notification enough? A raise at night that waits for approval does not
-  prevent the OOM kill.
-- Does VPA also lower requests, which would make right-sizing continuous, or
-  only raise them?
-- How does a raise interact with the N+1 alert of the Capacity Plan's Phase 2:
-  should a raise that breaks N+1 still happen?
+- When do client namespaces get VPA objects, and do they then keep the CPU
+  and memory limits of their LimitRange?
