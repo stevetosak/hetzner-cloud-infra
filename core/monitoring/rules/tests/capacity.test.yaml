@@ -203,3 +203,37 @@ tests:
                 a cushion. Lower a request that is above its measured peak
                 (ADR 0013), or buy a worker by the Capacity Plan's order of
                 purchase.
+
+  # The control plane at 95 % used memory fires after 1.5 hours; a worker at
+  # 95 % does not, and the control plane at 85 % does not.
+  - interval: 1m
+    input_series:
+      - {series: 'node_memory_MemTotal_bytes{instance="10.0.1.5:9100"}', values: '1000x120'}
+      - {series: 'node_memory_MemAvailable_bytes{instance="10.0.1.5:9100"}', values: '50x120'}
+      - {series: 'node_uname_info{instance="10.0.1.5:9100",nodename="k8s-cp"}', values: '1x120'}
+      - {series: 'kube_node_role{node="k8s-cp",role="control-plane"}', values: '1x120'}
+      - {series: 'node_memory_MemTotal_bytes{instance="10.0.1.6:9100"}', values: '1000x120'}
+      - {series: 'node_memory_MemAvailable_bytes{instance="10.0.1.6:9100"}', values: '50x120'}
+      - {series: 'node_uname_info{instance="10.0.1.6:9100",nodename="k8swk1"}', values: '1x120'}
+    alert_rule_test:
+      - {eval_time: 80m, alertname: ControlPlaneMemoryHigh}
+      - eval_time: 100m
+        alertname: ControlPlaneMemoryHigh
+        exp_alerts:
+          - exp_labels: {severity: warning, node: k8s-cp}
+            exp_annotations:
+              summary: "The control plane k8s-cp has used 95% of its memory for 1.5 hours."
+              description: >-
+                The control plane's memory is close to full. Find what grew
+                (kube-apiserver, etcd); if it is growth and not a leak, the
+                operator decides on a larger server (Capacity Plan, Reference
+                page "Capacity and growth"). Nothing is bought automatically.
+
+  - interval: 1m
+    input_series:
+      - {series: 'node_memory_MemTotal_bytes{instance="10.0.1.5:9100"}', values: '1000x120'}
+      - {series: 'node_memory_MemAvailable_bytes{instance="10.0.1.5:9100"}', values: '150x120'}
+      - {series: 'node_uname_info{instance="10.0.1.5:9100",nodename="k8s-cp"}', values: '1x120'}
+      - {series: 'kube_node_role{node="k8s-cp",role="control-plane"}', values: '1x120'}
+    alert_rule_test:
+      - {eval_time: 100m, alertname: ControlPlaneMemoryHigh}

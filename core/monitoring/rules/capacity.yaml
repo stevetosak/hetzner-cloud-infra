@@ -39,8 +39,17 @@
 # N+1 as a requirement: a drain of k8swk2 showed that the requests fit on two
 # workers by sum while the PostgreSQL replica fitted on neither. A sum, like
 # this share, never proves that each pod fits on one node. Native sidecars
-# count; ordinary init containers do not. Unit tests:
-# rules/tests/capacity.test.yaml, run by check-rules.sh.
+# count; ordinary init containers do not.
+#
+# ControlPlaneMemoryHigh is the signal to consider a larger control-plane
+# server (Capacity Plan, Phase 2): the node's used memory (MemTotal −
+# MemAvailable) above 90 % for 1.5 hours. Requests do not show it: the
+# kubeadm static pods carry little or none (kube-apiserver, the largest at
+# 1811 MiB on 2026-11-05..07, has none). The chart's NodeMemoryHighUtilization
+# fires at the same 90 % after 15 minutes, on any node; this one says the
+# level held. Neither alert buys anything: the operator decides.
+#
+# Unit tests: rules/tests/capacity.test.yaml, run by check-rules.sh.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -148,3 +157,26 @@ spec:
               a cushion. Lower a request that is above its measured peak
               (ADR 0013), or buy a worker by the Capacity Plan's order of
               purchase.
+
+        - alert: ControlPlaneMemoryHigh
+          expr: |
+            (
+              max by (node) (
+                label_replace(
+                  (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)
+                    * on (instance) group_left (nodename) node_uname_info,
+                  "node", "$1", "nodename", "(.*)"
+                )
+              )
+                and on (node) kube_node_role{role="control-plane"}
+            ) > 0.9
+          for: 90m
+          labels:
+            severity: warning
+          annotations:
+            summary: "The control plane {{ $labels.node }} has used {{ $value | humanizePercentage }} of its memory for 1.5 hours."
+            description: >-
+              The control plane's memory is close to full. Find what grew
+              (kube-apiserver, etcd); if it is growth and not a leak, the
+              operator decides on a larger server (Capacity Plan, Reference
+              page "Capacity and growth"). Nothing is bought automatically.
