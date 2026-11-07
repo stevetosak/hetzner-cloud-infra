@@ -2,7 +2,7 @@
 title: "Capacity: right-size, then grow by cost"
 description: "How the cluster gets enough compute for paying workloads at the lowest cost: first reclaim the memory that requests reserve and nothing uses, then buy nodes by written triggers."
 type: plan
-status: active
+status: done
 topics: [kubernetes, provisioning, monitoring]
 ---
 
@@ -43,7 +43,7 @@ over the API and the price pages on 2026-11-01:
 | AX41 (dedicated server) | 64 GB | 59.00 | 0.92 | yes, no setup fee |
 
 A `cx23` is the cheapest Cloud memory that can be bought today, and it is
-billed by the hour. A dedicated server is cheaper per GB above about 25 GB of
+billed by the hour. A dedicated server is cheaper in total above about 40 GB of
 need, but it brings work: a vSwitch to the Cloud network, a node the Hetzner
 CCM does not own, and no Cloud Volumes. **If `cx23` stock runs out in `hel1`,
 the next Cloud option costs three times as much per GB, and the dedicated
@@ -265,14 +265,27 @@ configured default.
       Plane's location) before it is written to the Worker set. Proven by a
       live Plan Mode run: `cpx32` read back as available in `hel1`, and
       `cx99` was refused.
-- [ ] Measure the control plane's peak memory and record a trigger for a larger
+- [x] Measure the control plane's peak memory and record a trigger for a larger
       server. The `k8s-cp` node used about 60 % of its 4 GB on 2026-11-01, and
       `kube-apiserver` alone peaked at about 1.6 GiB without a memory request.
       A highly available control plane is a separate Plan.
-- [ ] Write the Reference page `Capacity and growth`: the sizing rule, the cushion
+      **Done 2026-11-07** (PR #102): over the Prometheus window from
+      2026-11-05 21:02 to 2026-11-07 17:45 UTC the node used 62 % of its
+      memory on average and 67 % at the peak, `kube-apiserver` 1811 MiB. The
+      trigger is `ControlPlaneMemoryHigh`: used memory above 90 % for
+      1.5 hours, about 870 MiB above that peak. It watches use, not requests,
+      because the kubeadm static pods carry little or none. Proven loaded with
+      health `ok` and inactive (Prometheus rules API, 17:45 UTC).
+- [x] Write the Reference page `Capacity and growth`: the sizing rule, the cushion
       trigger, the order of purchase (`cx23` by the hour while in stock, then
       the dedicated path), the point where a dedicated server is cheaper, and
       the control-plane trigger. Prices on it carry the date they were checked.
+      **Done 2026-11-07**: [Capacity and growth](../reference/capacity-and-growth.md).
+      The prices were checked again over the Cloud API and had not changed;
+      the table above includes each server's primary IPv4. **`cx23` was out
+      of stock in `hel1` that day** (in stock only in `nbg1`, where the
+      `hel1` volumes cannot attach), so the next worker would be a `cpx32` or
+      the dedicated server unless the stock returns.
 
 ## Decisions taken on 2026-11-01
 
