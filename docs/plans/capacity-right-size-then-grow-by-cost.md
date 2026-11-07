@@ -52,10 +52,12 @@ server is cheaper from the first purchase.**
 **Done when:** every running container in `core/` and `projects/` carries a
 memory request set by the sizing rule (no container is left without one), the
 memory the workers' pods request fits on two workers (proven by a Prometheus
-query), one worker has been drained with every pod Ready again, every
-application namespace has a LimitRange, `kubectl top nodes` answers
+query), every application namespace has a LimitRange, `kubectl top nodes` answers
 from metrics-server, and an alert reaches the Alert Chat when a container
-nears its memory request or limit (added by the operator on 2026-11-05).
+nears its memory request or limit (added by the operator on 2026-11-05). The
+drain of one worker with every pod Ready again was part of this line until
+2026-11-07, when the operator dropped N+1 as a requirement (see the step
+below).
 
 The sizing rule, settled in
 [ADR 0013](../adr/0013-requests-follow-measured-peaks-and-the-clusters-own-workloads-carry-no-cpu-limit.md):
@@ -199,9 +201,26 @@ memory), and Envoy keeps at least 128 Mi for traffic bursts.
       Synced and Healthy, and `kubectl top nodes` answering for all four
       nodes. It used 13 MiB at start against its 64 Mi request. Prometheus
       did not restart, so the snapshot window is kept.
-- [ ] Prove N+1: confirm the requested memory fits on two workers, then drain
+- [x] Prove N+1: confirm the requested memory fits on two workers, then drain
       one worker, wait for every pod to be Ready, and uncordon it. The drain is
       a write to the live cluster and runs only with the operator's yes.
+      **Closed 2026-11-07, not met; N+1 is no longer a requirement.** The
+      requests fit on two workers by sum (7328 MiB against 7440 MiB
+      allocatable), but `k8swk2`, drained at 12:19 UTC, did not empty: every
+      other pod went Ready on `k8swk1` and `k8swk3`, and the PostgreSQL
+      replica `tosak-pg-cluster-2` stayed Pending with "Insufficient memory".
+      It needs 544 MiB (postgres and the barman-cloud sidecar) and the two
+      workers had 296 and 520 MiB free, 816 MiB in total but not in one place.
+      N+1 is a bin-packing question, and the sum the alert checks does not
+      answer it. The worker was uncordoned at 12:21; the replica was Ready
+      and streaming at 12:22. The operator then decided that spare memory is
+      kept as a cushion, without a guarantee that every pod fits on the
+      workers but one.
+
+      The drain also showed that a fresh start holds more memory than the
+      seven-day peak of a running pod: the hcloud CCM went from 18 to 60 MiB
+      against a 64Mi limit (resized in PR #97), Grafana from 318 to 639 MiB
+      and the ApplicationSet controller from 49 to 108 MiB.
 
 ## Phase 2 — Growth rules
 
