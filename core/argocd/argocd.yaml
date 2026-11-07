@@ -1526,10 +1526,10 @@ spec:
               protocol: TCP
           resources:
             limits:
-              memory: 192Mi
+              memory: 288Mi
             requests:
               cpu: 15m
-              memory: 96Mi
+              memory: 144Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

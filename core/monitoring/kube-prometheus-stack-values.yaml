@@ -315,13 +315,15 @@ grafana:
   # Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots 0 and 1): working set
   # 453 MiB (RSS 298, the rest page cache), 51m. The old 512Mi limit was at
   # 88 % of it. Raised after the roll (roll and check, ADR 0013): the new pod
-  # peaked at 499 MiB in its first 30 minutes on 2026-11-05.
+  # peaked at 499 MiB in its first 30 minutes on 2026-11-05. Raised again
+  # after the k8swk2 drain of 2026-11-07: the new pod held 627 MiB from its
+  # start and 650 MiB two hours later (650 x 1.3, rounded up to 16 Mi).
   resources:
     requests:
       cpu: 67m
-      memory: 656Mi
+      memory: 848Mi
     limits:
-      memory: 1312Mi
+      memory: 1696Mi
 
 # ---------------------------------------------------------------------------
 # Exporters

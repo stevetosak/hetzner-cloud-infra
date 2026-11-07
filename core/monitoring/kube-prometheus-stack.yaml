@@ -1808,7 +1808,7 @@ spec:
             - name: GF_UNIFIED_STORAGE_INDEX_PATH
               value: /var/lib/grafana-search/bleve
             - name: GOMEMLIMIT
-              value: "1180MiB"
+              value: "1526MiB"
           livenessProbe:
             failureThreshold: 10
             httpGet:
@@ -1822,10 +1822,10 @@ spec:
               port: grafana
           resources:
             limits:
-              memory: 1312Mi
+              memory: 1696Mi
             requests:
               cpu: 67m
-              memory: 656Mi
+              memory: 848Mi
       volumes:
         - name: tmp
           emptyDir: {}
