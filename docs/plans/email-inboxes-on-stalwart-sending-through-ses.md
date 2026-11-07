@@ -113,8 +113,8 @@ run of the Restore Drill passes its mail phase.
       HTTP listener 8080. The container runs as UID 2000 and keeps
       `NET_BIND_SERVICE` under `drop: [ALL]`.
       - [ ] Write the Stalwart settings as an NDJSON plan in git, and decide
-        how it is applied (the first start runs in recovery mode with the issued admin
-        password; later applies use the API). The plan sets the blob store to
+        how it is applied (the first start runs in recovery mode with the
+        issued admin password; later applies use the API). The plan sets the blob store to
         `S3` explicitly, because `Default` keeps the message files in the data
         store; it sends every non-local recipient to the relay route `ses`
         (`email-smtp.eu-central-1.amazonaws.com`, port 587, STARTTLS, SMTP
