@@ -23,8 +23,9 @@ workers have no room for a new workload until requests are right-sized. That
 is a dependency, not a trigger: when the capacity phase is done, the operator
 is told, and the operator starts Phase 3.
 
-The project and namespace are `mail`; the image is `stalwartlabs/stalwart`,
-pinned by digest; the hosts are `mail.tosak.net` (DNS only, the mail load
+The project and namespace are `mail`; the image is
+`stalwartlabs/stalwart:v1.0.3`, pinned by digest
+(`sha256:73c684a84c24f5b4206ec266a8deb8986fe44a9f623997e07f084388d943c8bd`); the hosts are `mail.tosak.net` (DNS only, the mail load
 balancer), `mail-admin.tosak.net` and `mta-sts.tosak.net` (both proxied, on the
 Gateway). The SES SMTP credentials, the two B2 keys and the Stalwart admin
 password are issued and live in Bitwarden; the metrics basic-auth password is
@@ -38,10 +39,12 @@ the B2 bucket exists in an EU region with versioning and a 30-day expiry of old
 versions; the CloudWatch alarms send a test message to the admin Gmail address;
 and the open checks below each have an answer in the Task Record.
 
-- [ ] Check that Backblaze B2 offers an EU region when the account is created.
+- [x] Check that Backblaze B2 offers an EU region when the account is created.
       The region is chosen per account and cannot be changed later. If there
       is no EU region, stop and bring the question back to the operator; the
-      design assumes one.
+      design assumes one. **Done 2026-11-07**: B2 offers EU Central
+      (Amsterdam); one region per account, chosen at sign-up and never changed
+      (Backblaze's data-regions page).
 - [ ] Create the B2 bucket for the message files with versioning on and a
       lifecycle rule `daysFromHidingToDeleting: 30`, the same window as the
       PostgreSQL backups. Create two application keys scoped to that bucket:
@@ -56,17 +59,29 @@ and the open checks below each have an answer in the Task Record.
 - [ ] Add the CloudWatch alarms on `Reputation.BounceRate` above 2 % and
       `Reputation.ComplaintRate` above 0.05 %, through an SNS topic to the
       admin Gmail address. Confirm the subscription and send one test alarm.
-- [ ] Check that the pinned Stalwart release (0.16 or later) reads its TLS
-      certificate and key from files (`%{file:…}%`). If it cannot, the
-      fallback is Stalwart's own TLS-ALPN-01, and ADR 0012 gets an amendment
-      before the build.
-- [ ] Check the rest of the Stalwart configuration against the pinned
+- [x] Check that the pinned Stalwart release reads its TLS certificate and
+      key from files. If it cannot, the fallback is Stalwart's own
+      TLS-ALPN-01, and ADR 0012 gets an amendment before the build.
+      **Done 2026-11-07**: the pin is 1.0.3, not "0.16 or later" (1.0 has a
+      new database layout; a 0.16 store cannot be upgraded in place). A
+      `Certificate` object takes `certificate` and `privateKey` as
+      `{"@type": "File", "filePath": "…"}`; a replaced file is read again
+      only after `Action/ReloadTlsCertificates` or a restart, which Reloader
+      gives. No fallback is needed.
+- [x] Check the rest of the Stalwart configuration against the pinned
       release: PostgreSQL as the data store, B2 through its S3 API as the blob
       store, PROXY protocol with a trusted-networks list, a relay route with
       SMTP authentication to SES, and the Prometheus exporter at
-      `/metrics/prometheus` with basic auth.
-- [ ] Confirm the current price of an `lb11`. These docs say €5.39 a month; a
+      `/metrics/prometheus` with basic auth. **Done 2026-11-07**, from the
+      1.0 documentation and the source at tag `v1.0.3`: each is supported.
+      🔴 In 1.0 only the bootstrap file `config.json` (the data store
+      connection) is a file. Every other setting lives in the data store and
+      is applied through the API with `stalwart-cli apply` from an NDJSON
+      plan; the Phase 2 steps below carry what this changes.
+- [x] Confirm the current price of an `lb11`. These docs say €5.39 a month; a
       rise in 2026 is reported. Correct ADR 0012 if the price changed.
+      **Done 2026-11-07**: €7.49 a month excluding VAT since Hetzner's price
+      change of 2026-04-01; ADR 0012 has an amendment.
 
 ## Phase 2 — Build and rehearsal
 
@@ -86,14 +101,34 @@ run of the Restore Drill passes its mail phase.
 - [ ] Add the Secrets to the Secret Catalog: SES SMTP, the B2 read-write key
       and the admin password (issued), and the metrics basic-auth password
       (generated); and the B2 read-only key for `pg-drill` (issued).
-- [ ] Write the Stalwart Deployment: one replica, no volume, the in-memory
-      store in process, the Reloader annotation, a first memory request of
-      256 Mi (an estimate, measured in the rehearsal and set by the capacity
-      Plan's sizing rule). Its configuration sends every non-local recipient to
-      SES on port 587 and never delivers to a foreign MX.
+- [ ] Write the Stalwart Deployment: one replica with `strategy: Recreate`,
+      no volume, the in-memory store in process, the Reloader annotation, a
+      first memory request of 256 Mi (an estimate, measured in the rehearsal
+      and set by the capacity Plan's sizing rule). Each process leases a node
+      ID in the data store and keeps its in-memory store to itself, so two
+      pods must never overlap; Recreate prevents a rolling update from
+      starting the second one. The bootstrap `config.json` (the `PostgreSql`
+      data store, its password from a file) comes from a ConfigMap. The
+      probes are Stalwart's own: `/healthz/live` and `/healthz/ready` on the
+      HTTP listener 8080. The container runs as UID 2000 and keeps
+      `NET_BIND_SERVICE` under `drop: [ALL]`.
+      - [ ] Write the Stalwart settings as an NDJSON plan in git, and decide
+        how it is applied (the first start runs in recovery mode with the issued admin
+        password; later applies use the API). The plan sets the blob store to
+        `S3` explicitly, because `Default` keeps the message files in the data
+        store; it sends every non-local recipient to the relay route `ses`
+        (`email-smtp.eu-central-1.amazonaws.com`, port 587, STARTTLS, SMTP
+        authentication) through the outbound strategy's `route` expression, and
+        never delivers to a foreign MX; and it enables the Prometheus exporter
+        with basic auth. The full-text index then lives in PostgreSQL (the
+        search store's default); the rehearsal measures what that adds.
 - [ ] Write the `LoadBalancer` Service for 25, 465 and 993 with the Hetzner
-      annotations (`lb11`, `hel1`, PROXY protocol on), and set Stalwart's
-      trusted networks to the load balancer's source range only.
+      annotations (`lb11`, `hel1`, PROXY protocol on), and set the trusted
+      networks on the listeners for 25, 465 and 993 only
+      (`overrideProxyTrustedNetworks`), to the source range the pod sees
+      behind the load balancer. A connection from a trusted network without a
+      PROXY header is closed, and the global list would also exempt that range
+      from auto-ban.
 - [ ] Add the cert-manager `Certificate` for `mail.tosak.net` in `mail`, from
       `letsencrypt-prod`, mounted into the pod.
 - [ ] Route `mail-admin.tosak.net` on the Gateway to Stalwart's admin paths
@@ -114,7 +149,12 @@ run of the Restore Drill passes its mail phase.
       2026-11-02 describes: the copy as of the replay end, the throw-away
       Stalwart with no SES credentials, no relay route, the read-only key and
       no Service, the canary `drill@tosak.net` checked by sha256, and K = 20
-      random messages.
+      random messages. 🔴 In Stalwart 1.0 the restored `mail` database also
+      holds every setting, including the relay route and the blob store that
+      points at the production bucket. The drill Stalwart must replace those
+      settings before any mail service starts, for example by starting in
+      recovery mode (only the management listener runs, according to the
+      documentation; the build proves it) and applying a drill plan first.
 - [ ] Run the rehearsal and record the measured memory, the proofs in the
       finish line above, and every fault found, in the Task Record.
 
