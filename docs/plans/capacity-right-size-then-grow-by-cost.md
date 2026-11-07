@@ -27,7 +27,9 @@ services by habit. Grafana goes the other way: 256 MiB requested, 615 MiB used.
 node is bought.** Requests at the measured peak plus 30 % come to about
 5.1 GiB, which fits on two workers (about 7.4 GiB allocatable) with room to
 spare. The cluster then survives the loss of one worker (N+1) on the three
-it has, and a first client fits without a new node.
+it has, and a first client fits without a new node. (N+1 was dropped as a
+requirement on 2026-11-07; spare memory is kept as a cushion instead. See
+Phase 1.)
 
 Growth after that is a price question. Hetzner prices, excluding VAT, checked
 over the API and the price pages on 2026-11-01:
@@ -52,10 +54,12 @@ server is cheaper from the first purchase.**
 **Done when:** every running container in `core/` and `projects/` carries a
 memory request set by the sizing rule (no container is left without one), the
 memory the workers' pods request fits on two workers (proven by a Prometheus
-query), one worker has been drained with every pod Ready again, every
-application namespace has a LimitRange, `kubectl top nodes` answers
+query), every application namespace has a LimitRange, `kubectl top nodes` answers
 from metrics-server, and an alert reaches the Alert Chat when a container
-nears its memory request or limit (added by the operator on 2026-11-05).
+nears its memory request or limit (added by the operator on 2026-11-05). The
+drain of one worker with every pod Ready again was part of this line until
+2026-11-07, when the operator dropped N+1 as a requirement (see the step
+below).
 
 The sizing rule, settled in
 [ADR 0013](../adr/0013-requests-follow-measured-peaks-and-the-clusters-own-workloads-carry-no-cpu-limit.md):
@@ -107,7 +111,7 @@ memory), and Envoy keeps at least 128 Mi for traffic bursts.
       The first-hour check raised `doma` from 96 to 128 Mi: the new pod
       held about 92 MiB from its start, where the long-running one had held
       60 MiB.
-- [ ] Right-size the cluster services: Argo CD, Envoy Gateway and its
+- [x] Right-size the cluster services: Argo CD, Envoy Gateway and its
       `EnvoyProxy`, the CloudNativePG `Cluster`, Redis, reloader and
       Prometheus. Prometheus peaked at 848 MiB working set against a 400Mi
       request, Grafana at 453 MiB against 384Mi. Monitoring changed first
@@ -143,6 +147,20 @@ memory), and Envoy keeps at least 128 Mi for traffic bursts.
       `managedFields` entries are removed before the merge, which changes no
       pod. Removed after the merge, the field would have no owner and stay.
       `core/hcloud` and `core/cni` are applied by hand and follow separately.
+      **Done 2026-11-07** with the CloudNativePG `Cluster` (PR #94): each
+      PostgreSQL instance went from 500m / 1 Gi to 28m / 384 Mi (the
+      PostgreSQL floor; its peak was 153 MiB), limit 768 Mi, no CPU limit,
+      and the barman-cloud sidecar got 43m / 160 Mi, limit 320 Mi (peak
+      120 MiB). The sidecar's values live on the `ObjectStore`, which Argo CD
+      syncs, and a change there can roll the whole Cluster by itself, so the
+      merge and the hand apply of the Cluster ran in one slot: the
+      `ObjectStore` synced first, then the Cluster was applied, and one
+      rolling restart carried both. The primary restarted in place, last,
+      and took no writes from 10:59:04 to 11:02:19 UTC. Proven on the live
+      pods (new resources, Burstable, 0 restarts), both replicas streaming,
+      and the first WAL segment after the restart archived by the new
+      sidecar at 11:07 UTC (plugin log and `pg_stat_archiver`; the bucket
+      itself was not listed). `WorkersLoseNPlusOne` cleared.
 - [x] Alert in the Alert Chat when a container's working set stays above
       90 % of its request or 85 % of its limit, and on any OOM kill. The
       right-sized requests leave little slack, and the applications' memory
@@ -155,9 +173,15 @@ memory), and Envoy keeps at least 128 Mi for traffic bursts.
       static pods on the control plane are left out of the two memory rules
       until Phase 2 sizes them (PR #84): etcd holds 96 % of kubeadm's
       100 Mi request on a node no workload competes for.
-- [ ] Give a request to every container that has none: cert-manager, the
+- [x] Give a request to every container that has none: cert-manager, the
       barman-cloud plugin, the hcloud CSI driver. A pod without requests is
       BestEffort, and the kubelet evicts it first under memory pressure.
+      **Done 2026-11-07**: cert-manager and the barman-cloud plugin in
+      PR #87, the hcloud CSI driver, the cloud controller manager and
+      flannel in PR #89 (with system priority classes in PR #92, after a
+      CSI node pod stayed Pending on a full worker), and the barman-cloud
+      sidecar in PR #94. kube-proxy and the kubeadm static pods are left to
+      Phase 2, with the control plane.
 - [x] Add a LimitRange to every application namespace, so a manifest without
       resources gets a small default instead of none. The same object is the
       default for every future client namespace. **Done 2026-11-03**:
@@ -179,15 +203,34 @@ memory), and Envoy keeps at least 128 Mi for traffic bursts.
       Synced and Healthy, and `kubectl top nodes` answering for all four
       nodes. It used 13 MiB at start against its 64 Mi request. Prometheus
       did not restart, so the snapshot window is kept.
-- [ ] Prove N+1: confirm the requested memory fits on two workers, then drain
+- [x] Prove N+1: confirm the requested memory fits on two workers, then drain
       one worker, wait for every pod to be Ready, and uncordon it. The drain is
       a write to the live cluster and runs only with the operator's yes.
+      **Closed 2026-11-07, not met; N+1 is no longer a requirement.** The
+      requests fit on two workers by sum (7328 MiB against 7440 MiB
+      allocatable), but `k8swk2`, drained at 12:19 UTC, did not empty: every
+      other pod went Ready on `k8swk1` and `k8swk3`, and the PostgreSQL
+      replica `tosak-pg-cluster-2` stayed Pending with "Insufficient memory".
+      It needs 544 MiB (postgres and the barman-cloud sidecar) and the two
+      workers had 296 and 520 MiB free, 816 MiB in total but not in one place.
+      N+1 is a bin-packing question, and the sum the alert checks does not
+      answer it. The worker was uncordoned at 12:21; the replica was Ready
+      and streaming at 12:22. The operator then decided that spare memory is
+      kept as a cushion, without a guarantee that every pod fits on the
+      workers but one.
+
+      The drain also showed that a fresh start holds more memory than the
+      seven-day peak of a running pod: the hcloud CCM went from 18 to 60 MiB
+      against a 64Mi limit (resized in PR #97), Grafana from 318 to 639 MiB
+      and the ApplicationSet controller from 49 to 108 MiB (both resized in
+      PR #99).
 
 ## Phase 2 — Growth rules
 
 **Done when:** a Reference page holds the triggers that say when to buy which
-server, with the price table above, an alert fires when the workers lose N+1,
-and `kluster node add` can add a worker of a server type other than the
+server, with the price table above, an alert fires when the workers' pods
+request more than 80 % of the workers' allocatable memory (N+1 until
+2026-11-07), and `kluster node add` can add a worker of a server type other than the
 configured default.
 
 - [x] Add a PrometheusRule that fires when the memory the workers' pods request
@@ -207,15 +250,26 @@ configured default.
       missed it. Two recording rules now give every container's request and
       limit with the native sidecars included, and all three rules read them;
       the unit tests that cover the sidecar fail on the first version.
-- [ ] Add a `--server-type` flag to `kluster node add`. The worker set already
+      **Replaced 2026-11-07** (PR #98), when N+1 stopped being a requirement:
+      `WorkersMemoryCushionLow` fires after one hour when the workers' pods
+      request more than 80 % of the workers' allocatable memory, so at least
+      a fifth stays free as a cushion. Its value is the share. Proven loaded
+      with health `ok` and inactive (Prometheus rules API, 14:04 UTC), at a
+      live share of 65.7 %; its unit tests fail at a 90 % threshold.
+- [x] Add a `--server-type` flag to `kluster node add`. The worker set already
       stores a server type per worker (`internal/workerset`), but `node add`
       always takes `workers.serverType` from `kluster.yaml`, so a `cpx32` or a
       `cx33` (when back in stock) cannot be added beside the `cx23` workers.
+      **Done 2026-11-07** (PR #91): the type is checked against the Hetzner
+      API (it exists, is offered and is not deprecated in the Control
+      Plane's location) before it is written to the Worker set. Proven by a
+      live Plan Mode run: `cpx32` read back as available in `hel1`, and
+      `cx99` was refused.
 - [ ] Measure the control plane's peak memory and record a trigger for a larger
       server. The `k8s-cp` node used about 60 % of its 4 GB on 2026-11-01, and
       `kube-apiserver` alone peaked at about 1.6 GiB without a memory request.
       A highly available control plane is a separate Plan.
-- [ ] Write the Reference page `Capacity and growth`: the sizing rule, the N+1
+- [ ] Write the Reference page `Capacity and growth`: the sizing rule, the cushion
       trigger, the order of purchase (`cx23` by the hour while in stock, then
       the dedicated path), the point where a dedicated server is cheaper, and
       the control-plane trigger. Prices on it carry the date they were checked.
