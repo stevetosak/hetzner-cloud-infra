@@ -1,0 +1,9 @@
+# Synced by the Application core-vpa (ADR 0010, Amendment 2026-10-22; ADR 0014).
+# NOT listed, and never to be: namespace.yaml (the seed), crds.yaml (the seed),
+# vpa-values.yaml (render input).
+# `kluster services check` refuses a kustomization that names a *.enc.yaml,
+# pg-cluster.yaml, a values file, a crds.yaml or a Namespace.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - vertical-pod-autoscaler.yaml

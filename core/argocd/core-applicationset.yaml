@@ -48,6 +48,7 @@ spec:
           - {dir: pg-drill, path: core/pg-drill, namespace: pg-drill}
           - {dir: redis, path: core/redis, namespace: redis}
           - {dir: reloader, path: core/reloader, namespace: reloader}
+          - {dir: vpa, path: core/vpa, namespace: vpa}
 
   # 🔴 Deleting this ApplicationSet must not delete the cluster's services:
   # the generated Applications carry no resources finalizer while this is true.
