@@ -54,11 +54,18 @@ spec:
         # cannot be cleared. Bump it here when a recovery happens.
         serverName: tosak-pg-cluster-g1
 
+  # Sized by ADR 0013 from the 2026-11-01..07 peaks (Capacity Plan): 153 MiB
+  # working set and 21m CPU at most per instance, so the memory request is the
+  # PostgreSQL floor (384Mi), the limit twice that, and no CPU limit. The
+  # bootstrap-controller init container takes these values too. The
+  # barman-cloud sidecar's values are on the ObjectStore (objectstore.yaml).
+  #
+  # Applying a change here restarts every instance; the primary restarts in
+  # place and takes no writes for about 3.5 minutes (smartShutdownTimeout).
   resources:
     requests:
-      cpu: "500m"
-      memory: "1Gi"
+      cpu: 28m
+      memory: 384Mi
     limits:
-      cpu: "1"
-      memory: "2Gi"
+      memory: 768Mi
 

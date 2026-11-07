@@ -38,3 +38,15 @@ spec:
     data:
       # zstd is not offered for base backups; gzip is.
       compression: gzip
+  # The plugin-barman-cloud sidecar in each instance pod, sized by ADR 0013
+  # from the 2026-11-01..07 peaks: 120 MiB and 33m CPU at most (the daily base
+  # backup). A change here takes effect at the Cluster's next reconciliation and
+  # can roll every instance, the primary too (plugin docs, "Usage"): merge it in
+  # a time slot, like a change to the Cluster.
+  instanceSidecarConfiguration:
+    resources:
+      requests:
+        cpu: 43m
+        memory: 160Mi
+      limits:
+        memory: 320Mi
