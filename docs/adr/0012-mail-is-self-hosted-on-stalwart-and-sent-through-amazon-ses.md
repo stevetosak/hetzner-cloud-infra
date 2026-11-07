@@ -168,3 +168,20 @@ binary, with no data migration. Webmail, MTA-STS for client domains and DANE
 are left out for now. The choice as a whole is worth revisiting if SES's terms
 or prices change, if B2 stops offering an EU region, or if the mail outgrows
 one pod and the shared database.
+
+## Amendments
+
+**2026-11-07 — the second load balancer costs €7.49 a month.** The cost above
+gives €5.39 for an `lb11`. Hetzner's load balancer page, read on 2026-11-07,
+lists €7.49 a month (€0.0120 an hour) excluding VAT, the same in every
+location; the rise came with Hetzner's price change of 2026-04-01. The choice
+of a separate load balancer stands: the reasons against `TCPRoute`s on the
+shared Gateway do not depend on the price.
+
+The same check confirmed the rest of the design on the release it will run,
+Stalwart 1.0.3 (released 2026-11-04), from its documentation and the source at
+that tag. The certificate and key are read from files mounted from the
+cert-manager Secret, so Stalwart's own ACME client stays unused; a renewed file
+is read again only after a reload or a restart, which Reloader already does.
+PostgreSQL holds the data store, B2 holds the blobs through its S3 API, and the
+in-memory store stays in the process as long as no cluster coordinator is set.
