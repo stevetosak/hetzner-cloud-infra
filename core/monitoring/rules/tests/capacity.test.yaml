@@ -146,3 +146,67 @@ tests:
                 workers if one of them is drained. Lower a request that is
                 above its measured peak (ADR 0013), or buy a worker by the
                 Capacity Plan's order of purchase.
+
+  # A native sidecar (an init container with restartPolicy Always) at 152 MiB
+  # of a 160 MiB request fires like a container. An ordinary init container
+  # at 95 % of its request is ignored: it has finished.
+  - interval: 1m
+    input_series:
+      - {series: 'container_memory_working_set_bytes{namespace="pg-cluster",pod="pg-1",container="plugin-barman-cloud"}', values: '159383552x60'}
+      - {series: 'kube_pod_init_container_resource_requests{namespace="pg-cluster",pod="pg-1",container="plugin-barman-cloud",node="wk1",resource="memory"}', values: '167772160x60'}
+      - {series: 'kube_pod_init_container_info{namespace="pg-cluster",pod="pg-1",container="plugin-barman-cloud",restart_policy="Always"}', values: '1x60'}
+      - {series: 'container_memory_working_set_bytes{namespace="pg-cluster",pod="pg-1",container="bootstrap-controller"}', values: '381681664x60'}
+      - {series: 'kube_pod_init_container_resource_requests{namespace="pg-cluster",pod="pg-1",container="bootstrap-controller",node="wk1",resource="memory"}', values: '402653184x60'}
+      - {series: 'kube_pod_init_container_info{namespace="pg-cluster",pod="pg-1",container="bootstrap-controller"}', values: '1x60'}
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: ContainerMemoryNearRequest
+        exp_alerts:
+          - exp_labels: {severity: warning, namespace: pg-cluster, pod: pg-1, container: plugin-barman-cloud}
+            exp_annotations:
+              summary: "pg-cluster/plugin-barman-cloud uses 95% of its memory request."
+              description: >-
+                Pod pg-1. Raise its memory request and limit by the
+                sizing rule (ADR 0013: peak x 1.3, limit 2x) in git. Above its
+                request it is the first to be evicted under memory pressure.
+
+  # N+1 with a native sidecar: three workers of 1000 MiB, 600 MiB of movable
+  # pods and a 50 MiB DaemonSet pod on each, so 1900 MiB must fit in 2000
+  # MiB. A 150 MiB native sidecar in app-1 makes it 2050: 50 MiB short. A
+  # 500 MiB ordinary init container in app-2 does not count.
+  - interval: 1m
+    input_series:
+      - {series: 'kube_node_status_allocatable{node="wk1",resource="memory"}', values: '1048576000x90'}
+      - {series: 'kube_node_status_allocatable{node="wk2",resource="memory"}', values: '1048576000x90'}
+      - {series: 'kube_node_status_allocatable{node="wk3",resource="memory"}', values: '1048576000x90'}
+      - {series: 'kube_pod_container_resource_requests{namespace="doma",pod="app-1",container="app",node="wk1",resource="memory"}', values: '629145600x90'}
+      - {series: 'kube_pod_container_resource_requests{namespace="doma",pod="app-2",container="app",node="wk2",resource="memory"}', values: '629145600x90'}
+      - {series: 'kube_pod_container_resource_requests{namespace="doma",pod="app-3",container="app",node="wk3",resource="memory"}', values: '629145600x90'}
+      - {series: 'kube_pod_init_container_resource_requests{namespace="doma",pod="app-1",container="sidecar",node="wk1",resource="memory"}', values: '157286400x90'}
+      - {series: 'kube_pod_init_container_info{namespace="doma",pod="app-1",container="sidecar",restart_policy="Always"}', values: '1x90'}
+      - {series: 'kube_pod_init_container_resource_requests{namespace="doma",pod="app-2",container="init",node="wk2",resource="memory"}', values: '524288000x90'}
+      - {series: 'kube_pod_init_container_info{namespace="doma",pod="app-2",container="init"}', values: '1x90'}
+      - {series: 'kube_pod_status_phase{namespace="doma",pod="app-1",phase="Running"}', values: '1x90'}
+      - {series: 'kube_pod_status_phase{namespace="doma",pod="app-2",phase="Running"}', values: '1x90'}
+      - {series: 'kube_pod_status_phase{namespace="doma",pod="app-3",phase="Running"}', values: '1x90'}
+      - {series: 'kube_pod_container_resource_requests{namespace="kube-flannel",pod="ds-1",container="kube-flannel",node="wk1",resource="memory"}', values: '52428800x90'}
+      - {series: 'kube_pod_container_resource_requests{namespace="kube-flannel",pod="ds-2",container="kube-flannel",node="wk2",resource="memory"}', values: '52428800x90'}
+      - {series: 'kube_pod_container_resource_requests{namespace="kube-flannel",pod="ds-3",container="kube-flannel",node="wk3",resource="memory"}', values: '52428800x90'}
+      - {series: 'kube_pod_status_phase{namespace="kube-flannel",pod="ds-1",phase="Running"}', values: '1x90'}
+      - {series: 'kube_pod_status_phase{namespace="kube-flannel",pod="ds-2",phase="Running"}', values: '1x90'}
+      - {series: 'kube_pod_status_phase{namespace="kube-flannel",pod="ds-3",phase="Running"}', values: '1x90'}
+      - {series: 'kube_pod_owner{namespace="kube-flannel",pod="ds-1",owner_kind="DaemonSet"}', values: '1x90'}
+      - {series: 'kube_pod_owner{namespace="kube-flannel",pod="ds-2",owner_kind="DaemonSet"}', values: '1x90'}
+      - {series: 'kube_pod_owner{namespace="kube-flannel",pod="ds-3",owner_kind="DaemonSet"}', values: '1x90'}
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: WorkersLoseNPlusOne
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: "The workers are 50MiB short of N+1."
+              description: >-
+                The memory the workers' pods request no longer fits on the
+                workers if one of them is drained. Lower a request that is
+                above its measured peak (ADR 0013), or buy a worker by the
+                Capacity Plan's order of purchase.
