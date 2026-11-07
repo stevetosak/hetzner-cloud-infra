@@ -27,7 +27,9 @@ services by habit. Grafana goes the other way: 256 MiB requested, 615 MiB used.
 node is bought.** Requests at the measured peak plus 30 % come to about
 5.1 GiB, which fits on two workers (about 7.4 GiB allocatable) with room to
 spare. The cluster then survives the loss of one worker (N+1) on the three
-it has, and a first client fits without a new node.
+it has, and a first client fits without a new node. (N+1 was dropped as a
+requirement on 2026-11-07; spare memory is kept as a cushion instead. See
+Phase 1.)
 
 Growth after that is a price question. Hetzner prices, excluding VAT, checked
 over the API and the price pages on 2026-11-01:
@@ -220,13 +222,15 @@ memory), and Envoy keeps at least 128 Mi for traffic bursts.
       The drain also showed that a fresh start holds more memory than the
       seven-day peak of a running pod: the hcloud CCM went from 18 to 60 MiB
       against a 64Mi limit (resized in PR #97), Grafana from 318 to 639 MiB
-      and the ApplicationSet controller from 49 to 108 MiB.
+      and the ApplicationSet controller from 49 to 108 MiB (both resized in
+      PR #99).
 
 ## Phase 2 — Growth rules
 
 **Done when:** a Reference page holds the triggers that say when to buy which
-server, with the price table above, an alert fires when the workers lose N+1,
-and `kluster node add` can add a worker of a server type other than the
+server, with the price table above, an alert fires when the workers' pods
+request more than 80 % of the workers' allocatable memory (N+1 until
+2026-11-07), and `kluster node add` can add a worker of a server type other than the
 configured default.
 
 - [x] Add a PrometheusRule that fires when the memory the workers' pods request
@@ -246,6 +250,12 @@ configured default.
       missed it. Two recording rules now give every container's request and
       limit with the native sidecars included, and all three rules read them;
       the unit tests that cover the sidecar fail on the first version.
+      **Replaced 2026-11-07** (PR #98), when N+1 stopped being a requirement:
+      `WorkersMemoryCushionLow` fires after one hour when the workers' pods
+      request more than 80 % of the workers' allocatable memory, so at least
+      a fifth stays free as a cushion. Its value is the share. Proven loaded
+      with health `ok` and inactive (Prometheus rules API, 14:04 UTC), at a
+      live share of 65.7 %; its unit tests fail at a 90 % threshold.
 - [x] Add a `--server-type` flag to `kluster node add`. The worker set already
       stores a server type per worker (`internal/workerset`), but `node add`
       always takes `workers.serverType` from `kluster.yaml`, so a `cpx32` or a
@@ -259,7 +269,7 @@ configured default.
       server. The `k8s-cp` node used about 60 % of its 4 GB on 2026-11-01, and
       `kube-apiserver` alone peaked at about 1.6 GiB without a memory request.
       A highly available control plane is a separate Plan.
-- [ ] Write the Reference page `Capacity and growth`: the sizing rule, the N+1
+- [ ] Write the Reference page `Capacity and growth`: the sizing rule, the cushion
       trigger, the order of purchase (`cx23` by the hour while in stock, then
       the dedicated path), the point where a dedicated server is cheaper, and
       the control-plane trigger. Prices on it carry the date they were checked.
