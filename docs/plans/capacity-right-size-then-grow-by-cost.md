@@ -190,9 +190,23 @@ server, with the price table above, an alert fires when the workers lose N+1,
 and `kluster node add` can add a worker of a server type other than the
 configured default.
 
-- [ ] Add a PrometheusRule that fires when the memory the workers' pods request
+- [x] Add a PrometheusRule that fires when the memory the workers' pods request
       no longer fits on all workers but one. That alert is the trigger to buy a
       worker, so a purchase follows a measurement and not a feeling.
+      **Done 2026-11-06** (PR #90): `WorkersLoseNPlusOne` in
+      [`rules/capacity.yaml`](../../core/monitoring/rules/capacity.yaml), a
+      warning after one hour, its value the shortfall in bytes; the
+      DaemonSet pods of the drained worker are left out, because they do not
+      move. Proven loaded with health `ok` (Prometheus rules API), and firing
+      since 00:12 UTC at about 1200 MiB short: the PostgreSQL instances
+      still request 1 Gi each until the CloudNativePG `Cluster` is resized.
+      **The first version did not see native sidecars.** kube-state-metrics
+      reports an init container with `restartPolicy: Always`, such as the
+      barman-cloud sidecar in each PostgreSQL pod, only under
+      `kube_pod_init_container_*`, so the N+1 rule and both memory alerts
+      missed it. Two recording rules now give every container's request and
+      limit with the native sidecars included, and all three rules read them;
+      the unit tests that cover the sidecar fail on the first version.
 - [ ] Add a `--server-type` flag to `kluster node add`. The worker set already
       stores a server type per worker (`internal/workerset`), but `node add`
       always takes `workers.serverType` from `kluster.yaml`, so a `cpx32` or a
