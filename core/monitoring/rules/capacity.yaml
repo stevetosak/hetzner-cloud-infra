@@ -26,18 +26,20 @@
 # init container has finished before the pod's containers start, so it is
 # not counted.
 #
-# WorkersLoseNPlusOne is the trigger to buy a worker (Capacity Plan, Phase 2):
-# it fires when the memory the workers' pods request no longer fits on the
-# workers if any one of them is drained. Its value is the shortfall in bytes.
+# WorkersMemoryCushionLow is the trigger to buy a worker (Capacity Plan,
+# Phase 2): it fires when the memory the workers' pods request passes 80 % of
+# the workers' allocatable memory, so at least a fifth stays free as a
+# cushion. Its value is that share.
 #
 #   requested on the workers                 (Running and Pending pods, and
 #                                             Pending pods not yet on a node)
-#   - allocatable of the workers that stay
-#   - the drained worker's DaemonSet pods    (they stop, they do not move)
+#   / allocatable of the workers
 #
-# taken for the worker whose loss costs the most. It is a sum test: it does
-# not prove that each pod fits on one node, which only a drain proves.
-# Native sidecars count; ordinary init containers do not. Unit tests:
+# It replaced WorkersLoseNPlusOne on 2026-11-07, when the operator dropped
+# N+1 as a requirement: a drain of k8swk2 showed that the requests fit on two
+# workers by sum while the PostgreSQL replica fitted on neither. A sum, like
+# this share, never proves that each pod fits on one node. Native sidecars
+# count; ordinary init containers do not. Unit tests:
 # rules/tests/capacity.test.yaml, run by check-rules.sh.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
@@ -119,7 +121,7 @@ spec:
               minutes. Raise its memory limit in git; a JVM or Redis also needs
               its own cap checked (ADR 0013).
 
-        - alert: WorkersLoseNPlusOne
+        - alert: WorkersMemoryCushionLow
           expr: |
             (
               sum(
@@ -130,34 +132,19 @@ spec:
                 )
                   unless on (node) kube_node_role{role="control-plane"}
               )
-              - sum(
+              /
+              sum(
                 max by (node) (kube_node_status_allocatable{resource="memory"})
                   unless on (node) kube_node_role{role="control-plane"}
               )
-              + max(
-                (
-                  max by (node) (kube_node_status_allocatable{resource="memory"})
-                    unless on (node) kube_node_role{role="control-plane"}
-                )
-                - on (node) (
-                  sum by (node) (
-                    sum by (namespace, pod, node) (namespace_pod_container:memory_requests:bytes)
-                      * on (namespace, pod) group_left ()
-                    max by (namespace, pod) (kube_pod_owner{owner_kind="DaemonSet"})
-                      * on (namespace, pod) group_left ()
-                    max by (namespace, pod) (kube_pod_status_phase{phase=~"Pending|Running"})
-                  )
-                  or on (node) 0 * max by (node) (kube_node_status_allocatable{resource="memory"})
-                )
-              )
-            ) > 0
+            ) > 0.8
           for: 1h
           labels:
             severity: warning
           annotations:
-            summary: "The workers are {{ $value | humanize1024 }}B short of N+1."
+            summary: "The workers' pods request {{ $value | humanizePercentage }} of the workers' memory."
             description: >-
-              The memory the workers' pods request no longer fits on the
-              workers if one of them is drained. Lower a request that is
-              above its measured peak (ADR 0013), or buy a worker by the
-              Capacity Plan's order of purchase.
+              Less than a fifth of the workers' allocatable memory is left as
+              a cushion. Lower a request that is above its measured peak
+              (ADR 0013), or buy a worker by the Capacity Plan's order of
+              purchase.
