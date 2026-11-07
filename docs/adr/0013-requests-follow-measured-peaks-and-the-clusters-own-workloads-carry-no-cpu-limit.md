@@ -101,3 +101,13 @@ reaches its limit. The rule holds only while someone reads the snapshots; an
 alert on containers above their request, or the Vertical Pod Autoscaler's
 recommender in read-only mode, would make that automatic and is the point to
 revisit this decision.
+
+## Amendments
+
+**2026-11-07.** [ADR 0014](./0014-the-vertical-pod-autoscaler-sizes-the-clusters-own-workloads-and-node-memory-is-their-ceiling.md)
+makes this rule the start value instead of the running value: the Vertical Pod
+Autoscaler raises and lowers the requests of the cluster's own workloads from
+there, with the floors above as its `minAllowed`. When those workloads move to
+`InPlaceOrRecreate`, they also lose the memory limit of twice the request; the
+node's memory, with a kubelet reserve, becomes their ceiling. PostgreSQL,
+Redis, the JVMs and client namespaces keep this rule as written.
