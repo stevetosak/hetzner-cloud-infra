@@ -43,3 +43,6 @@ tools/kluster/.idea/
 # rule once that lands and the file is ready to be committed.
 projects/imaps/backend/manifests/configmap.yaml
 .kalfa/
+
+# Python bytecode from the monitoring scripts.
+__pycache__/
