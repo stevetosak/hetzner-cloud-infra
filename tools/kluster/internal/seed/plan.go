@@ -203,9 +203,11 @@ func concat(fsys fs.FS, files []string) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-// clusterNamespaces exist on every cluster without the seed: kubeadm makes
-// them. core-metrics-server puts its auth-reader RoleBinding in kube-system.
-var clusterNamespaces = []string{"kube-system"}
+// clusterNamespaces exist on every cluster before the seed runs: kubeadm makes
+// kube-system, and `kluster cp init` makes kube-flannel (core/cni/flannel.yaml).
+// core-metrics-server puts its auth-reader RoleBinding in kube-system; core-vpa
+// puts the VerticalPodAutoscaler objects of those workloads in both.
+var clusterNamespaces = []string{"kube-system", "kube-flannel"}
 
 // inNamespaces refuses a build that puts an object into a namespace the
 // environment makes no Namespace for and the cluster does not have from the
