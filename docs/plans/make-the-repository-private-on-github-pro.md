@@ -2,9 +2,11 @@
 title: "Make the repository private on GitHub Pro"
 description: "What has to change before hetzner-cloud-infra can go private without breaking a deploy, an ArgoCD sync or a docs build, and the order of the switch."
 type: plan
-status: proposed
+status: abandoned
 topics: [ci, gitops, docs, security]
 ---
+
+**Abandoned on 2026-11-08: the repository stays public.** The gain is small. The exploitable code is in the application repositories, which stay public; the history and docs.tosak.net already show the cluster's layout; and the switch would cost GitHub's free secret scanning and push protection and add two new credentials. The time from a published fault to a patched cluster matters more than hiding the manifests. A client's application may be open or closed source by the client's own choice, so client confidentiality is not a reason either. The plan below stays as it was written, as the record of what a switch would take.
 
 The repository `stevetosak/hetzner-cloud-infra` has been public since it was
 created. The operator decided on 2026-11-08 that it goes private, on a GitHub
