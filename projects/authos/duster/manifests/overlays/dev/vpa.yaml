@@ -1,0 +1,21 @@
+# The VerticalPodAutoscaler objects of the workloads of authos duster; the overlay sets the namespace (ADR 0014).
+# updateMode Off: the recommender writes a recommendation and nothing changes.
+# RequestsOnly: VPA sets requests, never limits. minAllowed is the ADR 0013
+# floor (10m, 32Mi), higher where ADR 0014 names one (PostgreSQL, Envoy).
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: duster
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: duster
+  updatePolicy:
+    updateMode: "Off"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: "*"
+        controlledValues: RequestsOnly
+        minAllowed: {cpu: 10m, memory: 32Mi}

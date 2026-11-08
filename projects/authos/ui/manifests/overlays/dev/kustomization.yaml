@@ -5,6 +5,7 @@ namespace: authos
 
 resources:
 - ../../base
+- vpa.yaml
 replicas:
 - count: 1
   name: authos-ui

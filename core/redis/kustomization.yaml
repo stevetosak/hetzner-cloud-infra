@@ -8,3 +8,4 @@ kind: Kustomization
 resources:
   - deployment.yaml
   - service.yaml
+  - vpa.yaml  # ADR 0014

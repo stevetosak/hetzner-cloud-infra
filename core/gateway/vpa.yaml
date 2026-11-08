@@ -1,0 +1,44 @@
+# The VerticalPodAutoscaler objects of the workloads of Envoy Gateway: the controller and the proxy of
+# the Gateway tosak (the controller names that Deployment by a hash of the Gateway) (ADR 0014).
+# updateMode Off: the recommender writes a recommendation and nothing changes.
+# RequestsOnly: VPA sets requests, never limits. minAllowed is the ADR 0013
+# floor (10m, 32Mi), higher where ADR 0014 names one (PostgreSQL, Envoy).
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: envoy-gateway
+  namespace: envoy-gateway-system
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: envoy-gateway
+  updatePolicy:
+    updateMode: "Off"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: "*"
+        controlledValues: RequestsOnly
+        minAllowed: {cpu: 10m, memory: 32Mi}
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: envoy-gateway-tosak
+  namespace: envoy-gateway-system
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: envoy-gateway-tosak-dcb74fb0
+  updatePolicy:
+    updateMode: "Off"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: envoy
+        controlledValues: RequestsOnly
+        minAllowed: {cpu: 10m, memory: 128Mi}
+      - containerName: "*"
+        controlledValues: RequestsOnly
+        minAllowed: {cpu: 10m, memory: 32Mi}

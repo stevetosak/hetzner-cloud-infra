@@ -12,3 +12,4 @@ resources:
   - appprojects.yaml
   - applicationset.yaml
   - core-applicationset.yaml
+  - vpa.yaml  # ADR 0014

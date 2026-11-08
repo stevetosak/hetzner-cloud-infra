@@ -5,6 +5,7 @@ namespace: authos
 
 resources:
 - ../../base
+- vpa.yaml
 
 images:
 - name: stevetosak/authos-api

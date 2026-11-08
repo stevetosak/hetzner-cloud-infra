@@ -9,3 +9,4 @@ kind: Kustomization
 resources:
   - cert-manager.yaml
   - clusterissuer.yaml
+  - vpa.yaml  # ADR 0014
