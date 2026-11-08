@@ -47,10 +47,16 @@ def scalar(expr):
     return float(result[0]["value"][1]) if result else 0.0
 
 
-def main(window):
+def window_header(window):
+    """The window line: the window must not reach before the lowest sample."""
     lowest = datetime.datetime.fromtimestamp(scalar("prometheus_tsdb_lowest_timestamp_seconds"), datetime.timezone.utc)
-    print(f"window {window}, lowest sample {lowest:%Y-%m-%d %H:%M} UTC, now {datetime.datetime.now(datetime.timezone.utc):%Y-%m-%d %H:%M} UTC")
+    return (f"window {window}, lowest sample {lowest:%Y-%m-%d %H:%M} UTC,"
+            f" now {datetime.datetime.now(datetime.timezone.utc):%Y-%m-%d %H:%M} UTC")
 
+
+def container_peaks(window):
+    """Per (namespace, container), the max over its pods: a dict with ws_mib,
+    req_mib, cpu_m, req_m, restarts and oom. vpa-compare.py reads it too."""
     ws = by_container(f"max_over_time(container_memory_working_set_bytes{{{CONTAINERS}}}[{window}])")
     cpu = by_container(f"max_over_time(rate(container_cpu_usage_seconds_total{{{CONTAINERS}}}[5m])[{window}:1m])")
     req_mem = by_container('kube_pod_container_resource_requests{resource="memory"}')
@@ -67,12 +73,20 @@ def main(window):
     def peak(values, keys):
         return max((values.get(k, 0.0) for k in keys), default=0.0)
 
+    return {group: {"ws_mib": peak(ws, keys) / MIB, "req_mib": peak(req_mem, keys) / MIB,
+                    "cpu_m": peak(cpu, keys) * 1000, "req_m": peak(req_cpu, keys) * 1000,
+                    "restarts": sum(restarts.get(k, 0.0) for k in keys), "oom": peak(oom, keys)}
+            for group, keys in groups.items()}
+
+
+def main(window):
+    print(window_header(window))
     print(f"{'namespace':22} {'container':34} {'ws MiB':>7} {'req MiB':>7} {'cpu m':>6} {'req m':>6} {'rst':>3} {'oom':>3}")
-    for (namespace, container), keys in sorted(groups.items()):
+    for (namespace, container), p in sorted(container_peaks(window).items()):
         print(f"{namespace:22} {container:34}"
-              f" {peak(ws, keys) / MIB:7.0f} {peak(req_mem, keys) / MIB:7.0f}"
-              f" {peak(cpu, keys) * 1000:6.0f} {peak(req_cpu, keys) * 1000:6.0f}"
-              f" {sum(restarts.get(k, 0.0) for k in keys):3.0f} {peak(oom, keys):3.0f}")
+              f" {p['ws_mib']:7.0f} {p['req_mib']:7.0f}"
+              f" {p['cpu_m']:6.0f} {p['req_m']:6.0f}"
+              f" {p['restarts']:3.0f} {p['oom']:3.0f}")
 
     workers = f'node=~"k8swk.*",{CONTAINERS}'
     total = scalar(f"sum(max_over_time(container_memory_working_set_bytes{{{workers}}}[{window}]))") / MIB
