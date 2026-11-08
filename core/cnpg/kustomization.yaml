@@ -15,6 +15,7 @@ resources:
   - source-objectstore.yaml
   - scheduled-backup.yaml
   - databases/doma.yaml
+  - vpa.yaml  # ADR 0014
 
 # Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots 0
 # and 1). Patches, because operator.yaml and plugin-barman-cloud.yaml are

@@ -16,3 +16,4 @@ resources:
   - certificate.yaml
   - http-redirect.yaml
   - apex-redirect.yaml
+  - vpa.yaml  # ADR 0014

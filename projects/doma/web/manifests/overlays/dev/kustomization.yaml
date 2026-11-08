@@ -5,6 +5,7 @@ namespace: doma
 
 resources:
 - ../../base
+- vpa.yaml
 
 images:
 - name: stevetosak/doma
