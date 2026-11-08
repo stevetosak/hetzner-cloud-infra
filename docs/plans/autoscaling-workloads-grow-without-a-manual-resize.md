@@ -35,16 +35,25 @@ live by driving one container past its request.
       from the operator's answers of 2026-11-05 (VPA in mixed modes, no memory
       limits on own workloads, raise and lower, Git as the start value with a
       drift alert) and of 2026-11-07 (objects next to their workload).
-- [ ] Install VPA 1.8.1 under `core/vpa` from the pinned chart
+- [x] Install VPA 1.8.1 under `core/vpa` from the pinned chart
       `vertical-pod-autoscaler` 0.15.0 through a `render.sh`: one replica each
       of recommender, updater and admission controller, the webhook
       certificate from cert-manager, the recommender's floors lowered to
       32 MiB and `10m`, the CRDs in `crds.yaml` for `kluster services seed`,
-      and `core-vpa` in the `core` ApplicationSet.
-- [ ] Add one `VerticalPodAutoscaler` per own workload in `Off`, with
+      and `core-vpa` in the `core` ApplicationSet. Done 2026-11-08
+      (PR #101, then `kluster services seed`): the three pods Ready and
+      `core-vpa` Synced and Healthy. The Application had used up its sync
+      retries while the namespace was missing and needed one manual sync
+      after the seed created it.
+- [x] Add one `VerticalPodAutoscaler` per own workload in `Off`, with
       `minAllowed` at the ADR 0013 floors: next to the workload in
       `core/<dir>/` and under `projects/`, and in `core/vpa` for the
-      kube-system and kube-flannel workloads.
+      kube-system and kube-flannel workloads. Done 2026-11-08
+      (PR #104): 38 objects, `RequestsOnly`; Prometheus, Alertmanager and
+      the CloudNativePG `Cluster` are targeted through their custom
+      resources, the top-level owners of their pods. Proven on live: every
+      object reports `RecommendationProvided` and none `ConfigUnsupported`
+      (`kubectl get vpa -A`). The three days in `Off` run from 2026-11-08.
 - [ ] After three days in `Off`, compare each recommendation with the capacity
       snapshots and the current requests, and record the result.
 - [ ] Add the alerts: each resize as a notification grouped by namespace over
