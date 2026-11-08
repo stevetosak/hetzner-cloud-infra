@@ -55,7 +55,9 @@ live by driving one container past its request.
       object reports `RecommendationProvided` and none `ConfigUnsupported`
       (`kubectl get vpa -A`). The three days in `Off` run from 2026-11-08.
 - [ ] After three days in `Off`, compare each recommendation with the capacity
-      snapshots and the current requests, and record the result.
+      snapshots and the current requests, and record the result:
+      [`vpa-compare.py`](../../core/monitoring/vpa-compare.py) prints both side
+      by side (`python3 -I core/monitoring/vpa-compare.py 3d`).
 - [ ] Add the alerts: each resize as a notification grouped by namespace over
       5 minutes; an Infeasible resize, a Pending pod and an OOM kill at once;
       node memory available under 15 % (warning) and under 8 % or
