@@ -18,7 +18,9 @@ a stopped machine, lost data, a rebuild from nothing. Version 11 of that
 prototype was accepted on 2026-11-09. Its design is also the baseline for
 later tosak applications, which are React (Authos UI, doma), so the design
 system is built as React components that the page consumes rather than as
-styles inside the page.
+styles inside the page. This Plan lays only its base, the tokens, primitives
+and model kit the page needs; the design system itself is a body of work of
+its own, with its own Plan.
 
 The prototype is one HTML file built by a Python generator, outside any
 repository. Its proof numbers (checks, releases, the drill) were measured by
@@ -36,13 +38,15 @@ The animation stays on the browser's Web Animations API, with the prototype's
 clock ported as a typed module rather than replaced by a library. The site
 goes live first with dated build-time numbers, and tosak-status follows.
 
-## The repository and the design system
+## The repository and the base of the design system
 
 **Done when:** `stevetosak/tosak-net` is public and its CI gate (lint,
-typecheck, test, build) passes on `main`; `packages/design` holds the tokens,
-the primitives the page uses and the model kit, with unit tests for the
-projection, the clock and the reconcile loop; a Decision page in the
-repository records the build shape and publishes on docs.tosak.net.
+typecheck, test, build) passes on `main`; `packages/design` holds the base of
+the design system (the tokens, the primitives the page uses and the model
+kit), with unit tests for the projection, the clock and the reconcile loop; a
+Decision page in the repository records the build shape and publishes on
+docs.tosak.net; and the design system's own Plan publishes there with status
+proposed.
 
 - [ ] Create the repository: pnpm workspace, strict TypeScript, ESLint,
       Prettier, Vitest, and the CI gate on every push. Commit the built v11
@@ -70,6 +74,10 @@ repository records the build shape and publishes on docs.tosak.net.
       starts one new job and retires an old one only when the new one is
       ready, that a stopped machine's jobs start again elsewhere, and that
       Pause holds every timer.
+- [ ] Write the design system's own Plan in the repository, with status
+      proposed: what it adds beyond the page's base, and what a second
+      application needs before it takes the package on. The open questions of
+      dark mode and of the npm scope and publishing trigger move there.
 
 ## The site on the cluster
 
@@ -139,12 +147,7 @@ query taken at the same time.
 
 ## Open questions
 
-- Dark mode. The prototype is light only. The page can ship light only, but a
-  design system that later applications build on may need a dark token set
-  from the start.
 - Old links under the apex. The redirect kept the path, so
   `tosak.net/cloud-infra` lands on the docs site today. After the cutover the
   site answers every path; its 404 page can link to the docs, or a route rule
   can keep sending known docs paths there.
-- The npm scope and the trigger for publishing `packages/design`, once a
-  second application takes it on.
