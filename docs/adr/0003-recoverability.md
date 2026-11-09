@@ -468,13 +468,14 @@ gap stays open.
 [ADR 0012](./0012-mail-is-self-hosted-on-stalwart-and-sent-through-amazon-ses.md)
 stores mail in two places: the metadata in a `mail` database on
 `tosak-pg-cluster`, which the drill already restores, and the message files in
-a versioned Backblaze B2 bucket, which nothing restores yet. A restore that
+a versioned Scaleway Object Storage bucket, which nothing restores yet
+(B2 until ADR 0012's amendment of 2026-11-08 moved the blobs). A restore that
 brings back the folders without the messages would pass every current
 assertion. So the existing monthly drill gets a second phase, after the
 PostgreSQL assertions and only when they pass. Nothing is built yet. The
 decisions, all the operator's:
 
-- **The blobs are restored as of the replay end**: `rclone --b2-version-at`
+- **The blobs are restored as of the replay end**: `rclone --s3-version-at`
   copies the bucket as it was at the time of the last replayed transaction
   into a scratch store. The drill already reads the replay end as an LSN from
   the timeline history; how it turns that into a time is settled in the
@@ -490,7 +491,7 @@ decisions, all the operator's:
 - 🔴 **The restored server must not be able to reach the world, or touch
   production.** The restored data store carries the outgoing queue, and a
   server that sees it will try to send it again. The drill Stalwart gets no
-  SES credentials and no relay route, a read-only B2 key, a blob store that
+  SES credentials and no relay route, a read-only bucket key, a blob store that
   points at the scratch copy only (so a purge or an expiry inside it cannot
   delete production files), and no Service and no route.
 - The full copy grows with the mail. When it becomes heavy for the drill's
