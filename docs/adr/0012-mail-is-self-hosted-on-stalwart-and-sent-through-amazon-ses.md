@@ -185,3 +185,49 @@ cert-manager Secret, so Stalwart's own ACME client stays unused; a renewed file
 is read again only after a reload or a restart, which Reloader already does.
 PostgreSQL holds the data store, B2 holds the blobs through its S3 API, and the
 in-memory store stays in the process as long as no cluster coordinator is set.
+
+**2026-11-08 — the blob store is Scaleway Object Storage, not B2.** The
+decision above puts the message files in a Backblaze B2 bucket in an EU region,
+and names "if B2 stops offering an EU region" as a reason to review the choice.
+That is what happened. Backblaze's data-regions page still lists EU Central as
+a sign-up choice, but the live sign-up form offered the operator only CA East,
+US East and US West on 2026-11-08. The region is fixed per account, so the
+form was not submitted; the cause is not known, and a question to Backblaze
+support is open.
+
+The blobs go to **Scaleway Object Storage in `nl-ams`, Standard Multi-AZ**,
+which spreads each object over three availability zones. It meets every
+criterion the B2 choice was made on, read from Scaleway's documentation source
+on 2026-11-08: an EU region, versioning with `ListObjectVersions` and delete
+markers as in S3, a lifecycle rule `NoncurrentVersionExpiration` with
+`NoncurrentDays: 30` (rules run once a day and act within 24 hours), a
+provider other than the cluster's, billing by use, and the S3 API that
+Stalwart's blob store and rclone already speak. The point-in-time read becomes
+`rclone --s3-version-at`, the S3 backend's form of the same flag. Scaleway
+takes B2's place as the one new outside account, and the data stays under EU
+law.
+
+The other candidates were weighed against the same criteria. Cloudflare R2
+still implements neither `PutBucketVersioning` nor `GetBucketVersioning`
+(its S3 API page, 2026-10-14), so its rejection stands. Hetzner Object Storage
+is still the cluster's own provider. Amazon S3 in `eu-central-1` meets every
+criterion and needs no new account, since the SES account could hold it, but
+costs about $0.0245 per GB-month (a third-party figure, not verified), more
+per gigabyte than Scaleway. OVHcloud and IDrive e2 support expiry of old
+versions too; IDrive bills at least one terabyte.
+
+Scaleway's IAM grants Object Storage per Project, not per bucket. So each
+bucket gets its own Project, `mail` for the live bucket and `mail-rehearsal`
+for the rehearsal's, and each key is an application with
+`ObjectStorageFullAccess` or `ObjectStorageReadOnly` scoped to one Project.
+That gives four keys scoped to one bucket each with no bucket policy: read and
+write for Stalwart and read only for the Restore Drill, for both buckets. The
+rehearsal needs its own bucket and keys because kluster refuses an issued key
+that has no rehearsal item
+([ADR 0009](./0009-kluster-builds-the-whole-cluster-and-proves-it-in-a-rehearsal-project.md)).
+
+The cost changes with it. Scaleway's public catalogue lists Standard
+Multi-AZ at €0.000022 per GB without naming the time unit; read as per hour,
+that is about €0.016 per GB-month, and egress to the internet costs €0.01 per
+GB. The figure is assumed until the first invoice confirms it. Old versions
+are billed as stored data until they expire, as they would have been on B2.
