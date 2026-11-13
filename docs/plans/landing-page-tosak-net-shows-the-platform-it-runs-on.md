@@ -21,7 +21,7 @@ system is built as React components that the page consumes rather than as
 styles inside the page. This Plan lays only its base, the tokens, primitives
 and model kit the page needs; the design system itself is a body of work of
 its own, with
-[its own Plan](/tosak-net/plans/design-system-a-package-the-tosak-applications-share/).
+[its own Plan](https://docs.tosak.net/tosak-net/plans/design-system-a-package-the-tosak-applications-share/).
 
 The prototype is one HTML file built by a Python generator, outside any
 repository. Its proof numbers (checks, releases, the drill) were measured by
