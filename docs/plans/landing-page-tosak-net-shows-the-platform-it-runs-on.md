@@ -20,7 +20,8 @@ later tosak applications, which are React (Authos UI, doma), so the design
 system is built as React components that the page consumes rather than as
 styles inside the page. This Plan lays only its base, the tokens, primitives
 and model kit the page needs; the design system itself is a body of work of
-its own, with its own Plan.
+its own, with
+[its own Plan](https://docs.tosak.net/tosak-net/plans/design-system-a-package-the-tosak-applications-share/).
 
 The prototype is one HTML file built by a Python generator, outside any
 repository. Its proof numbers (checks, releases, the drill) were measured by
@@ -48,33 +49,33 @@ Decision page in the repository records the build shape and publishes on
 docs.tosak.net; and the design system's own Plan publishes there with status
 proposed.
 
-- [ ] Create the repository: pnpm workspace, strict TypeScript, ESLint,
+- [x] Create the repository: pnpm workspace, strict TypeScript, ESLint,
       Prettier, Vitest, and the CI gate on every push. Commit the built v11
       page and its generator under `reference/` as the visual baseline, without
       the working brief.
-- [ ] Add the repository to the tosak-docs sources and write its first
+- [x] Add the repository to the tosak-docs sources and write its first
       Decision page: one repository, Astro with React islands, native Web
       Animations, the site before live numbers, and the design package on npm
       only once a second application uses it.
-- [ ] Tokens: one TypeScript source for the prototype's colour (OKLCH), type
+- [x] Tokens: one TypeScript source for the prototype's colour (OKLCH), type
       scale, space, motion and rule values, emitted as CSS custom properties.
       Rethink Sans and Spline Sans Mono are self-hosted through Fontsource, so
       the page makes no Google Fonts request.
-- [ ] Primitives: the components the page repeats (container and 12-column
+- [x] Primitives: the components the page repeats (container and 12-column
       grid, section heading, lead, button, text link, fact, readout, chapter
       button), each with the prototype's hover, focus and disabled states.
-- [ ] Model kit: the generator ported to TypeScript (the isometric
+- [x] Model kit: the generator ported to TypeScript (the isometric
       projection, box, slab and lamp as SVG components, and one scene
       description of the plant shared by the hero and the tour). A test
       compares projected points with the Python generator's output for the
       same scene.
-- [ ] Motion: the hero clock (one pausable time base, timers on clock time,
+- [x] Motion: the hero clock (one pausable time base, timers on clock time,
       tracked animations, abort on a chapter jump) and the reconcile loop as
       framework-free modules. Tests on a fake clock prove that a release
       starts one new job and retires an old one only when the new one is
       ready, that a stopped machine's jobs start again elsewhere, and that
       Pause holds every timer.
-- [ ] Write the design system's own Plan in the repository, with status
+- [x] Write the design system's own Plan in the repository, with status
       proposed: what it adds beyond the page's base, and what a second
       application needs before it takes the package on. The open questions of
       dark mode and of the npm scope and publishing trigger move there.
