@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -12,7 +11,6 @@ import (
 
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/bitwarden"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/catalog"
-	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/config"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/coreset"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/pgcluster"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/secrets"
@@ -48,17 +46,8 @@ var servicesCheckCmd = &cobra.Command{
 		"and a host of a synced HTTPRoute with no Probe target, or a Probe target no synced route serves (ADR 0011).",
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		cfg, err := config.Load(flags.config)
+		root, err := repositoryRoot(cmd)
 		if err != nil {
-			return err
-		}
-		// The catalog sits at the top of the repository.
-		catPath, err := cfg.Path(cfg.Secrets.Catalog)
-		if err != nil {
-			return err
-		}
-		root := filepath.Dir(catPath)
-		if err := (gitRepo{root: root}).isTop(cmd.Context()); err != nil {
 			return err
 		}
 		fsys := os.DirFS(root)
