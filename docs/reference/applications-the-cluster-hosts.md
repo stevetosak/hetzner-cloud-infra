@@ -20,6 +20,7 @@ the list changes, this page changes in the same pull request.
 | authos | `authos` | demo | `authos-demo` | `authos-demo` | `authos-demo.tosak.net` |
 | authos | `authos` | duster | `authos-duster` | `duster` | `authos-demo.tosak.net/duster` |
 | doma | `doma` | web | `doma-web` | `doma` | `doma.tosak.net` |
+| tosak-net | `tosak-net` | site | `tosak-net-site` | `tosak-net-site` | `tosak.net`; `www.tosak.net` redirects to it |
 
 The ArgoCD Application name is generated as `<application>-<component>` from
 the overlay path; the Deployment keeps the name in its own manifest, so
@@ -29,6 +30,11 @@ keyed on the Application name.
 Checked 2026-10-31 with `kubectl get applications -n argocd` (all five
 `Synced`, `Healthy`) and `kubectl get deploy -n authos` and `-n doma` (all five
 `1/1`).
+
+tosak-net was added on 2026-11-13; its row is assumed until its first deploy
+is checked. Until the cut-over of the
+[landing-page Plan](../plans/landing-page-tosak-net-shows-the-platform-it-runs-on.md),
+the route `apex-to-docs` keeps both of its hosts and sends them to the docs.
 
 ## Applications kept but not synced
 
@@ -45,8 +51,12 @@ namespace. `projects/debug/` is a bare pod manifest, not an application.
 
 ## Reviving or adding an application
 
-Adding an application to the generator is four changes: the line in the
+Adding an application to the generator is five changes: the line in the
 generator list, an `AppProject` in `core/argocd/appprojects.yaml`, a
-`projects/<application>/namespace.yaml`, and the namespace in `allowedRoutes`
-in `core/gateway/gateway.yaml`. `kluster services check` fails when one is
-missing.
+`projects/<application>/namespace.yaml`, the namespace in `allowedRoutes`
+in `core/gateway/gateway.yaml`, and its LimitRange directory under
+`core/limit-ranges/`, with the namespace in the `core` AppProject. `kluster
+project add <application>` writes all of them, and with `--component` the
+deploy catalog row in `deployments/apps.json`; `kluster services check` fails
+when one is missing. The component's own manifests, its route and the Probe
+target of each host stay hand-written.
