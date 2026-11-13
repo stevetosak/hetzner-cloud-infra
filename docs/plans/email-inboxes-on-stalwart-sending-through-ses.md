@@ -71,7 +71,11 @@ and the open checks below each have an answer in the Task Record.
       behaviour `UseDefaultValue`, SMTP credentials stored in Bitwarden, and
       the request for production access. The DKIM and MAIL FROM records can be
       published now (rows 3 to 7 of the record list below), because they do not
-      change where mail for `tosak.net` is delivered.
+      change where mail for `tosak.net` is delivered. Row 8 went up early too,
+      on 2026-11-09, as `v=DMARC1; p=none` without `rua`, because the SES
+      recommendations flagged the missing record; `p=none` changes no
+      delivery, and a report address is useless until `dmarc@` exists
+      (checked on both Cloudflare nameservers and 8.8.8.8).
 - [ ] Add the CloudWatch alarms on `Reputation.BounceRate` above 2 % and
       `Reputation.ComplaintRate` above 0.05 %, through an SNS topic to the
       admin Gmail address. Confirm the subscription and send one test alarm.
@@ -194,7 +198,8 @@ production drill passes its mail phase, the mailboxes `dmarc@tosak.net` and
       below, then run the DNS check script.
 - [ ] Create the operator's account, `dmarc@tosak.net` and the canary
       `drill@tosak.net`; deliver the canary message once and record its sha256
-      for the drill.
+      for the drill. Then add `rua=mailto:dmarc@tosak.net` to the DMARC record
+      (row 8), which went up early without it.
 - [ ] Send and receive with an outside mailbox (Gmail) in both directions, and
       read the message headers for SPF, DKIM and DMARC passes.
 - [ ] Report to the operator when the TLS reports show no failures; the
