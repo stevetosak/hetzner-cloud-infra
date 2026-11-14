@@ -243,3 +243,45 @@ left 12 Applications Synced and Healthy. The core Applications self-heal and
 never prune, so the old cert-manager Roles, RoleBindings and Leases in
 `kube-system` were deleted by hand
 ([runbook](../runbook/services-seed.md#adopt-the-live-cluster)).
+
+**2026-11-14 — a rehearsal runs the rehearsed projects and the Restore Drill.**
+Until now the rehearsal cut deleted the `projects` ApplicationSet and left the
+Restore Drill out of the core list, so no application and no drill ever ran in
+a rehearsal. Mail (Phase 2 of the [Email Plan](../plans/email-inboxes-on-stalwart-sending-through-ses.md))
+cannot be proven that way: its finish line needs Stalwart, its load balancer,
+its probes and one drill run in a rehearsal. The operator chose to teach the
+rehearsal a short list of rehearsed projects rather than apply a hand-made
+bundle on the rehearsal Control Plane, which would have put Secret values on a
+hand path and been rebuilt for every later project.
+
+- **The list.** The rehearsal cut of `core/argocd` keeps the `projects`
+  ApplicationSet and replaces its directories with
+  `projects/<project>/*/manifests/overlays/rehearsal`, read from the branch
+  `rehearsal` (both the generator's revision and the template's). That
+  directory list is the one place a project is named as rehearsed; today it
+  holds `mail`. A project that is not listed does not run.
+- **The seed** makes the rehearsed projects' Namespaces and Secrets as it does
+  for core, each issued key from its `rehearsalItem`. `kluster services check`
+  refuses a rehearsed project the live generator does not list, one without a
+  rehearsal overlay, and a projects generator on another revision. A
+  rehearsal's zone Stage still checks the core hosts only, because a project's
+  routes are applied by hand and may have no DNS record yet.
+- **The Restore Drill** joins the rehearsal list through `core/rehearsal/pg-drill`:
+  it restores the rehearsal's own backups in `tosak-pg-backups-rehearsal`
+  (with `kluster/r2-backup-rehearsal-rw`, by the operator's choice; no
+  read-only token for a throw-away bucket), copies the rehearsal mail bucket,
+  is suspended so it runs only when started by hand, and reports with
+  `REPORT=log`: its Telegram and results Secrets are `rehearsal: omit`, so a
+  rehearsal pass never reaches the outside watcher or the chat.
+- **The Probes.** The monitoring cut deletes the `public-hosts` Probes by name
+  and points the mail Probes at the mail load balancer's fixed private
+  address with rehearsal modules that skip the chain check (a rehearsal
+  certificate is self-signed). The `rehearsal-cuts` Stage now refuses any
+  Probe target that is not a private address or a cluster name, so a Probe
+  added later stops the rehearsal until its cut exists, where the old
+  delete-by-kind removed it silently.
+
+The `rehearsal-cuts` Stage checks each new link (the projects ApplicationSet,
+the drill's ObjectStore, Secrets and CronJob, and the Probe targets). Proof so
+far: unit tests, six mutation checks of the new rules, and the builds of every
+cut; the rehearsal run itself is step 12 of the Email Plan.

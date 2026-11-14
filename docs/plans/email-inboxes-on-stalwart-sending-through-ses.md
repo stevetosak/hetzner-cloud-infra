@@ -233,7 +233,28 @@ bounce from an invented address against the account.
       recovery mode (only the management listener runs, according to the
       documentation; the build proves it) and applying a drill plan first.
 - [ ] Run the rehearsal and record the measured memory, the proofs in the
-      finish line above, and every fault found, in the Task Record.
+      finish line above, and every fault found, in the Task Record. A
+      rehearsal ran no application and no drill until 2026-11-14, so the
+      operator chose to teach it a list of rehearsed projects first
+      ([ADR 0010, Amendment 2026-11-14](../adr/0010-argocd-syncs-core-and-kluster-only-seeds-it.md#amendments)).
+      Done when the finish line above holds in one rehearsal run and
+      `kluster --env rehearsal down --apply` reads the project back empty.
+      - [x] Rehearsed projects in kluster: the rehearsal `projects`
+        ApplicationSet with `mail` from `overlays/rehearsal` (the dev overlay,
+        the mail load balancer and the rehearsal bucket), its Namespace and
+        Secrets from the seed, `core/rehearsal/pg-drill`, the mail Probes on
+        the load balancer's private address, and the new `rehearsal-cuts`
+        links. **Done 2026-11-14** (feat/mail): unit tests, six mutation
+        checks and every cut's build pass.
+      - [ ] Push the branch `rehearsal`, run `kluster --env rehearsal up --db
+        fresh` (Plan Mode, then `--apply`), and apply the ClusterIP Service,
+        `httproute.yaml` and the canary messages by hand.
+      - [ ] Prove the finish line: SMTP in through the load balancer and IMAP
+        back, an SES send that passes SPF, DKIM and DMARC, a pod restart
+        during a send, each probe and alert fired once, the PROXY source in
+        Stalwart's log, and one drill run started by hand with the
+        rehearsal canary's digest.
+      - [ ] Record the measured memory and every fault, then `down --apply`.
 
 ## Phase 3 — Live rollout for tosak.net
 
