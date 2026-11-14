@@ -31,10 +31,11 @@ Checked 2026-10-31 with `kubectl get applications -n argocd` (all five
 `Synced`, `Healthy`) and `kubectl get deploy -n authos` and `-n doma` (all five
 `1/1`).
 
-tosak-net was added on 2026-11-13; its row is assumed until its first deploy
-is checked. Until the cut-over of the
-[landing-page Plan](../plans/landing-page-tosak-net-shows-the-platform-it-runs-on.md),
-the route `apex-to-docs` keeps both of its hosts and sends them to the docs.
+tosak-net was added on 2026-11-13 and took the apex on 2026-11-14. Checked
+that day: `tosak-net-site` `Synced`, `Healthy` and `1/1` on its first deployed
+tag; `curl` gave 200 on `tosak.net` and a 302 to it on `www.tosak.net`, and
+`probe_success` was 1 for both. The route `apex-to-docs`, which had sent both
+hosts to the docs since 2026-10-25, is gone.
 
 ## Applications kept but not synced
 
