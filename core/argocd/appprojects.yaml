@@ -81,6 +81,23 @@ spec:
     - group: '*'
       kind: '*'
 ---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: mail
+  namespace: argocd
+spec:
+  description: mail — its components, all in the mail namespace
+  sourceRepos:
+    - https://github.com/stevetosak/hetzner-cloud-infra.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: mail
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
+---
 # THE CORE PROJECT (ADR 0010, Amendment 2026-10-22)
 #
 # Every Application of core/argocd/core-applicationset.yaml. Wider than a
@@ -124,6 +141,7 @@ spec:
     - {server: https://kubernetes.default.svc, namespace: authos}
     - {server: https://kubernetes.default.svc, namespace: doma}
     - {server: https://kubernetes.default.svc, namespace: tosak-net}
+    - {server: https://kubernetes.default.svc, namespace: mail}
     # metrics-server's RoleBinding to extension-apiserver-authentication-reader
     # lives there. Little extra privilege: ClusterRoleBinding is already allowed.
     - {server: https://kubernetes.default.svc, namespace: kube-system}

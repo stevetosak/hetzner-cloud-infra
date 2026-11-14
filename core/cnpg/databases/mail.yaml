@@ -1,0 +1,10 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: mail-db
+  namespace: pg-cluster
+spec:
+  name: mail
+  owner: tosak
+  cluster:
+    name: tosak-pg-cluster
