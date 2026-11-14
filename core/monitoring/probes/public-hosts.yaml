@@ -33,6 +33,7 @@ spec:
         - https://authos-api.tosak.net/.well-known/openid-configuration
         - https://authos-demo.tosak.net/
         - https://doma.tosak.net/api/health/live
+        - https://mta-sts.tosak.net/.well-known/mta-sts.txt
         - https://tosak.net/
 ---
 # www: the route tosak-net-www answers 302 to the apex

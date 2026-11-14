@@ -111,6 +111,18 @@ is reachable only from inside the cluster, so only a pod can forge the header.
 Kubelet probes and Prometheus scrapes arrive without the header; the tracer
 drops the `http.x-forwarded-missing` warning they cause.
 
+## The MTA-STS policy
+
+`mta-sts.tosak.net/.well-known/mta-sts.txt` is not served by Stalwart: the same
+file, `projects/mail/httproute.yaml`, holds a ConfigMap with the policy and an
+Envoy Gateway `HTTPRouteFilter` that answers it as a direct response, so the
+Gateway alone serves it. The policy starts in mode `testing`. Its TXT record
+`_mta-sts.tosak.net` carries an id made from the sha256 of the policy (the
+command is in the file), so a changed policy cannot keep an old id unnoticed.
+On 2026-11-14 Cloudflare passed requests from non-browser clients (no user
+agent, Go, Python) to the origin without a challenge; the check is repeated on
+the host itself once its DNS record exists.
+
 ## Logins
 
 `STALWART_RECOVERY_ADMIN` (`admin` and the Secret `admin`) is the recovery
