@@ -59,7 +59,8 @@ spec:
 # without asking the origin; Grafana's own health is the in-cluster scrape of
 # its pod (the chart's monitors and kube-state-metrics rules). A host that
 # drops Access fails here, also when it still answers 302 (Grafana's /login).
-# argocd.tosak.net went behind Access on 2026-11-01.
+# argocd.tosak.net went behind Access on 2026-11-01; mail-admin.tosak.net is
+# behind Access from its first day.
 apiVersion: monitoring.coreos.com/v1
 kind: Probe
 metadata:
@@ -77,3 +78,4 @@ spec:
       static:
         - https://argocd.tosak.net/
         - https://grafana.tosak.net/
+        - https://mail-admin.tosak.net/

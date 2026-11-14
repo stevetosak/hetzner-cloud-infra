@@ -42,7 +42,7 @@ func TestBuildReadsTheRepository(t *testing.T) {
 		secrets   []string
 		cuts      []string
 	}{
-		{false, []string{"argocd.tosak.net", "authos-api.tosak.net", "authos-demo.tosak.net", "authos.tosak.net", "doma.tosak.net", "grafana.tosak.net", "tosak.net", "www.tosak.net"}, nil, nil},
+		{false, []string{"argocd.tosak.net", "authos-api.tosak.net", "authos-demo.tosak.net", "authos.tosak.net", "doma.tosak.net", "grafana.tosak.net", "mail-admin.tosak.net", "tosak.net", "www.tosak.net"}, nil, nil},
 		{true, []string{"argocd.tosak.net", "grafana.tosak.net"}, []string{"monitoring/grafana-admin", "pg-cluster/db-credentials", "pg-cluster/r2-backup-credentials", "pg-cluster/r2-source-credentials", "redis/redis"},
 			[]string{"rehearsal-cuts"}},
 	} {

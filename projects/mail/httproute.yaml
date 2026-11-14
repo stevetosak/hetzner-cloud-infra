@@ -1,0 +1,45 @@
+# mail-admin.tosak.net: Stalwart's web admin, behind Cloudflare Access (the
+# operator's email only); the admin password is the second gate.
+#
+# Only the paths the admin UI uses are routed (Stalwart 1.0.3,
+# crates/http/src/request.rs): the UI application under /admin, its asset
+# files /ui-<hash>.css and .js, the login page, OAuth (/auth, /.well-known),
+# the management API (/api) and JMAP (/jmap). Not routed: /metrics and
+# /healthz (scraped and probed inside the cluster), /account, /dav, /scim and
+# autoconfig. The path list is read from the source; the rehearsal proves it by
+# loading the UI.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mail-admin
+  namespace: mail
+spec:
+  parentRefs:
+    - name: tosak
+      namespace: gateway
+      sectionName: https
+  hostnames:
+    - mail-admin.tosak.net
+  rules:
+    - matches:
+        - path:
+            type: Exact
+            value: /
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            path:
+              type: ReplaceFullPath
+              replaceFullPath: /admin/
+            statusCode: 302
+    - matches:
+        - path: {type: PathPrefix, value: /admin}
+        - path: {type: PathPrefix, value: /login}
+        - path: {type: PathPrefix, value: /auth}
+        - path: {type: PathPrefix, value: /.well-known}
+        - path: {type: PathPrefix, value: /api}
+        - path: {type: PathPrefix, value: /jmap}
+        - path: {type: RegularExpression, value: '/ui-[A-Za-z0-9]+\.(css|js)'}
+      backendRefs:
+        - name: stalwart
+          port: 80

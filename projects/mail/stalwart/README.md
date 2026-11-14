@@ -60,13 +60,13 @@ traced).
 
 ## The mail load balancer
 
-`manifests/service.yaml` is the `LoadBalancer` Service for 25, 465 and 993:
+`manifests/load-balancer.yaml` is the `LoadBalancer` Service for 25, 465 and 993:
 its own Hetzner `lb11` `mail-lb`, reaching the nodes over the Private Network
 from the fixed address `10.0.4.3`, with PROXY protocol on. It is applied by
 hand, because applying it buys the load balancer:
 
 ```bash
-kubectl apply -f projects/mail/stalwart/manifests/service.yaml
+kubectl apply -f projects/mail/stalwart/manifests/load-balancer.yaml
 ```
 
 `externalTrafficPolicy: Local` keeps the load balancer's address as the source
@@ -84,6 +84,16 @@ with the Deployment. Its Secret `mail-tls` is mounted at `/run/secrets/tls`;
 Stalwart reads every certificate in `tls.crt`, so it serves the leaf with the
 intermediate. Stalwart reads the files only at start, and Reloader restarts
 the pod after each renewal. The pod cannot start before the Secret exists.
+
+## The admin route
+
+`projects/mail/httproute.yaml` routes `mail-admin.tosak.net` on the shared
+Gateway to the ClusterIP Service `stalwart` (`manifests/service.yaml`, port 80
+to 8080), and only the paths the admin UI uses; `/` redirects to `/admin/`.
+Both files are applied by hand. The host is behind a Cloudflare Access
+application for the operator's email only, and its probe target is in
+`public-hosts-access` (`core/monitoring/probes/public-hosts.yaml`), which
+passes on the 302 to the Access login.
 
 ## Logins
 

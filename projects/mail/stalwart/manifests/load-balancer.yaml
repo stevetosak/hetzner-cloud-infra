@@ -1,0 +1,51 @@
+# The mail entry point (ADR 0012): its own Hetzner load balancer for 25, 465
+# and 993, separate from the web entry point `tosak-lb`.
+#
+# 💶 Applying this Service BUYS a Hetzner lb11 (€7.49 a month excluding VAT
+# since 2026-04-01) and draws two Primary IPs from the account's pool. It is
+# applied by hand, with the operator's approval, never by Argo CD.
+#
+#   kubectl apply -f projects/mail/stalwart/manifests/load-balancer.yaml
+#
+# 🔴 `uses-proxyprotocol` here and `overrideProxyTrustedNetworks` on the
+# listeners smtp, submissions and imaps in base/config/settings.ndjson are TWO
+# HALVES OF ONE SETTING, and so are `private-ipv4` here and the address in that
+# list. The load balancer reaches the node over the Private Network from
+# `private-ipv4`, and `externalTrafficPolicy: Local` keeps that source address
+# (no SNAT), so the pod sees exactly 10.0.4.3. A connection from there without
+# a PROXY header is closed; from anywhere else, a header is not read. Change
+# the pairs together or not at all. The trust is per listener, not global:
+# the global list would also exempt the address from auto-ban.
+#
+# 10.0.4.2 is tosak-lb (core/gateway/envoyproxy.yaml); 10.0.4.3 is the next
+# address of the load balancer subnet 10.0.4.0/24 (infra/shared/network.tf).
+apiVersion: v1
+kind: Service
+metadata:
+  name: stalwart-mail
+  annotations:
+    load-balancer.hetzner.cloud/name: "mail-lb"
+    load-balancer.hetzner.cloud/type: "lb11"
+    load-balancer.hetzner.cloud/location: "hel1"
+    # Reach the nodes over the Private Network, never the public one (ADR 0006).
+    load-balancer.hetzner.cloud/use-private-ip: "true"
+    load-balancer.hetzner.cloud/private-subnet-ip-range: "10.0.4.0/24"
+    load-balancer.hetzner.cloud/private-ipv4: "10.0.4.3"
+    load-balancer.hetzner.cloud/uses-proxyprotocol: "true"
+spec:
+  type: LoadBalancer
+  # The load balancer sends traffic only to the node that runs the pod, and
+  # the pod sees the load balancer's private address as the source.
+  externalTrafficPolicy: Local
+  selector:
+    app: stalwart
+  ports:
+    - name: smtp
+      port: 25
+      targetPort: smtp
+    - name: submissions
+      port: 465
+      targetPort: submissions
+    - name: imaps
+      port: 993
+      targetPort: imaps
