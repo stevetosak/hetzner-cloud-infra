@@ -95,7 +95,7 @@ an answer in the Task Record.
       a 44-byte password, checked by length); AWS granted production access
       in `eu-central-1` on the support case, with a quota of 50,000 messages a
       day at 14 a second.
-- [ ] Route the bounce and complaint notifications of `tosak.net` to an SNS
+- [x] Route the bounce and complaint notifications of `tosak.net` to an SNS
       topic `mail-alerts` in `eu-central-1` with the admin Gmail address
       subscribed, turn email feedback forwarding off until Phase 3, and check
       that the account-level suppression list is on for bounces and
@@ -107,13 +107,29 @@ an answer in the Task Record.
       `bounce@simulator.amazonses.com` and
       `complaint@simulator.amazonses.com`: each gives one notification in
       Gmail. Simulator sends count against neither the quota nor the
-      reputation rates.
-- [ ] Add the CloudWatch alarms on `Reputation.BounceRate` above 2 % and
+      reputation rates. **Done 2026-11-14**: the console test sends with the
+      Bounce and Complaint scenarios each gave one SNS mail in Gmail, carrying
+      the raw notification JSON. Read back with the AWS CLI: `mail-alerts` is a
+      Standard topic with one confirmed Email subscription; the identity's
+      `BounceTopic` and `ComplaintTopic` are `mail-alerts` and
+      `ForwardingEnabled` is `false`; the account's suppression list holds
+      `BOUNCE` and `COMPLAINT`, and its enforcement status is `HEALTHY`. The
+      topic must be Standard: a FIFO topic offers only SQS as a subscription
+      protocol, and a topic's type cannot change after it is created.
+- [x] Add the CloudWatch alarms on `Reputation.BounceRate` above 2 % and
       `Reputation.ComplaintRate` above 0.05 % (AWS reviews an account at 5 %
       and 0.1 %, and may pause it at 10 % and 0.5 %), through the same
       `mail-alerts` topic. Send one test alarm with
       `aws cloudwatch set-alarm-state`: a simulated bounce does not move the
-      reputation metrics.
+      reputation metrics. **Done 2026-11-14**: the alarms
+      `ses-bounce-rate-above-2pct` (threshold `0.02`) and
+      `ses-complaint-rate-above-0.05pct` (threshold `0.0005`) take the
+      Maximum over one hour and treat missing data as not breaching, because
+      the reputation metrics appear only after the first real bounce or
+      complaint; they were made with the CLI for the same reason, since the
+      console's metric picker lists only metrics that exist. `set-alarm-state`
+      moved each to `ALARM`, the alarm history shows the SNS action executed,
+      and Gmail received both alarm mails.
 - [x] Check that the pinned Stalwart release reads its TLS certificate and
       key from files. If it cannot, the fallback is Stalwart's own
       TLS-ALPN-01, and ADR 0012 gets an amendment before the build.
