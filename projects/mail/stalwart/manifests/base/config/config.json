@@ -1,0 +1,1 @@
+{"@type":"PostgreSql","host":"tosak-pg-cluster-rw.pg-cluster.svc.cluster.local","port":5432,"database":"mail","authUsername":"tosak","authSecret":{"@type":"File","filePath":"/run/secrets/db/password"},"useTls":false}
