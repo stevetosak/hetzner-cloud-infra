@@ -33,9 +33,10 @@ spec:
         - https://authos-api.tosak.net/.well-known/openid-configuration
         - https://authos-demo.tosak.net/
         - https://doma.tosak.net/api/health/live
+        - https://tosak.net/
 ---
-# The apex and www: the Gateway's route apex-to-docs answers 302 to
-# docs.tosak.net (core/gateway/apex-redirect.yaml).
+# www: the route tosak-net-www answers 302 to the apex
+# (projects/tosak-net/httproute.yaml).
 apiVersion: monitoring.coreos.com/v1
 kind: Probe
 metadata:
@@ -51,7 +52,6 @@ spec:
   targets:
     staticConfig:
       static:
-        - https://tosak.net/
         - https://www.tosak.net/
 ---
 # The hosts behind Cloudflare Access: the probe passes on the 302 to the

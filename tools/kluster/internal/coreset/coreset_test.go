@@ -146,7 +146,7 @@ func TestEachRuleFires(t *testing.T) {
 			edit(t, m, "core/monitoring/probes/public-hosts.yaml", "        - https://www.tosak.net/\n", "        - www.tosak.net\n")
 		}, `target "www.tosak.net" is not an https URL`},
 		{"a probe that discovers its targets", func(t *testing.T, m fstest.MapFS) {
-			edit(t, m, "core/monitoring/probes/public-hosts.yaml", "    staticConfig:\n      static:\n        - https://tosak.net/\n        - https://www.tosak.net/\n",
+			edit(t, m, "core/monitoring/probes/public-hosts.yaml", "    staticConfig:\n      static:\n        - https://www.tosak.net/\n",
 				"    ingress:\n      selector: {}\n")
 		}, "list the targets in staticConfig.static"},
 		{"a core namespace outside the AppProject", func(t *testing.T, m fstest.MapFS) {
