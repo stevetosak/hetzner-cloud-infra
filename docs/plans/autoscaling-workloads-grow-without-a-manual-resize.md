@@ -54,10 +54,21 @@ live by driving one container past its request.
       resources, the top-level owners of their pods. Proven on live: every
       object reports `RecommendationProvided` and none `ConfigUnsupported`
       (`kubectl get vpa -A`). The three days in `Off` run from 2026-11-08.
-- [ ] After three days in `Off`, compare each recommendation with the capacity
+- [x] After three days in `Off`, compare each recommendation with the capacity
       snapshots and the current requests, and record the result:
       [`vpa-compare.py`](../../core/monitoring/vpa-compare.py) prints both side
-      by side (`python3 -I core/monitoring/vpa-compare.py 3d`).
+      by side (`python3 -I core/monitoring/vpa-compare.py 3d`). Done
+      2026-11-14 over 2026-11-11 12:00 to 11-14 17:40 UTC: every memory target
+      is at or above its container's peak in the window. No pod started in
+      that window, so it holds no start peaks; the 2026-11-05..08 snapshot
+      showed four containers whose start peak is above their target (Grafana
+      650 MiB against 488, the Envoy shutdown-manager 108 against 35, the CSI
+      sidecars 57-64 against 32-35, the Hetzner cloud controller 60 against
+      32). The operator accepted those targets without a higher `minAllowed`:
+      the kubelet reserve comes before the memory limits go, so a start peak
+      uses node memory for seconds, about 400 MiB if all of them start
+      together. The compare also showed `argocd-server` at 109 MiB on an
+      80 Mi request; its request became 144 Mi in the same change.
 - [ ] Add the alerts: each resize as a notification grouped by namespace over
       5 minutes; an Infeasible resize, a Pending pod and an OOM kill at once;
       node memory available under 15 % (warning) and under 8 % or

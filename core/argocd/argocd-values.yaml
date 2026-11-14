@@ -85,12 +85,14 @@ server:
   # Every component is sized by ADR 0013 from the 2026-11-01..05 peaks
   # (Capacity Plan Snapshots 0 and 1): a request on each, because a pod with
   # no requests is BestEffort and so is evicted first, and no CPU limit.
+  # The server's memory follows the 2026-11-11..14 peak of 109 MiB, above
+  # its first request of 80Mi.
   resources:
     requests:
       cpu: 10m
-      memory: 80Mi
+      memory: 144Mi
     limits:
-      memory: 160Mi
+      memory: 288Mi
 
 controller:
   # The application-controller is the heavy component: it holds the state of

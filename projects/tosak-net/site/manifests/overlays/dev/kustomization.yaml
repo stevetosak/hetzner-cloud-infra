@@ -9,7 +9,7 @@ resources:
 
 images:
 - name: stevetosak/tosak-net-site
-  newTag: alpha-a873df37df1917a0d0c32bf3d1a415e53b8faa16
+  newTag: alpha-7282838cf24e30e19d5a297971dbfc1bb56b0d6d
 
 replicas:
 - count: 1

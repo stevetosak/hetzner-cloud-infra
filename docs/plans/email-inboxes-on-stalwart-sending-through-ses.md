@@ -157,14 +157,23 @@ an answer in the Task Record.
 
 ## Phase 2 — Build and rehearsal
 
-**Done when:** the `mail` project is merged and `kluster services check`
-passes; in a rehearsal with no MX record, a message sent over SMTP to the mail
+**Done when:** the `mail` project is complete on the branch `feat/mail` and
+`kluster services check` passes on it; in a rehearsal from that branch, with
+no MX record, a message sent over SMTP to the mail
 load balancer is read back over IMAP, a message sent through SES reaches a
 verified address and passes SPF, DKIM and DMARC, a pod restart during a send
 loses no message, every probe and alert fires once on a forced fault, and one
 run of the Restore Drill passes its mail phase. Bounce and complaint tests go
 to the SES mailbox simulator, never to an invented address: AWS counts a
 bounce from an invented address against the account.
+
+The project stays on its branch until Phase 3. A project that the `projects`
+generator lists is synced to the live cluster as soon as it reaches `master`,
+and so are the core entries (the database, Reloader, the Gateway, the
+LimitRange); a merge would start Stalwart and buy the load balancer before the
+rehearsal has proven anything. The rehearsal project's Argo CD reads the
+branch `rehearsal`, so `feat/mail` is pushed there for each run. Phase 3 applies
+the hand-made parts first and then merges (operator, 2026-11-14).
 
 - [x] Add the project entries that `kluster services check` asks for: the
       namespace file, the AppProject, the generator line, `mail` in the
