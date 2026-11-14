@@ -5,7 +5,10 @@
 # since 2026-04-01) and draws two Primary IPs from the account's pool. It is
 # applied by hand, with the operator's approval, never by Argo CD.
 #
-#   kubectl apply -k projects/mail/stalwart/manifests/load-balancer
+#   kubectl apply -n mail -k projects/mail/stalwart/manifests/load-balancer
+#
+# The file names no namespace (the overlays set it), so `-n mail` is required:
+# without it the Service, and the load balancer it buys, land in `default`.
 #
 # Its own directory so the rehearsal overlay can sync it: in a rehearsal the
 # load balancer must exist before the mail probes run (ADR 0010, Amendment

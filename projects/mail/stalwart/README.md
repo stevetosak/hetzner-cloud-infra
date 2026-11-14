@@ -65,10 +65,12 @@ traced).
 `manifests/load-balancer/load-balancer.yaml` is the `LoadBalancer` Service for 25, 465 and 993:
 its own Hetzner `lb11` `mail-lb`, reaching the nodes over the Private Network
 from the fixed address `10.0.4.3`, with PROXY protocol on. It is applied by
-hand, because applying it buys the load balancer:
+hand, because applying it buys the load balancer. The file names no
+namespace, so the command must name `mail`, or the load balancer is bought for
+a Service in `default`:
 
 ```bash
-kubectl apply -k projects/mail/stalwart/manifests/load-balancer
+kubectl apply -n mail -k projects/mail/stalwart/manifests/load-balancer
 ```
 
 `externalTrafficPolicy: Local` keeps the load balancer's address as the source
