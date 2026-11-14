@@ -54,6 +54,7 @@ MAIL_ROLE=tosak                     # the owner of `mail`, as in production
 PROD_MAIL_NS=mail
 PROD_MAIL_DEPLOY=stalwart           # gives the Stalwart and stalwart-cli images
 S3_HOST=s3.nl-ams.scw.cloud
+RECOVERY_LOG=/tmp/recovery.log     # the restore Job pod's log, kept by follow_recovery_log
 
 step="start"            # what was running when it failed
 result=fail
@@ -63,6 +64,7 @@ owns_cluster=no         # set once no other drill is running; until then
 db_report=()            # "authos: 9 tables, 1234 rows"
 db_json='[]'
 mail_json='{"result":"skipped"}'
+follower=""             # the PID of follow_recovery_log
 
 log() { printf '%s  %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 
@@ -106,6 +108,26 @@ delete_drill_mail() {
   kubectl delete secret "$MAIL_SECRET" -n "$DRILL_NS" --ignore-not-found || return 1
 }
 
+# PostgreSQL logs the end of the replay ("last completed transaction was at
+# log time …") in the pod of CloudNativePG's restore Job, and that pod is gone
+# by the time the Cluster is Ready (rehearsal, 2026-11-14). So its log is
+# followed into RECOVERY_LOG while the restore runs. `kubectl logs -f` fails
+# while a container is still waiting to start, so it is tried again; it
+# returns when the pod's containers end. A repeat appends lines twice, which
+# the reader ignores (it takes the last match).
+follow_recovery_log() {
+  local pod=""
+  while [ -z "$pod" ]; do
+    pod=$(kubectl get pods -n "$DRILL_NS" -l "cnpg.io/cluster=$DRILL,cnpg.io/jobRole=full-recovery" \
+      -o name 2>/dev/null | head -1)
+    [ -n "$pod" ] || sleep 2
+  done
+  until kubectl logs -f -n "$DRILL_NS" "$pod" --all-containers >>"$RECOVERY_LOG" 2>/dev/null; do
+    kubectl get -n "$DRILL_NS" "$pod" >/dev/null 2>&1 || return 0
+    sleep 2
+  done
+}
+
 # The bot token goes to curl on stdin, not argv.
 telegram() {
   curl -sS -o /dev/null -w '%{http_code}' --max-time 30 -K - \
@@ -124,6 +146,7 @@ finish() {
   local code=$? cleaned=skipped key written=yes text http finished_at
   trap - EXIT
   set +e
+  [ -z "$follower" ] || kill "$follower" 2>/dev/null
   [ "$result" = pass ] || log "FAILED at: $step (exit $code)"
 
   if [ "$owns_cluster" = yes ]; then
@@ -195,9 +218,12 @@ mail_phase() {
   step="mail: read the replay end time from the restore's log"
   log "$step"
   logged=$(
-    for pod in $(kubectl get pods -n "$DRILL_NS" -l "cnpg.io/cluster=$DRILL" -o name); do
-      kubectl logs -n "$DRILL_NS" "$pod" --all-containers 2>/dev/null || true
-    done | jq -Rr 'fromjson? | .record.message? // empty' |
+    {
+      cat "$RECOVERY_LOG"
+      for pod in $(kubectl get pods -n "$DRILL_NS" -l "cnpg.io/cluster=$DRILL" -o name); do
+        kubectl logs -n "$DRILL_NS" "$pod" --all-containers 2>/dev/null || true
+      done
+    } | jq -Rr 'fromjson? | .record.message? // empty' |
       sed -n 's/^last completed transaction was at log time //p' | tail -1
   )
   ended=$(grep -Eo '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?\+00$' <<<"$logged" | cut -c1-19 || true)
@@ -372,6 +398,9 @@ yq -o=json "$TEMPLATE" |
      | .spec.externalClusters[0].plugin.parameters.serverName = $server' |
   kubectl create -f -
 created_epoch=$(date -u +%s)
+: >"$RECOVERY_LOG"
+follow_recovery_log &
+follower=$!
 
 step="wait for the restore to be Ready (limit $READY_TIMEOUT)"
 log "$step"
