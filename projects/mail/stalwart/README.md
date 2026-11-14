@@ -58,6 +58,24 @@ source and downloads its data once, although the plan applied `Disabled` just
 before; from the next start on, `Disabled` holds (seen in the lab, cause not
 traced).
 
+## The mail load balancer
+
+`manifests/service.yaml` is the `LoadBalancer` Service for 25, 465 and 993:
+its own Hetzner `lb11` `mail-lb`, reaching the nodes over the Private Network
+from the fixed address `10.0.4.3`, with PROXY protocol on. It is applied by
+hand, because applying it buys the load balancer:
+
+```bash
+kubectl apply -f projects/mail/stalwart/manifests/service.yaml
+```
+
+`externalTrafficPolicy: Local` keeps the load balancer's address as the source
+the pod sees, so the listeners for 25, 465 and 993 trust a PROXY header from
+`10.0.4.3/32` only (`overrideProxyTrustedNetworks` in the plan). From there, a
+connection without a header is closed. A header error is only logged, and
+never counts towards auto-ban, so the load balancer's TCP health checks do not
+ban it. The address and the PROXY setting are pairs: change each half together.
+
 ## Logins
 
 `STALWART_RECOVERY_ADMIN` (`admin` and the Secret `admin`) is the recovery
@@ -74,6 +92,9 @@ opened 25, 465, 993 and 8080 only. A message to a local account was stored in
 the S3 bucket and read back over IMAP. A message to an outside address went to
 the relay route; the relay's certificate was not valid, so Stalwart held the
 message for a retry instead of sending it without TLS. The metrics answered
-401 without the password and 200 with it. Not proven there: a real SES
-delivery, the Scaleway endpoint, and the image volume on the cluster; the
-rehearsal proves them.
+401 without the password and 200 with it. With a lab address in place of
+10.0.4.3: a trusted client's PROXY header gave the session the claimed
+address, a trusted client without a header got no greeting, and an untrusted
+client's header was not read. Not proven there: a real SES delivery, the
+Scaleway endpoint, the image volume on the cluster, and that the Hetzner load
+balancer reaches the pod from 10.0.4.3; the rehearsal proves them.
