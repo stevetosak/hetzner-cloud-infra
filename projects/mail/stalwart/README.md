@@ -123,6 +123,26 @@ On 2026-11-14 Cloudflare passed requests from non-browser clients (no user
 agent, Go, Python) to the origin without a challenge; the check is repeated on
 the host itself once its DNS record exists.
 
+## The DNS check
+
+`projects/mail/dns_check.py` compares one domain's records with the record
+list of the Email Plan and fails on any difference:
+
+```bash
+python3 -I projects/mail/dns_check.py tosak.net
+```
+
+It asks each authoritative nameserver directly, so a record that one of them
+still lacks fails. Every domain gets the MX, the three DKIM CNAMEs (from the
+SES identity's tokens), the MAIL FROM MX and SPF, and a DMARC record whose
+reports go to `dmarc@<domain>`, plus the SES identity's own status. Only
+`tosak.net` also gets `mail.tosak.net` (the load balancer's address from
+`kubectl`), the two proxied web hosts (Cloudflare's published ranges), TLS
+reporting, the SRV records and the `_mta-sts` id, which must equal the sha256
+prefix of the policy as the host serves it. It needs an `aws login` session.
+On 2026-11-14 it passed the SES identity and rows 3 to 7 for `tosak.net`, and
+failed row 8 only for the missing `rua`.
+
 ## Monitoring
 
 `manifests/base/podmonitor.yaml` scrapes the exporter with the basic-auth
