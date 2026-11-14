@@ -162,9 +162,18 @@ query taken at the same time.
       The rebuild chapter states what was measured: a fresh database, with
       the restore proven by the monthly drill. A rebuild timed with
       `--db recover` from empty does not exist yet.
-- [ ] The contract: one JSON Schema in the repository. The Go service's tests
+- [x] The contract: one JSON Schema in the repository. The Go service's tests
       validate its response against the schema, and the site's types are
-      generated from it.
+      generated from it. Done 2026-11-14 (tosak-net #10):
+      `packages/status-contract` holds the schema, with three sections
+      (availability, offsite copy, drill) that each carry their own
+      `measuredAt`, so the page falls back one section at a time. The site's
+      types are generated with json-schema-to-typescript and a test fails when
+      they drift; the build-time snapshot is validated with Ajv. The page went
+      live the same day with the new numbers, measured over the three days
+      Prometheus held: 99.98 % of 34,561 checks passed, a restore of 3 min 17 s
+      in the drill of 1 November, and an offsite copy never more than 5 min 1 s
+      behind.
 - [ ] The service in `services/status`: Go, the standard library's HTTP
       server and Prometheus' Go API client. It refreshes one snapshot about
       every 60 seconds, serves the last good one with its time, and sets a
