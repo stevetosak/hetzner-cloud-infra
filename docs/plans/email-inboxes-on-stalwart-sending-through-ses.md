@@ -245,10 +245,28 @@ answered back to it, the DNS check script passes for `tosak.net`, the first
 production drill passes its mail phase, the mailboxes `dmarc@tosak.net` and
 `drill@tosak.net` exist, and DMARC and TLS reports arrive at `dmarc@`.
 
-- [ ] Sync the `mail` project to the live cluster and note the public IP
-      address of the new load balancer.
-- [ ] Publish the records for `tosak.net` in Cloudflare by hand, from the list
-      below, then run the DNS check script.
+- [ ] Before the merge, put in place everything the merge's probes test
+      that is applied by hand, so that `MailPortDown` and `PublicHostDown` do
+      not page (operator, 2026-11-14). The merge of `feat/mail` makes Argo
+      CD sync the probes and alert rules at once, while the parts they test
+      come by hand. From the `feat/mail` work tree: seed the namespace `mail`
+      and its Secrets (`go run . services seed --env live --apply` in
+      `tools/kluster`); apply the load balancer (it buys `mail-lb`, so the
+      operator approves it first) and note its public IP address; apply the
+      ClusterIP Service, `httproute.yaml` and the `Certificate`, so that
+      `mail-tls` exists before the pod; create the Cloudflare Access
+      application for `mail-admin.tosak.net`; and publish rows 1, 9 and 10
+      of the list below. Until the merge, the Gateway refuses the routes,
+      because its allow list on `master` does not name `mail` yet.
+- [ ] Merge `feat/mail`. Argo CD syncs the project, the Gateway's allow list,
+      the probes and the rules. Check that the pod is ready and every mail
+      and host probe passes within the five minutes before the alerts fire;
+      `core-gateway` and `core-monitoring` sync on their own, so the routes
+      can lag the probes by one sync. Rebuild the installed `kluster` binary,
+      which refuses the new port probes until it has the probe-job filter.
+- [ ] Publish the other records for `tosak.net` in Cloudflare by hand, from
+      the list below, then run the DNS check script. Row 8 passes only after
+      the next step adds its `rua`.
 - [ ] Create the operator's account, `dmarc@tosak.net` and the canary
       `drill@tosak.net`; deliver the canary message once and record its sha256
       for the drill. Then add `rua=mailto:dmarc@tosak.net` to the DMARC record
