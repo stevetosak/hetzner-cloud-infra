@@ -89,7 +89,7 @@ func TestListsAreRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(projects, []string{"authos", "doma", "tosak-net"}) {
+	if !slices.Equal(projects, []string{"authos", "doma", "tosak-net", "mail"}) {
 		t.Errorf("projects = %v", projects)
 	}
 }
@@ -169,13 +169,13 @@ func TestEachRuleFires(t *testing.T) {
 			// The first listener only: the check reads each one.
 			s := string(m[GatewayFile].Data)
 			m[GatewayFile] = &fstest.MapFile{Data: []byte(strings.Replace(s,
-				"values: [gateway, argocd, authos, doma, tosak-net, monitoring]", "values: [gateway, argocd, authos, tosak-net, monitoring]", 1))}
+				"values: [gateway, argocd, authos, doma, tosak-net, mail, monitoring]", "values: [gateway, argocd, authos, tosak-net, mail, monitoring]", 1))}
 		}, "does not admit routes from doma"},
 		{"a component missing from the deploy catalog", func(t *testing.T, m fstest.MapFS) {
 			edit(t, m, AppsFile, `"doma-web"`, `"doma"`)
 		}, "no entry doma-web"},
 		{"a reloaded project outside Reloader's scope", func(t *testing.T, m fstest.MapFS) {
-			edit(t, m, ReloaderFile, "--namespaces=authos,doma,redis,reloader", "--namespaces=authos,redis,reloader")
+			edit(t, m, ReloaderFile, "--namespaces=authos,doma,mail,redis,reloader", "--namespaces=authos,mail,redis,reloader")
 		}, "--namespaces does not name doma"},
 		{"a reloaded project outside the core AppProject", func(t *testing.T, m fstest.MapFS) {
 			edit(t, m, AppProjectsFile, "    - {server: https://kubernetes.default.svc, namespace: doma}\n", "")

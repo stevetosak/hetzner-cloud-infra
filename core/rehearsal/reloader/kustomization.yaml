@@ -39,3 +39,17 @@ patches:
       metadata:
         name: reloader-reloader-role-binding
         namespace: doma
+  - patch: |-
+      $patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: Role
+      metadata:
+        name: reloader-reloader-role
+        namespace: mail
+  - patch: |-
+      $patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      metadata:
+        name: reloader-reloader-role-binding
+        namespace: mail
