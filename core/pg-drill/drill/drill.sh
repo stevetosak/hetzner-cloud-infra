@@ -55,6 +55,7 @@ PROD_MAIL_NS=mail
 PROD_MAIL_DEPLOY=stalwart           # gives the Stalwart and stalwart-cli images
 S3_HOST=s3.nl-ams.scw.cloud
 RECOVERY_LOG=/tmp/recovery.log     # the restore Job pod's log, kept by follow_recovery_log
+RECOVERY_CONTAINER=full-recovery   # CloudNativePG names it after the Job role
 
 step="start"            # what was running when it failed
 result=fail
@@ -109,23 +110,35 @@ delete_drill_mail() {
 }
 
 # PostgreSQL logs the end of the replay ("last completed transaction was at
-# log time …") in the pod of CloudNativePG's restore Job, and that pod is gone
-# by the time the Cluster is Ready (rehearsal, 2026-11-14). So its log is
-# followed into RECOVERY_LOG while the restore runs. `kubectl logs -f` fails
-# while a container is still waiting to start, so it is tried again; it
-# returns when the pod's containers end. A repeat appends lines twice, which
-# the reader ignores (it takes the last match).
+# log time …") in the container full-recovery of CloudNativePG's restore Job,
+# and that pod is gone by the time the Cluster is Ready (rehearsal,
+# 2026-11-14). So the container's log is followed into RECOVERY_LOG while the
+# restore runs. It is followed only once the container runs: on a Pending pod
+# `kubectl logs -f` returns 0 with no output. A repeat appends lines twice,
+# which the reader ignores (it takes the last match). `finish` stops it.
 follow_recovery_log() {
-  local pod=""
-  while [ -z "$pod" ]; do
+  local pod state
+  while :; do
     pod=$(kubectl get pods -n "$DRILL_NS" -l "cnpg.io/cluster=$DRILL,cnpg.io/jobRole=full-recovery" \
-      -o name 2>/dev/null | head -1)
-    [ -n "$pod" ] || sleep 2
-  done
-  until kubectl logs -f -n "$DRILL_NS" "$pod" --all-containers >>"$RECOVERY_LOG" 2>/dev/null; do
-    kubectl get -n "$DRILL_NS" "$pod" >/dev/null 2>&1 || return 0
+      -o name 2>/dev/null | head -1 || true)
+    if [ -n "$pod" ]; then
+      state=$(recovery_state "$pod") || return 0
+      case "$state" in
+        *running* | *terminated*)
+          kubectl logs -f -n "$DRILL_NS" "$pod" -c "$RECOVERY_CONTAINER" >>"$RECOVERY_LOG" 2>/dev/null || true
+          state=$(recovery_state "$pod") || return 0
+          case "$state" in *terminated*) return 0 ;; esac
+          ;;
+      esac
+    fi
     sleep 2
   done
+}
+
+# The state of the restore container ({"running": …}); fails when the pod is gone.
+recovery_state() {
+  kubectl get -n "$DRILL_NS" "$1" \
+    -o jsonpath="{.status.containerStatuses[?(@.name==\"$RECOVERY_CONTAINER\")].state}" 2>/dev/null
 }
 
 # The bot token goes to curl on stdin, not argv.
