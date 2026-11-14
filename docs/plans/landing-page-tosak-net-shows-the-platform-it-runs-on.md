@@ -106,15 +106,19 @@ success; and the page passes its browser tests at 1440 px and 375 px.
       redirects to the apex with a 302 until the page is stable), and every
       entry `kluster services check` asks for. Requests start from the guess
       and follow ADR 0013 after three days.
-- [ ] Cut over. The new route is applied while `apex-to-docs` still exists;
+- [x] Cut over. The new route is applied while `apex-to-docs` still exists;
       under the Gateway API's tie rule the older route keeps the host, so
-      nothing changes yet (assumed until the first apply shows it). Deleting
+      nothing changes yet (shown on 2026-11-14: both routes Accepted with
+      `RouteRulesOverlap`, and both hosts still answered 302 to the docs). Deleting
       `apex-to-docs` by hand then hands the host to the site at once. 🔴
       `core-gateway` syncs with prune off, so removing
       `core/gateway/apex-redirect.yaml` from Git alone leaves the live route
       in place. The same PR moves the apex from `public-hosts-302` to
       `public-hosts-2xx`. Proof is taken on the live objects: `curl` for the
-      apex and `www`, and `probe_success` for both targets.
+      apex and `www`, and `probe_success` for both targets. Done 2026-11-14
+      (#118): a delete made before `core-gateway` had read the merge was
+      undone by selfHeal within seconds; the second delete, after the sync,
+      held. The apex gave 200, `www` a 302 to it, `probe_success` 1 for both.
 
 ## Live numbers from tosak-status
 
