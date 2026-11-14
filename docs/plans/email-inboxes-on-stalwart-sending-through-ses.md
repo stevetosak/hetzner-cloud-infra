@@ -157,14 +157,23 @@ an answer in the Task Record.
 
 ## Phase 2 — Build and rehearsal
 
-**Done when:** the `mail` project is merged and `kluster services check`
-passes; in a rehearsal with no MX record, a message sent over SMTP to the mail
+**Done when:** the `mail` project is complete on the branch `feat/mail` and
+`kluster services check` passes on it; in a rehearsal from that branch, with
+no MX record, a message sent over SMTP to the mail
 load balancer is read back over IMAP, a message sent through SES reaches a
 verified address and passes SPF, DKIM and DMARC, a pod restart during a send
 loses no message, every probe and alert fires once on a forced fault, and one
 run of the Restore Drill passes its mail phase. Bounce and complaint tests go
 to the SES mailbox simulator, never to an invented address: AWS counts a
 bounce from an invented address against the account.
+
+The project stays on its branch until Phase 3. A project that the `projects`
+generator lists is synced to the live cluster as soon as it reaches `master`,
+and so are the core entries (the database, Reloader, the Gateway, the
+LimitRange); a merge would start Stalwart and buy the load balancer before the
+rehearsal has proven anything. The rehearsal project's Argo CD reads the
+branch `rehearsal`, so `feat/mail` is pushed there for each run. The merge is
+the first step of Phase 3 (operator, 2026-11-14).
 
 - [ ] Add the project entries that `kluster services check` asks for: the
       namespace file, the AppProject, the generator line, `mail` in the
@@ -245,8 +254,9 @@ answered back to it, the DNS check script passes for `tosak.net`, the first
 production drill passes its mail phase, the mailboxes `dmarc@tosak.net` and
 `drill@tosak.net` exist, and DMARC and TLS reports arrive at `dmarc@`.
 
-- [ ] Sync the `mail` project to the live cluster and note the public IP
-      address of the new load balancer.
+- [ ] Merge the branch `feat/mail`, so Argo CD syncs the `mail` project to
+      the live cluster, and note the public IP address of the new load
+      balancer.
 - [ ] Publish the records for `tosak.net` in Cloudflare by hand, from the list
       below, then run the DNS check script.
 - [ ] Create the operator's account, `dmarc@tosak.net` and the canary
