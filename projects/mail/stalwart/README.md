@@ -76,6 +76,15 @@ connection without a header is closed. A header error is only logged, and
 never counts towards auto-ban, so the load balancer's TCP health checks do not
 ban it. The address and the PROXY setting are pairs: change each half together.
 
+## The certificate
+
+`manifests/base/certificate.yaml` is the cert-manager `Certificate` for
+`mail.tosak.net` (ECDSA P-256, `letsencrypt-prod`, DNS-01), synced by Argo CD
+with the Deployment. Its Secret `mail-tls` is mounted at `/run/secrets/tls`;
+Stalwart reads every certificate in `tls.crt`, so it serves the leaf with the
+intermediate. Stalwart reads the files only at start, and Reloader restarts
+the pod after each renewal. The pod cannot start before the Secret exists.
+
 ## Logins
 
 `STALWART_RECOVERY_ADMIN` (`admin` and the Secret `admin`) is the recovery
