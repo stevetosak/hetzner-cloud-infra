@@ -51,7 +51,9 @@ What the plan sets:
 - the domain `tosak.net` with DKIM management `Manual`: SES signs with Easy
   DKIM, Stalwart signs nothing;
 - the blob store `S3` on Scaleway `nl-ams` (path style), a stdout tracer, the
-  Prometheus exporter with basic auth, and ASN lookups `Disabled`.
+  Prometheus exporter with basic auth, and ASN lookups `Disabled`;
+- the HTTP client address from `X-Forwarded-For` and the pod network as an
+  allowed range (see the admin route below).
 
 On a fresh data store the first normal start still inserts the default ASN
 source and downloads its data once, although the plan applied `Disabled` just
@@ -95,6 +97,20 @@ application for the operator's email only, and its probe target is in
 `public-hosts-access` (`core/monitoring/probes/public-hosts.yaml`), which
 passes on the 302 to the Access login.
 
+Every admin request reaches Stalwart from an Envoy pod, and Stalwart's
+auto-ban would otherwise count each failed login against that one address and
+then refuse every connection from it, which locks the UI for everyone. Two
+settings in the plan prevent that. `Http` takes the client address from
+`X-Forwarded-For` (one hop): Envoy writes the visitor's address there from
+`CF-Connecting-IP`, so a failed login bans the visitor. The scan ban (a request
+for a path like `/wp-login.php`) still uses the connection's own address, so
+`AllowedIp` exempts the pod network `10.244.0.0/16` from every ban; it is the
+cluster's `podCIDR` (`tools/kluster/kluster.yaml`), so change both together.
+Port 8080
+is reachable only from inside the cluster, so only a pod can forge the header.
+Kubelet probes and Prometheus scrapes arrive without the header; the tracer
+drops the `http.x-forwarded-missing` warning they cause.
+
 ## Logins
 
 `STALWART_RECOVERY_ADMIN` (`admin` and the Secret `admin`) is the recovery
@@ -114,6 +130,11 @@ message for a retry instead of sending it without TLS. The metrics answered
 401 without the password and 200 with it. With a lab address in place of
 10.0.4.3: a trusted client's PROXY header gave the session the claimed
 address, a trusted client without a header got no greeting, and an untrusted
-client's header was not read. Not proven there: a real SES delivery, the
+client's header was not read. With a lab range in place of the pod network:
+three failed logins through the proxy address with a forwarded client banned
+the forwarded client only (a rate of 2, lowered for the test), and the proxy
+and another forwarded client still passed; a scan path from outside the range
+banned that address, and the same path from inside it banned nothing. Not
+proven there: a real SES delivery, the
 Scaleway endpoint, the image volume on the cluster, and that the Hetzner load
 balancer reaches the pod from 10.0.4.3; the rehearsal proves them.
