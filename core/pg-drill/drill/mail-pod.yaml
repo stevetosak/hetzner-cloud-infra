@@ -59,6 +59,10 @@ spec:
         - --s3-provider=Scaleway
         - --s3-endpoint=https://s3.nl-ams.scw.cloud
         - --s3-region=nl-ams
+        # The pod resolves only its host aliases: the virtual-host name
+        # <bucket>.s3.nl-ams.scw.cloud does not resolve, so the bucket goes in
+        # the path (rehearsal, 2026-11-14).
+        - --s3-force-path-style=true
         - --stats=0
       env:
         - name: MAIL_BUCKET
