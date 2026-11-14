@@ -232,7 +232,7 @@ bounce from an invented address against the account.
       settings before any mail service starts, for example by starting in
       recovery mode (only the management listener runs, according to the
       documentation; the build proves it) and applying a drill plan first.
-- [ ] Run the rehearsal and record the measured memory, the proofs in the
+- [x] Run the rehearsal and record the measured memory, the proofs in the
       finish line above, and every fault found, in the Task Record. A
       rehearsal ran no application and no drill until 2026-11-14, so the
       operator chose to teach it a list of rehearsed projects first
@@ -246,15 +246,42 @@ bounce from an invented address against the account.
         the load balancer's private address, and the new `rehearsal-cuts`
         links. **Done 2026-11-14** (feat/mail): unit tests, six mutation
         checks and every cut's build pass.
-      - [ ] Push the branch `rehearsal`, run `kluster --env rehearsal up --db
+      - [x] Push the branch `rehearsal`, run `kluster --env rehearsal up --db
         fresh` (Plan Mode, then `--apply`), and apply the ClusterIP Service,
-        `httproute.yaml` and the canary messages by hand.
-      - [ ] Prove the finish line: SMTP in through the load balancer and IMAP
+        `httproute.yaml` and the canary messages by hand. **Done
+        2026-11-14**: `up` passed on its third run; the rehearsal certificate
+        needed a `commonName`, because Stalwart refuses a certificate with an
+        empty issuer.
+      - [x] Prove the finish line: SMTP in through the load balancer and IMAP
         back, an SES send that passes SPF, DKIM and DMARC, a pod restart
         during a send, each probe and alert fired once, the PROXY source in
         Stalwart's log, and one drill run started by hand with the
-        rehearsal canary's digest.
-      - [ ] Record the measured memory and every fault, then `down --apply`.
+        rehearsal canary's digest. **Done 2026-11-14.** The canary came in
+        through the load balancer and back over IMAPS as
+        `drill@tosak.net%admin`. An internet scanner's address in Stalwart's
+        log proves the PROXY header. A pod deleted during 40 sends lost none
+        of the 26 messages that got a 250. The operator read SPF, DKIM and
+        DMARC as pass in Gmail, with the message in the inbox.
+        `MailPortDown`, `MailRelayFailing` and `MailNotDelivered` fired;
+        `MailServedCertificateStale` is proven by its promtool tests only.
+        The eighth drill run passed every assertion, mail phase included,
+        after fixes for two faults the cluster found: the replay end is logged only
+        in CloudNativePG's restore Job pod, which is gone by the time the
+        Cluster is Ready, so the drill follows that log during the restore;
+        and rclone ignores path-style addressing for the provider
+        `Scaleway`, which the drill pod needs, because it resolves only its
+        host aliases. 🔴 A canary sent without authentication fails DMARC
+        and lands in Junk Mail, which Stalwart expunges after 30 days:
+        Phase 3 moves the production canary to the INBOX before it records
+        the digest.
+      - [x] Record the measured memory and every fault, then `down --apply`.
+        **Done 2026-11-14**: Stalwart's working set peaked at 87 MiB on its
+        first start (the ASN and spam-rule downloads) and stayed at 22 to
+        49 MiB afterwards, with CPU under 15m, measured in the rehearsal's
+        Prometheus over one hour; the request stays until three days of live
+        data exist (ADR 0013). The faults are in the Task Record. `down`
+        read the project back empty; it does not empty the mail rehearsal
+        bucket.
 
 ## Phase 3 — Live rollout for tosak.net
 
