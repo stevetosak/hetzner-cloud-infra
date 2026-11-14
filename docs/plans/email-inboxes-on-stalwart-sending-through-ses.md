@@ -77,7 +77,7 @@ and the open checks below each have an answer in the Task Record.
       encryption `AES256`; `ListObjectVersions` works with both read-only keys.
       The requests were signed with a standard-library SigV4 signer, because
       the laptop's curl 7.81 `--aws-sigv4` signs S3 requests wrongly.
-- [ ] Set up SES in `eu-central-1`: the identity `tosak.net` with Easy DKIM,
+- [x] Set up SES in `eu-central-1`: the identity `tosak.net` with Easy DKIM,
       the custom MAIL FROM domain `bounce.tosak.net` with the MX failure
       behaviour `UseDefaultValue`, SMTP credentials stored in Bitwarden, and
       the request for production access. The DKIM and MAIL FROM records can be
@@ -86,7 +86,13 @@ and the open checks below each have an answer in the Task Record.
       on 2026-11-09, as `v=DMARC1; p=none` without `rua`, because the SES
       recommendations flagged the missing record; `p=none` changes no
       delivery, and a report address is useless until `dmarc@` exists
-      (checked on both Cloudflare nameservers and 8.8.8.8).
+      (checked on both Cloudflare nameservers and 8.8.8.8). **Done
+      2026-11-14**: the console shows the identity Verified, DKIM Successful
+      and the custom MAIL FROM domain Successful (2026-11-08); the SMTP
+      credentials are in `kluster/mail-ses-smtp` (a 20-byte SMTP user name and
+      a 44-byte password, checked by length); AWS granted production access
+      in `eu-central-1` on the support case, with a quota of 50,000 messages a
+      day at 14 a second.
 - [ ] Add the CloudWatch alarms on `Reputation.BounceRate` above 2 % and
       `Reputation.ComplaintRate` above 0.05 %, through an SNS topic to the
       admin Gmail address. Confirm the subscription and send one test alarm.
