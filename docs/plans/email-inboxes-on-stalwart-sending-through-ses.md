@@ -49,23 +49,34 @@ and the open checks below each have an answer in the Task Record.
       (Backblaze's data-regions page). **Overturned 2026-11-08**: the live
       sign-up form offered only CA East, US East and US West. The operator
       chose Scaleway instead; ADR 0012 has an amendment.
-- [ ] Create the Scaleway account on the admin Gmail address with two-factor
+- [x] Create the Scaleway account on the admin Gmail address with two-factor
       authentication, and two Projects: `mail` and `mail-rehearsal`, one bucket
       each in `nl-ams`, Standard Multi-AZ (`tosak-mail-blobs` and
-      `tosak-mail-blobs-rehearsal`). Each bucket is private, has versioning on
-      and a lifecycle rule with `NoncurrentVersionExpiration` after 30 days
-      (the same window as the PostgreSQL backups), `ExpiredObjectDeleteMarker`
-      and an abort of incomplete multipart uploads. Each Project gets two IAM
-      applications, one with `ObjectStorageFullAccess` for Stalwart and one
-      with `ObjectStorageReadOnly` for the Restore Drill, scoped to that
-      Project only; IAM grants per Project, so this scopes each key to one
-      bucket. The operator stores the four keys in Bitwarden as
-      `kluster/scw-mail`, `kluster/scw-mail-readonly`,
+      `tosak-mail-blobs-rehearsal`). Each bucket is private, has versioning on,
+      SSE-ONE encryption, and a lifecycle rule with
+      `NoncurrentVersionExpiration` after 30 days (the same window as the
+      PostgreSQL backups), `ExpiredObjectDeleteMarker` and an abort of
+      incomplete multipart uploads; the console sets all three. Each Project
+      gets two IAM applications, each with its own policy scoped to that
+      Project only: read and write for Stalwart with the permission sets
+      `ObjectStorageObjectsRead`, `ObjectStorageObjectsWrite`,
+      `ObjectStorageObjectsDelete` and `ObjectStorageBucketsRead`, and
+      `ObjectStorageReadOnly` for the Restore Drill; IAM grants per Project, so
+      this scopes each key to one bucket. The operator stores the four keys in
+      Bitwarden as `kluster/scw-mail`, `kluster/scw-mail-readonly`,
       `kluster/scw-mail-rehearsal-rw` and `kluster/scw-mail-rehearsal-ro`
       (fields `access_key_id`, `secret_access_key`). Then each key is checked
       without reading its value: byte lengths, a bucket listing with the
       read-only key, a refused write with it, and the versioning and lifecycle
-      read back from each bucket.
+      read back from each bucket. **Done 2026-11-14**: every key is 20 and 36
+      bytes and lists only its own bucket (the other Project's bucket answers
+      `AccessDenied`); a `PUT` with each read-only key was refused and left
+      both buckets empty; both buckets read back versioning `Enabled`, the rule
+      `expire-old-versions` (`NoncurrentDays` 30, `ExpiredObjectDeleteMarker`,
+      multipart abort after 7 days, no expiry of current versions) and default
+      encryption `AES256`; `ListObjectVersions` works with both read-only keys.
+      The requests were signed with a standard-library SigV4 signer, because
+      the laptop's curl 7.81 `--aws-sigv4` signs S3 requests wrongly.
 - [ ] Set up SES in `eu-central-1`: the identity `tosak.net` with Easy DKIM,
       the custom MAIL FROM domain `bounce.tosak.net` with the MX failure
       behaviour `UseDefaultValue`, SMTP credentials stored in Bitwarden, and
