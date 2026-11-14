@@ -1,0 +1,199 @@
+# The drill's throw-away Stalwart (ADR 0003, Amendment 2026-11-02). NOT
+# applied by hand: drill.sh fills in every `set-by-drill.sh` value, creates
+# the pod after the PostgreSQL assertions pass, reads the `check` container's
+# result and deletes the pod at the end of every run.
+#
+# 1. copy-blobs     rclone copies the mail bucket AS IT WAS at the replay end
+#                   (`--s3-version-at`) into the emptyDir `blobs`, with the
+#                   read-only key: metadata and files describe one instant.
+# 2. apply-settings recovery mode, then drill/mail-settings.ndjson replaces
+#                   production's listeners, routes, blob store and metrics.
+# 3. stalwart       a native sidecar on the drill settings: IMAP and HTTP on
+#                   127.0.0.1 only, the blob store is /blobs.
+# 4. check          drill/mail_check.py reads the mail back; the pod ends with
+#                   its exit code.
+#
+# 🔴 It must not reach the world or touch production:
+# - no DNS: the only names are the two hostAliases (the drill database and
+#   the Scaleway endpoint), so no MX, relay or other host can be found;
+# - no SES credentials and no relay route; the plan leaves only `local`;
+# - the bucket key is read-only, and the blob store is the copy, so a purge
+#   inside the drill deletes nothing in production;
+# - no Service, no route, every listener on 127.0.0.1. Flannel enforces no
+#   NetworkPolicy (ADR 0001), so the settings and the missing DNS are the
+#   guard, not the network.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: drill-stalwart
+  namespace: pg-drill
+  labels:
+    app: drill-stalwart
+spec:
+  restartPolicy: Never
+  # Copy, start and read back; drill.sh waits a little longer.
+  activeDeadlineSeconds: 1800
+  automountServiceAccountToken: false
+  enableServiceLinks: false
+  dnsPolicy: None
+  dnsConfig:
+    nameservers: [127.0.0.1]
+  # [{ip: <drill-rw ClusterIP>, hostnames: [drill-rw]},
+  #  {ip: <an address of s3.nl-ams.scw.cloud>, hostnames: [s3.nl-ams.scw.cloud]}]
+  hostAliases: set-by-drill.sh
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 2000
+    runAsGroup: 2000
+    fsGroup: 2000
+    seccompProfile:
+      type: RuntimeDefault
+  initContainers:
+    - name: copy-blobs
+      image: rclone/rclone:1.71.2@sha256:3103526c506266a9ecdf064efe99bf3677d92ef6407af124d8c56b4f49cbaa51
+      imagePullPolicy: IfNotPresent
+      args:
+        - copy
+        - :s3:$(MAIL_BUCKET)
+        - /blobs
+        - --s3-provider=Scaleway
+        - --s3-endpoint=https://s3.nl-ams.scw.cloud
+        - --s3-region=nl-ams
+        - --stats=0
+      env:
+        - name: MAIL_BUCKET
+          value: set-by-drill.sh
+        # The replay end, rounded up to the next second (RFC 3339).
+        - name: RCLONE_S3_VERSION_AT
+          value: set-by-drill.sh
+        - name: RCLONE_S3_ACCESS_KEY_ID
+          valueFrom: {secretKeyRef: {name: scw-mail-readonly, key: ACCESS_KEY_ID}}
+        - name: RCLONE_S3_SECRET_ACCESS_KEY
+          valueFrom: {secretKeyRef: {name: scw-mail-readonly, key: SECRET_ACCESS_KEY}}
+        - name: RCLONE_CONFIG
+          value: /tmp/rclone.conf
+        - name: HOME
+          value: /tmp
+      securityContext: &restricted
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          memory: 256Mi
+      volumeMounts:
+        - name: blobs
+          mountPath: /blobs
+        - name: tmp
+          mountPath: /tmp
+    - name: apply-settings
+      image: set-by-drill.sh            # production's Stalwart image
+      imagePullPolicy: IfNotPresent
+      command: ["sh", "/drill/mail-apply.sh"]
+      env: &admin
+        - name: STALWART_ADMIN_PASSWORD
+          valueFrom: {secretKeyRef: {name: drill-stalwart, key: admin-password}}
+        - name: STALWART_RECOVERY_ADMIN
+          value: admin:$(STALWART_ADMIN_PASSWORD)
+        - name: STALWART_USER
+          value: admin
+        - name: STALWART_PASSWORD
+          valueFrom: {secretKeyRef: {name: drill-stalwart, key: admin-password}}
+      securityContext: &stalwart
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        # The binary carries cap_net_bind_service as a file capability: without
+        # it in the bounding set, exec fails with "Operation not permitted".
+        capabilities:
+          drop: ["ALL"]
+          add: ["NET_BIND_SERVICE"]
+      resources: &stalwart-resources
+        requests:
+          cpu: 50m
+          memory: 256Mi
+        limits:
+          memory: 512Mi
+      volumeMounts: &stalwart-mounts
+        - name: drill
+          mountPath: /drill
+          readOnly: true
+        - name: drill
+          mountPath: /etc/stalwart/config.json
+          subPath: mail-config.json
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+        - name: secret
+          mountPath: /run/secrets/drill
+          readOnly: true
+        - name: blobs
+          mountPath: /blobs
+        - name: stalwart-cli
+          mountPath: /opt/stalwart-cli
+          readOnly: true
+    - name: stalwart
+      image: set-by-drill.sh            # production's Stalwart image
+      imagePullPolicy: IfNotPresent
+      # A native sidecar: it starts before `check` and stops when `check` ends.
+      restartPolicy: Always
+      env: *admin
+      securityContext: *stalwart
+      resources: *stalwart-resources
+      volumeMounts: *stalwart-mounts
+      # Every listener is on 127.0.0.1, so the probe runs inside the container.
+      startupProbe:
+        exec:
+          command: ["curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:8080/healthz/ready"]
+        periodSeconds: 2
+        failureThreshold: 150
+  containers:
+    - name: check
+      image: python:3.12.16-alpine@sha256:c5ba3deef00c7758561a0f03c26f44f10589263d40e732b8748e0d1f38f6dd89
+      imagePullPolicy: IfNotPresent
+      command: ["python3", "-I", "/drill/mail_check.py"]
+      env:
+        - name: CANARY_ACCOUNT
+          value: drill@tosak.net
+        - name: CANARY_SHA256
+          value: set-by-drill.sh
+        - name: SAMPLE
+          value: "20"
+      securityContext: *restricted
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          memory: 128Mi
+      volumeMounts:
+        - name: drill
+          mountPath: /drill
+          readOnly: true
+        - name: secret
+          mountPath: /run/secrets/drill
+          readOnly: true
+        - name: blobs
+          mountPath: /blobs
+          readOnly: true
+  volumes:
+    - name: drill
+      configMap:
+        name: set-by-drill.sh           # the drill Job's own ConfigMap
+    - name: secret
+      secret:
+        secretName: drill-stalwart      # made by drill.sh for this run only
+    - name: blobs
+      emptyDir:
+        # The whole bucket as of the replay end. The result reports its size
+        # (mail.blobBytes); near this limit the operator decides (ADR 0003).
+        sizeLimit: 4Gi
+    - name: tmp
+      emptyDir: {}
+    - name: stalwart-cli
+      image:
+        reference: set-by-drill.sh      # production's stalwart-cli image
+        pullPolicy: IfNotPresent

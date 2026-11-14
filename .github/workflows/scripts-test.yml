@@ -1,5 +1,6 @@
 # Runs the node:test suites of the workflow scripts, the tag-bump action and the
-# deploy catalog, and the unittest suite of the mail DNS check. Advisory: the only required check on `master` is deploy-scope.
+# deploy catalog, and the unittest suites of the mail DNS check and the drill's
+# mail read-back. Advisory: the only required check on `master` is deploy-scope.
 name: Scripts test
 
 on:
@@ -11,6 +12,7 @@ on:
       - 'core/argocd/applicationset.yaml'
       - 'projects/mail/*.py'
       - 'projects/mail/httproute.yaml'
+      - 'core/pg-drill/drill/*.py'
 
 permissions:
   contents: read
@@ -36,3 +38,4 @@ jobs:
         with:
           persist-credentials: false
       - run: python3 -I -m unittest discover -s projects/mail -p '*_test.py' -v
+      - run: python3 -I -m unittest discover -s core/pg-drill/drill -p '*_test.py' -v

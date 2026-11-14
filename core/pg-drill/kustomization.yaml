@@ -16,3 +16,8 @@ configMapGenerator:
     files:
       - drill/drill.sh
       - drill/cluster.yaml
+      - drill/mail-pod.yaml
+      - drill/mail-config.json
+      - drill/mail-settings.ndjson
+      - drill/mail-apply.sh
+      - drill/mail_check.py

@@ -10,7 +10,12 @@
 #      the restore — physical replay is exact, so reaching it means the rows
 #      are production's rows;
 #   3. every database production declares exists, with at least one user
-#      table and more than zero rows.
+#      table and more than zero rows;
+#   4. the mail phase (ADR 0003, Amendment 2026-11-02), only when production
+#      declares the database `mail` and 1–3 passed: the mail bucket is copied
+#      as it was at the replay end, a throw-away Stalwart (drill/mail-pod.yaml)
+#      starts on the restored `mail` database and that copy, and
+#      drill/mail_check.py reads the canary and SAMPLE random messages back.
 #
 # Pass or fail, it writes drill/<UTC timestamp>.json to tosak-drill-results
 # (read by .github/scripts/watch.mjs `checkDrill`) and sends one Telegram
@@ -21,6 +26,9 @@ set -euo pipefail
 
 : "${READY_TIMEOUT:=30m}"
 : "${JOB_NAME:=restore-drill}"
+: "${MAIL_BUCKET:=tosak-mail-blobs}"
+: "${CANARY_SHA256:=}"
+: "${MAIL_TIMEOUT:=2100}"           # seconds: the pod's own deadline is 1800
 
 DRILL_NS=pg-drill
 DRILL=drill                       # the Cluster in drill/cluster.yaml
@@ -31,6 +39,14 @@ PROD=tosak-pg-cluster
 PLUGIN=barman-cloud.cloudnative-pg.io
 RESULTS_BUCKET=tosak-drill-results
 TEMPLATE=/drill/cluster.yaml
+MAIL_DB=mail
+MAIL_POD=drill-stalwart             # drill/mail-pod.yaml
+MAIL_SECRET=drill-stalwart          # this run's passwords; deleted by `finish`
+MAIL_TEMPLATE=/drill/mail-pod.yaml
+MAIL_ROLE=tosak                     # the owner of `mail`, as in production
+PROD_MAIL_NS=mail
+PROD_MAIL_DEPLOY=stalwart           # gives the Stalwart and stalwart-cli images
+S3_HOST=s3.nl-ams.scw.cloud
 
 step="start"            # what was running when it failed
 result=fail
@@ -39,6 +55,7 @@ owns_cluster=no         # set once no other drill is running; until then
                         # `finish` must not delete a Cluster `drill`
 db_report=()            # "authos: 9 tables, 1234 rows"
 db_json='[]'
+mail_json='{"result":"skipped"}'
 
 log() { printf '%s  %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 
@@ -76,11 +93,24 @@ delete_drill_cluster() {
   return 1
 }
 
+# Deletes this run's drill Stalwart and its Secret. Explicit returns, as above.
+delete_drill_mail() {
+  kubectl delete pod "$MAIL_POD" -n "$DRILL_NS" --ignore-not-found --wait --timeout=5m || return 1
+  kubectl delete secret "$MAIL_SECRET" -n "$DRILL_NS" --ignore-not-found || return 1
+}
+
 # The bot token goes to curl on stdin, not argv.
 telegram() {
   curl -sS -o /dev/null -w '%{http_code}' --max-time 30 -K - \
     --data-urlencode "chat_id=$TG_CHAT_ID" --data-urlencode "text=$1" \
     <<<"url = \"https://api.telegram.org/bot$TG_BOT_TOKEN/sendMessage\""
+}
+
+# One line for the Telegram message on a pass.
+mail_summary() {
+  jq -r 'if .result == "skipped" then "mail: skipped (production declares no mail database)"
+         else "mail: canary \(.canary), \(.sampled) of \(.messages) messages read back, \(.blobFiles) files (\(.blobBytes / 1048576 | floor) MiB) as of \(.versionAt)" end' \
+    <<<"$mail_json" 2>/dev/null || echo "mail: no result"
 }
 
 finish() {
@@ -92,6 +122,7 @@ finish() {
   if [ "$owns_cluster" = yes ]; then
     log "deleting the drill Cluster"
     cleaned=yes
+    delete_drill_mail || cleaned=no
     delete_drill_cluster || cleaned=no
   fi
 
@@ -102,9 +133,10 @@ finish() {
         --arg serverName "$server" --arg newestWal "$newest_wal" \
         --arg lsnReached "$lsn_reached" --arg readySeconds "$ready_seconds" \
         --arg cleanedUp "$cleaned" --argjson databases "$db_json" \
+        --argjson mail "$(jq -c . <<<"$mail_json" 2>/dev/null || echo '{"result":"fail"}')" \
         '{finishedAt: $finishedAt, result: $result, failedAt: (if $failedAt == "" then null else $failedAt end),
           serverName: $serverName, newestWal: $newestWal, lsnReached: $lsnReached,
-          readySeconds: ($readySeconds | tonumber? // null), databases: $databases,
+          readySeconds: ($readySeconds | tonumber? // null), databases: $databases, mail: $mail,
           cleanedUp: ($cleanedUp == "yes")}' >/tmp/result.json
   # Never upload an empty or broken object: the watcher cannot parse it and
   # would report itself broken every day until someone deleted it.
@@ -121,14 +153,15 @@ finish() {
   if [ "$result" = pass ]; then
     text="✅ Restore Drill passed — $finished_at
 Restored $server to LSN $lsn_reached (newest archived segment $newest_wal), Ready in ${ready_seconds}s.
-$(printf '%s\n' "${db_report[@]}")"
+$(printf '%s\n' "${db_report[@]}")
+$(mail_summary)"
   else
     text="🔴 Restore Drill FAILED — $finished_at
 Failed at: $step.
 Log: kubectl logs -n $DRILL_NS job/$JOB_NAME"
   fi
   [ "$written" = yes ] || text+=$'\n'"⚠️ The result was NOT written to $RESULTS_BUCKET — the watcher will report a missing pass."
-  [ "$cleaned" != no ] || text+=$'\n'"⚠️ The drill Cluster or its volume was NOT deleted. The next run deletes it; check: kubectl get cluster,pvc -n $DRILL_NS"
+  [ "$cleaned" != no ] || text+=$'\n'"⚠️ The drill Cluster, its volume or the drill Stalwart was NOT deleted. The next run deletes it; check: kubectl get cluster,pvc,pod,secret -n $DRILL_NS"
 
   http=$(telegram "$text")
   log "telegram: HTTP $http"
@@ -136,6 +169,125 @@ Log: kubectl logs -n $DRILL_NS job/$JOB_NAME"
   [ "$result" = pass ] && [ "$written" = yes ] && [ "$http" = 200 ] && exit 0
   exit 1
 }
+# The mail phase (ADR 0003, Amendment 2026-11-02). Runs after the database
+# check, so the restored `mail` database is known to be readable.
+mail_phase() {
+  local version_at logged ended epoch deploy image cli_image configmap pg_ip s3_ip pod_json phase line failed
+  local deadline=$((SECONDS + MAIL_TIMEOUT))
+
+  # PostgreSQL logs the time of the last replayed commit when the replay ends.
+  # The bucket is copied as of the next whole second: a file written before
+  # that commit is in the copy, one written after it at most adds an unused
+  # file. Only a UTC time is accepted, so the conversion cannot shift it.
+  step="mail: read the replay end time from the restore's log"
+  log "$step"
+  logged=$(
+    for pod in $(kubectl get pods -n "$DRILL_NS" -l "cnpg.io/cluster=$DRILL" -o name); do
+      kubectl logs -n "$DRILL_NS" "$pod" --all-containers 2>/dev/null || true
+    done | jq -Rr 'fromjson? | .record.message? // empty' |
+      sed -n 's/^last completed transaction was at log time //p' | tail -1
+  )
+  ended=$(grep -Eo '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?\+00$' <<<"$logged" | cut -c1-19 || true)
+  if [ -z "$ended" ]; then
+    step="mail: the restore logged no UTC replay end time (got '${logged:-nothing}')"
+    exit 1
+  fi
+  epoch=$(date -u -d "$ended" +%s)
+  version_at=$(date -u -d "@$((epoch + 1))" +%Y-%m-%dT%H:%M:%SZ)
+  log "last replayed commit $logged; the bucket is copied as of $version_at"
+  mail_json=$(jq -n --arg at "$version_at" '{result: "fail", versionAt: $at}')
+
+  step="mail: read production's Stalwart images"
+  deploy=$(kubectl get deployment "$PROD_MAIL_DEPLOY" -n "$PROD_MAIL_NS" -o json)
+  image=$(jq -er '.spec.template.spec.containers[] | select(.name == "stalwart") | .image' <<<"$deploy")
+  cli_image=$(jq -er '.spec.template.spec.volumes[] | select(.name == "stalwart-cli") | .image.reference' <<<"$deploy")
+  configmap=$(kubectl get pod "$HOSTNAME" -n "$DRILL_NS" -o json |
+    jq -er '.spec.volumes[] | select(.name == "drill") | .configMap.name')
+  pg_ip=$(kubectl get service "$DRILL-rw" -n "$DRILL_NS" -o jsonpath='{.spec.clusterIP}')
+  s3_ip=$(getent ahostsv4 "$S3_HOST" | awk 'NR == 1 { print $1 }')
+  # One test per line: under errexit, a failed test before `&&` does not stop.
+  [ -n "$pg_ip" ] || { step="mail: the drill Cluster has no $DRILL-rw address"; exit 1; }
+  [ -n "$s3_ip" ] || { step="mail: $S3_HOST does not resolve"; exit 1; }
+  log "Stalwart $image, drill database $pg_ip, $S3_HOST $s3_ip"
+
+  # Fresh for every run and never printed: the drill Stalwart's admin, and
+  # the password of the owner role in the throw-away copy only. Production's
+  # passwords never reach the drill.
+  step="mail: set this run's passwords"
+  mkdir -p /tmp/mail
+  od -An -tx1 -N24 /dev/urandom | tr -d ' \n' >/tmp/mail/admin-password
+  od -An -tx1 -N24 /dev/urandom | tr -d ' \n' >/tmp/mail/db-password
+  [ "$(wc -c </tmp/mail/admin-password)" -eq 48 ]
+  [ "$(wc -c </tmp/mail/db-password)" -eq 48 ]
+  # On stdin, so the value is in no argument list.
+  printf "ALTER ROLE %s PASSWORD '%s';\n" "$MAIL_ROLE" "$(cat /tmp/mail/db-password)" | psql_drill -d postgres -q
+  kubectl create secret generic "$MAIL_SECRET" -n "$DRILL_NS" \
+    --from-file=admin-password=/tmp/mail/admin-password --from-file=db-password=/tmp/mail/db-password >/dev/null
+  rm -f /tmp/mail/admin-password /tmp/mail/db-password
+
+  step="mail: start the drill Stalwart"
+  log "$step"
+  pod_json=$(yq -o=json 'explode(.)' "$MAIL_TEMPLATE" |
+    jq --arg pg "$pg_ip" --arg s3ip "$s3_ip" --arg s3host "$S3_HOST" --arg bucket "$MAIL_BUCKET" \
+       --arg at "$version_at" --arg image "$image" --arg cli "$cli_image" --arg cm "$configmap" \
+       --arg canary "$CANARY_SHA256" '
+      def setenv($n; $v): .env |= map(if .name == $n then .value = $v else . end);
+      .spec.hostAliases = [{ip: $pg, hostnames: ["drill-rw"]}, {ip: $s3ip, hostnames: [$s3host]}]
+      | .spec.initContainers |= map(
+          if .name == "copy-blobs" then setenv("MAIL_BUCKET"; $bucket) | setenv("RCLONE_S3_VERSION_AT"; $at)
+          elif .name == "apply-settings" or .name == "stalwart" then .image = $image
+          else . end)
+      | .spec.containers |= map(if .name == "check" then setenv("CANARY_SHA256"; $canary) else . end)
+      | .spec.volumes |= map(
+          if .name == "drill" then .configMap.name = $cm
+          elif .name == "stalwart-cli" then .image.reference = $cli
+          else . end)')
+  if grep -q 'set-by-drill.sh' <<<"$pod_json"; then
+    step="mail: drill/mail-pod.yaml still holds a set-by-drill.sh value"
+    exit 1
+  fi
+  kubectl create -f - <<<"$pod_json" >/dev/null
+
+  step="mail: wait for the read-back (limit ${MAIL_TIMEOUT}s)"
+  log "$step"
+  while :; do
+    phase=$(kubectl get pod "$MAIL_POD" -n "$DRILL_NS" -o jsonpath='{.status.phase}')
+    case $phase in Succeeded | Failed) break ;; esac
+    [ "$SECONDS" -lt "$deadline" ] || exit 1
+    sleep 10
+  done
+  log "the drill Stalwart pod ended: $phase"
+
+  step="mail: read the result"
+  line=$(kubectl logs "$MAIL_POD" -n "$DRILL_NS" -c check --tail=1 2>/dev/null || true)
+  if jq -e '.result' <<<"$line" >/dev/null 2>&1; then
+    mail_json=$(jq -c --arg at "$version_at" '. + {versionAt: $at}' <<<"$line")
+  else
+    # The pod ended before `check` wrote a result: name the container that
+    # failed, in start order (the sidecar last: it is killed when the pod
+    # ends), and show the end of its log. Those containers log no message and
+    # no address; `check` is never shown.
+    failed=$(kubectl get pod "$MAIL_POD" -n "$DRILL_NS" -o json | jq -r '
+      def bad: (.state.terminated.exitCode // 0) != 0;
+      (.status.reason // "") as $reason
+      | ([(.status.initContainerStatuses // [])[] | select(.name != "stalwart" and bad) | .name]
+         + [(.status.containerStatuses // [])[] | select(bad) | .name]
+         + [(.status.initContainerStatuses // [])[] | select(.name == "stalwart" and (bad or .state.waiting != null)) | .name]
+         | first // "no container") + (if $reason == "" then "" else " (\($reason))" end)')
+    case $failed in
+      copy-blobs* | apply-settings* | stalwart*)
+        kubectl logs "$MAIL_POD" -n "$DRILL_NS" -c "${failed%% *}" --tail=20 2>/dev/null | sed 's/^/    /' || true ;;
+    esac
+    mail_json=$(jq -nc --arg at "$version_at" --arg c "$failed" \
+      '{result: "fail", versionAt: $at, failures: ["the pod ended in \($c) before a result"]}')
+  fi
+  log "mail: $(jq -c '{result, canary, accounts, messages, sampled, blobFiles, blobBytes}' <<<"$mail_json")"
+  if [ "$(jq -r .result <<<"$mail_json")" != pass ]; then
+    step="mail: $(jq -r '.failures // [] | join("; ")' <<<"$mail_json")"
+    exit 1
+  fi
+}
+
 trap finish EXIT
 # The Job's deadline sends SIGTERM; exit through `finish` so the Cluster is
 # still deleted and the failure still reported.
@@ -163,8 +315,9 @@ if [ -n "$others" ]; then
 fi
 owns_cluster=yes
 
-step="delete a drill Cluster left by an earlier run"
+step="delete a drill Cluster and Stalwart left by an earlier run"
 log "$step"
+delete_drill_mail
 delete_drill_cluster
 
 step="read what production declares"
@@ -266,5 +419,11 @@ if [ "${#missing[@]}" -gt 0 ]; then
   exit 1
 fi
 
+if printf '%s\n' "${databases[@]}" | grep -qx "$MAIL_DB"; then
+  mail_phase
+else
+  log "production declares no '$MAIL_DB' database: the mail phase is skipped"
+fi
+
 result=pass
-log "all three assertions passed"
+log "every assertion passed"

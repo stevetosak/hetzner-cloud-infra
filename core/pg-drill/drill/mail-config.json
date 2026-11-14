@@ -1,0 +1,1 @@
+{"@type":"PostgreSql","host":"drill-rw","port":5432,"database":"mail","authUsername":"tosak","authSecret":{"@type":"File","filePath":"/run/secrets/drill/db-password"},"useTls":false}
