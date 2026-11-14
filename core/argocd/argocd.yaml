@@ -2587,10 +2587,10 @@ spec:
           failureThreshold: 3
         resources:
           limits:
-            memory: 160Mi
+            memory: 288Mi
           requests:
             cpu: 10m
-            memory: 80Mi
+            memory: 144Mi
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
