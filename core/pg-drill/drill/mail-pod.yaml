@@ -56,12 +56,14 @@ spec:
         - copy
         - :s3:$(MAIL_BUCKET)
         - /blobs
-        - --s3-provider=Scaleway
-        - --s3-endpoint=https://s3.nl-ams.scw.cloud
-        - --s3-region=nl-ams
         # The pod resolves only its host aliases: the virtual-host name
         # <bucket>.s3.nl-ams.scw.cloud does not resolve, so the bucket goes in
-        # the path (rehearsal, 2026-11-14).
+        # the path. rclone 1.71.2 always uses virtual hosts for the provider
+        # Scaleway and ignores --s3-force-path-style there, so the provider is
+        # Other (rehearsal, 2026-11-14).
+        - --s3-provider=Other
+        - --s3-endpoint=https://s3.nl-ams.scw.cloud
+        - --s3-region=nl-ams
         - --s3-force-path-style=true
         - --stats=0
       env:
