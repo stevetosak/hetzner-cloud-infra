@@ -36,6 +36,14 @@ const (
 	elementsPath = "/spec/generators/0/list/elements"
 	// revisionPath is the JSON pointer of the template's git revision.
 	revisionPath = "/spec/template/spec/source/targetRevision"
+	// projectDirsPath and projectRevisionPath are the JSON pointers the
+	// rehearsal cut replaces in the projects ApplicationSet's git generator.
+	projectDirsPath     = "/spec/generators/0/git/directories"
+	projectRevisionPath = "/spec/generators/0/git/revision"
+
+	// coreAppSet and projectsAppSet are the names of the two ApplicationSets.
+	coreAppSet     = "core"
+	projectsAppSet = "projects"
 )
 
 // Element is one entry of the core ApplicationSet's list: the Application
@@ -128,7 +136,7 @@ func Core(fsys fs.FS) ([]Element, error) {
 // Rehearsal returns the list the rehearsal cut of core/argocd puts in place
 // of the core list: the value of its JSON6902 replace on elementsPath.
 func Rehearsal(fsys fs.FS) ([]Element, error) {
-	v, err := rehearsalReplace(fsys, elementsPath)
+	v, err := rehearsalReplace(fsys, coreAppSet, elementsPath)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +154,7 @@ func Rehearsal(fsys fs.FS) ([]Element, error) {
 func TargetRevision(fsys fs.FS, rehearsal bool) (string, error) {
 	var rev string
 	if rehearsal {
-		v, err := rehearsalReplace(fsys, revisionPath)
+		v, err := rehearsalReplace(fsys, coreAppSet, revisionPath)
 		if err != nil {
 			return "", err
 		}
@@ -181,14 +189,18 @@ func TargetRevision(fsys fs.FS, rehearsal bool) (string, error) {
 }
 
 // rehearsalReplace returns the value of the rehearsal cut's JSON6902 replace
-// on path, in the patch that targets the core ApplicationSet.
-func rehearsalReplace(fsys fs.FS, path string) (*yaml.Node, error) {
+// on path, in the patch that targets the ApplicationSet appSet.
+func rehearsalReplace(fsys fs.FS, appSet, path string) (*yaml.Node, error) {
 	data, err := fs.ReadFile(fsys, RehearsalArgoCDFile)
 	if err != nil {
 		return nil, err
 	}
 	var k struct {
 		Patches []struct {
+			Target struct {
+				Kind string `yaml:"kind"`
+				Name string `yaml:"name"`
+			} `yaml:"target"`
 			Patch string `yaml:"patch"`
 		} `yaml:"patches"`
 	}
@@ -196,6 +208,9 @@ func rehearsalReplace(fsys fs.FS, path string) (*yaml.Node, error) {
 		return nil, fmt.Errorf("%s: %w", RehearsalArgoCDFile, err)
 	}
 	for _, p := range k.Patches {
+		if p.Target.Kind != "ApplicationSet" || p.Target.Name != appSet {
+			continue
+		}
 		var ops []struct {
 			Op    string    `yaml:"op"`
 			Path  string    `yaml:"path"`
@@ -211,7 +226,7 @@ func rehearsalReplace(fsys fs.FS, path string) (*yaml.Node, error) {
 			}
 		}
 	}
-	return nil, fmt.Errorf("%s: no replace of %s", RehearsalArgoCDFile, path)
+	return nil, fmt.Errorf("%s: no replace of %s in the ApplicationSet %s", RehearsalArgoCDFile, path, appSet)
 }
 
 func checkElements(file string, els []Element) ([]Element, error) {
@@ -231,12 +246,18 @@ func checkElements(file string, els []Element) ([]Element, error) {
 	return els, nil
 }
 
+// projectDir is one directory of the projects generator.
+type projectDir struct {
+	Path    string `yaml:"path"`
+	Exclude bool   `yaml:"exclude"`
+}
+
 // Projects returns the projects the projects ApplicationSet syncs, in the
 // order its generator lists them. Each entry must have the shape
 // projects/<project>/*/manifests/overlays/dev, which the template's
 // naming rule needs.
 func Projects(fsys fs.FS) ([]string, error) {
-	o, err := find(fsys, ProjectsAppSetFile, "ApplicationSet", "projects")
+	o, err := find(fsys, ProjectsAppSetFile, "ApplicationSet", projectsAppSet)
 	if err != nil {
 		return nil, err
 	}
@@ -244,10 +265,7 @@ func Projects(fsys fs.FS) ([]string, error) {
 		Spec struct {
 			Generators []struct {
 				Git *struct {
-					Directories []struct {
-						Path    string `yaml:"path"`
-						Exclude bool   `yaml:"exclude"`
-					} `yaml:"directories"`
+					Directories []projectDir `yaml:"directories"`
 				} `yaml:"git"`
 			} `yaml:"generators"`
 		} `yaml:"spec"`
@@ -258,31 +276,82 @@ func Projects(fsys fs.FS) ([]string, error) {
 	if len(as.Spec.Generators) != 1 || as.Spec.Generators[0].Git == nil {
 		return nil, fmt.Errorf("%s: want exactly one git generator", ProjectsAppSetFile)
 	}
+	return projectNames(ProjectsAppSetFile, as.Spec.Generators[0].Git.Directories, OverlaySuffix)
+}
+
+// RehearsalProjects returns the rehearsed projects: those the rehearsal cut
+// of core/argocd puts into the projects generator, each with the shape
+// projects/<project>/*/manifests/overlays/rehearsal. That list is the one
+// place a project is named as rehearsed; the seed makes their Namespaces and
+// Secrets from it.
+func RehearsalProjects(fsys fs.FS) ([]string, error) {
+	v, err := rehearsalReplace(fsys, projectsAppSet, projectDirsPath)
+	if err != nil {
+		return nil, err
+	}
+	var dirs []projectDir
+	if err := v.Decode(&dirs); err != nil {
+		return nil, fmt.Errorf("%s: %s: %w", RehearsalArgoCDFile, projectDirsPath, err)
+	}
+	return projectNames(RehearsalArgoCDFile, dirs, RehearsalOverlaySuffix)
+}
+
+// rehearsalProjectRevisions returns the two git revisions the rehearsal cut
+// sets on the projects ApplicationSet: the generator's and the template's.
+func rehearsalProjectRevisions(fsys fs.FS) (generator, template string, err error) {
+	for _, r := range []struct {
+		path string
+		to   *string
+	}{{projectRevisionPath, &generator}, {revisionPath, &template}} {
+		v, err := rehearsalReplace(fsys, projectsAppSet, r.path)
+		if err != nil {
+			return "", "", err
+		}
+		if err := v.Decode(r.to); err != nil {
+			return "", "", fmt.Errorf("%s: %s: %w", RehearsalArgoCDFile, r.path, err)
+		}
+	}
+	return generator, template, nil
+}
+
+// projectNames turns generator directories of the shape
+// projects/<project>/*/<suffix> into project names, in order.
+func projectNames(file string, dirs []projectDir, suffix string) ([]string, error) {
 	var out []string
-	for _, d := range as.Spec.Generators[0].Git.Directories {
+	for _, d := range dirs {
 		if d.Exclude {
 			continue
 		}
 		seg := strings.Split(d.Path, "/")
 		if len(seg) != 6 || seg[0] != "projects" || seg[1] == "" || strings.ContainsAny(seg[1], "*?[") ||
-			seg[2] != "*" || strings.Join(seg[3:], "/") != OverlaySuffix {
-			return nil, fmt.Errorf("%s: %q is not projects/<project>/*/%s", ProjectsAppSetFile, d.Path, OverlaySuffix)
+			seg[2] != "*" || strings.Join(seg[3:], "/") != suffix {
+			return nil, fmt.Errorf("%s: %q is not projects/<project>/*/%s", file, d.Path, suffix)
 		}
 		out = append(out, seg[1])
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("%s: the generator lists no project", ProjectsAppSetFile)
+		return nil, fmt.Errorf("%s: the generator lists no project", file)
 	}
 	return out, nil
 }
 
-// OverlaySuffix is the part of a component's synced path after its name.
-const OverlaySuffix = "manifests/overlays/dev"
+// OverlaySuffix is the part of a component's synced path after its name;
+// RehearsalOverlaySuffix is the same in a rehearsal.
+const (
+	OverlaySuffix          = "manifests/overlays/dev"
+	RehearsalOverlaySuffix = "manifests/overlays/rehearsal"
+)
 
 // Components returns the components of a project the generator turns into
 // Applications: each directory with an overlay at the synced path.
 func Components(fsys fs.FS, project string) ([]string, error) {
-	dirs, err := fs.Glob(fsys, "projects/"+project+"/*/"+OverlaySuffix)
+	return componentsAt(fsys, project, OverlaySuffix)
+}
+
+// componentsAt returns the components of a project with a directory at
+// projects/<project>/<component>/<suffix>.
+func componentsAt(fsys fs.FS, project, suffix string) ([]string, error) {
+	dirs, err := fs.Glob(fsys, "projects/"+project+"/*/"+suffix)
 	if err != nil {
 		return nil, err
 	}

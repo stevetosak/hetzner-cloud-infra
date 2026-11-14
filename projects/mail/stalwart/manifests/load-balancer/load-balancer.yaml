@@ -5,7 +5,11 @@
 # since 2026-04-01) and draws two Primary IPs from the account's pool. It is
 # applied by hand, with the operator's approval, never by Argo CD.
 #
-#   kubectl apply -f projects/mail/stalwart/manifests/load-balancer.yaml
+#   kubectl apply -k projects/mail/stalwart/manifests/load-balancer
+#
+# Its own directory so the rehearsal overlay can sync it: in a rehearsal the
+# load balancer must exist before the mail probes run (ADR 0010, Amendment
+# 2026-11-14). Argo CD never builds this directory on live.
 #
 # 🔴 `uses-proxyprotocol` here and `overrideProxyTrustedNetworks` on the
 # listeners smtp, submissions and imaps in base/config/settings.ndjson are TWO

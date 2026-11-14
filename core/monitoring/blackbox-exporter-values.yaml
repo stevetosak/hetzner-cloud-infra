@@ -74,7 +74,7 @@ config:
         preferred_ip_protocol: ip4
         tls_config:
           server_name: mail.tosak.net
-        query_response:
+        query_response: &smtp_starttls_dialogue
           - expect: "^220 "
           - send: "EHLO probe.tosak.net\r"
           - expect: "^250[ -]STARTTLS"
@@ -94,7 +94,7 @@ config:
         tls: true
         tls_config:
           server_name: mail.tosak.net
-        query_response:
+        query_response: &smtp_tls_dialogue
           - expect: "^220 "
           - send: "QUIT\r"
           - expect: "^221 "
@@ -107,7 +107,41 @@ config:
         tls: true
         tls_config:
           server_name: mail.tosak.net
-        query_response:
+        query_response: &imap_tls_dialogue
           - expect: "^\\* OK"
           - send: "a1 LOGOUT\r"
           - expect: "^a1 OK"
+    # The rehearsal's copies of the three mail modules: the cut
+    # core/rehearsal/monitoring points the mail Probes at them. A rehearsal
+    # certificate is self-signed (core/rehearsal/cert-manager), so these skip
+    # the chain check; the dialogue (the same anchors) and the expiry metric
+    # stay. No live Probe uses them.
+    smtp_starttls_rehearsal:
+      prober: tcp
+      timeout: 10s
+      tcp:
+        preferred_ip_protocol: ip4
+        tls_config:
+          server_name: mail.tosak.net
+          insecure_skip_verify: true
+        query_response: *smtp_starttls_dialogue
+    smtp_tls_rehearsal:
+      prober: tcp
+      timeout: 10s
+      tcp:
+        preferred_ip_protocol: ip4
+        tls: true
+        tls_config:
+          server_name: mail.tosak.net
+          insecure_skip_verify: true
+        query_response: *smtp_tls_dialogue
+    imap_tls_rehearsal:
+      prober: tcp
+      timeout: 10s
+      tcp:
+        preferred_ip_protocol: ip4
+        tls: true
+        tls_config:
+          server_name: mail.tosak.net
+          insecure_skip_verify: true
+        query_response: *imap_tls_dialogue

@@ -4,9 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/netip"
+	"net/url"
 	"slices"
 	"strings"
 
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/coreset"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/local"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/stage"
 )
@@ -18,9 +22,8 @@ type LiveLink struct {
 	// Get is the object kubectl reads: kind, namespace ("" when
 	// cluster-scoped) and name. -o name only for a Secret.
 	Kind, Namespace, Name string
-	// AnyOfKind reads every object of the kind in the namespace, by name
-	// only, in place of one Name: found is true when any exists. A link sets
-	// either Name or AnyOfKind.
+	// AnyOfKind reads every object of the kind in the namespace, as one JSON
+	// List, in place of one Name. A link sets either Name or AnyOfKind.
 	AnyOfKind bool
 	// Holds reports whether the cut holds, given the object's JSON (or its
 	// name, for a Secret); found is false when there is no such object.
@@ -43,8 +46,8 @@ var RehearsalCuts = []Cut{
 			Kind: "deployments.apps", Namespace: "argocd", Name: "argocd-notifications-controller", Holds: zeroReplicas},
 		{What: "a deploy notification: the notifications Secret exists",
 			Kind: "secrets", Namespace: "argocd", Name: "argocd-notifications-secret", Holds: absent},
-		{What: "an app deploy: the projects ApplicationSet exists",
-			Kind: "applicationsets.argoproj.io", Namespace: "argocd", Name: "projects", Holds: absent},
+		{What: "an app deploy beyond the rehearsed projects: the projects ApplicationSet syncs another overlay or revision",
+			Kind: "applicationsets.argoproj.io", Namespace: "argocd", Name: "projects", Holds: rehearsedProjectsOnly},
 	}},
 	{Dir: "cert-manager", Links: []LiveLink{
 		{What: "a real certificate: ClusterIssuer letsencrypt-prod asks Let's Encrypt (rate limits shared with live)",
@@ -61,10 +64,20 @@ var RehearsalCuts = []Cut{
 			Kind: "secrets", Namespace: "monitoring", Name: "alertmanager-receivers", Holds: absent},
 		{What: "an alert to Telegram or a ping of the live Watchdog check: Alertmanager mounts alertmanager-receivers",
 			Kind: "alertmanagers.monitoring.coreos.com", Namespace: "monitoring", Name: "kps-alertmanager", Holds: noReceiversMount},
-		{What: "a probe of the live hosts: a Probe exists in monitoring",
-			Kind: "probes.monitoring.coreos.com", Namespace: "monitoring", AnyOfKind: true, Holds: absent},
+		{What: "a probe of the live hosts: a Probe in monitoring targets something other than a private address or a cluster name",
+			Kind: "probes.monitoring.coreos.com", Namespace: "monitoring", AnyOfKind: true, Holds: insideTargetsOnly},
 	}},
-	{Dir: "reloader", Why: "drops Reloader's Roles in the projects' namespaces, which a rehearsal does not make; no live link"},
+	{Dir: "pg-drill", Links: []LiveLink{
+		{What: "a restore of the live backups: ObjectStore pg-drill/tosak-pg-backups-readonly does not read the rehearsal bucket",
+			Kind: "objectstores.barmancloud.cnpg.io", Namespace: "pg-drill", Name: "tosak-pg-backups-readonly", Holds: rehearsalBucket},
+		{What: "a drill report to Telegram: the Secret pg-drill/telegram exists",
+			Kind: "secrets", Namespace: "pg-drill", Name: "telegram", Holds: absent},
+		{What: "a drill result the live watcher reads: the Secret pg-drill/r2-drill-results-credentials exists",
+			Kind: "secrets", Namespace: "pg-drill", Name: "r2-drill-results-credentials", Holds: absent},
+		{What: "a drill on its own schedule or with a live report: CronJob restore-drill is not suspended or its REPORT is not log",
+			Kind: "cronjobs.batch", Namespace: "pg-drill", Name: "restore-drill", Holds: suspendedLogOnlyDrill},
+	}},
+	{Dir: "reloader", Why: "drops Reloader's Roles in the namespaces of the projects a rehearsal does not run; no live link"},
 }
 
 // Cuts is done when no live link remains in the running cluster. It only
@@ -72,6 +85,8 @@ var RehearsalCuts = []Cut{
 type Cuts struct {
 	// Bucket is the rehearsal archive bucket.
 	Bucket string
+	// Revision is the git revision a rehearsal syncs (the branch rehearsal).
+	Revision string
 
 	broken []string
 }
@@ -128,8 +143,8 @@ func get(ctx context.Context, h *stage.Host, l LiveLink) ([]byte, bool, error) {
 	if l.Namespace != "" {
 		args = append(args, "-n", l.Namespace)
 	}
-	// A Secret is read by name only: it holds values. A whole kind too.
-	if l.Kind == "secrets" || l.AnyOfKind {
+	// A Secret is read by name only: it holds values.
+	if l.Kind == "secrets" {
 		args = append(args, "-o", "name")
 	} else {
 		args = append(args, "-o", "json")
@@ -218,4 +233,155 @@ func rehearsalBucket(obj []byte, found bool, c *Cuts) (bool, error) {
 		return false, err
 	}
 	return c.Bucket != "" && s.Spec.Configuration.DestinationPath == "s3://"+c.Bucket+"/", nil
+}
+
+// rehearsedProjectsOnly holds when the projects ApplicationSet syncs only
+// rehearsal overlays, from the rehearsal's revision (core/rehearsal/argocd).
+func rehearsedProjectsOnly(obj []byte, found bool, c *Cuts) (bool, error) {
+	if !found {
+		return true, nil
+	}
+	var a struct {
+		Spec struct {
+			Generators []struct {
+				Git *struct {
+					Revision    string `json:"revision"`
+					Directories []struct {
+						Path    string `json:"path"`
+						Exclude bool   `json:"exclude"`
+					} `json:"directories"`
+				} `json:"git"`
+			} `json:"generators"`
+			Template struct {
+				Spec struct {
+					Source struct {
+						TargetRevision string `json:"targetRevision"`
+					} `json:"source"`
+				} `json:"spec"`
+			} `json:"template"`
+		} `json:"spec"`
+	}
+	if err := json.Unmarshal(obj, &a); err != nil {
+		return false, err
+	}
+	if c.Revision == "" || a.Spec.Template.Spec.Source.TargetRevision != c.Revision {
+		return false, nil
+	}
+	for _, g := range a.Spec.Generators {
+		if g.Git == nil || g.Git.Revision != c.Revision {
+			return false, nil
+		}
+		for _, d := range g.Git.Directories {
+			if !d.Exclude && !strings.HasSuffix(d.Path, "/"+coreset.RehearsalOverlaySuffix) {
+				return false, nil
+			}
+		}
+	}
+	return true, nil
+}
+
+// insideTargetsOnly holds when every Probe in the List targets a private
+// address or a cluster name, so no probe leaves for the live outside world.
+// A Probe that discovers its targets (ingress) does not hold.
+func insideTargetsOnly(obj []byte, found bool, _ *Cuts) (bool, error) {
+	if !found {
+		return true, nil
+	}
+	var l struct {
+		Items []struct {
+			Spec struct {
+				Targets struct {
+					StaticConfig *struct {
+						Static []string `json:"static"`
+					} `json:"staticConfig"`
+					Ingress json.RawMessage `json:"ingress"`
+				} `json:"targets"`
+			} `json:"spec"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(obj, &l); err != nil {
+		return false, err
+	}
+	for _, p := range l.Items {
+		if len(p.Spec.Targets.Ingress) > 0 {
+			return false, nil
+		}
+		if p.Spec.Targets.StaticConfig == nil {
+			continue
+		}
+		for _, t := range p.Spec.Targets.StaticConfig.Static {
+			if !insideTarget(t) {
+				return false, nil
+			}
+		}
+	}
+	return true, nil
+}
+
+// insideTarget reports whether a probe target (host:port or a URL) is a
+// private or loopback address or a name inside the cluster.
+func insideTarget(target string) bool {
+	host := target
+	if strings.Contains(target, "://") {
+		u, err := url.Parse(target)
+		if err != nil {
+			return false
+		}
+		host = u.Hostname()
+	} else if h, _, err := net.SplitHostPort(target); err == nil {
+		host = h
+	}
+	if a, err := netip.ParseAddr(host); err == nil {
+		return a.IsPrivate() || a.IsLoopback()
+	}
+	return strings.HasSuffix(host, ".svc") || strings.HasSuffix(host, ".svc.cluster.local")
+}
+
+// suspendedLogOnlyDrill holds when the CronJob is suspended and its drill
+// container reports with REPORT=log only (core/rehearsal/pg-drill).
+func suspendedLogOnlyDrill(obj []byte, found bool, _ *Cuts) (bool, error) {
+	if !found {
+		return true, nil
+	}
+	var cj struct {
+		Spec struct {
+			Suspend     *bool `json:"suspend"`
+			JobTemplate struct {
+				Spec struct {
+					Template struct {
+						Spec struct {
+							Containers []struct {
+								Env []struct {
+									Name  string `json:"name"`
+									Value string `json:"value"`
+								} `json:"env"`
+							} `json:"containers"`
+						} `json:"spec"`
+					} `json:"template"`
+				} `json:"spec"`
+			} `json:"jobTemplate"`
+		} `json:"spec"`
+	}
+	if err := json.Unmarshal(obj, &cj); err != nil {
+		return false, err
+	}
+	if cj.Spec.Suspend == nil || !*cj.Spec.Suspend {
+		return false, nil
+	}
+	cs := cj.Spec.JobTemplate.Spec.Template.Spec.Containers
+	if len(cs) == 0 {
+		return false, nil
+	}
+	for _, c := range cs {
+		logOnly := false
+		for _, e := range c.Env {
+			if e.Name == "REPORT" {
+				logOnly = e.Value == "log"
+			}
+		}
+		if !logOnly {
+			return false, nil
+		}
+	}
+	return true, nil
 }

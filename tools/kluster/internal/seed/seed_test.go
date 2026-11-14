@@ -43,7 +43,12 @@ func TestBuildReadsTheRepository(t *testing.T) {
 		cuts      []string
 	}{
 		{false, []string{"argocd.tosak.net", "authos-api.tosak.net", "authos-demo.tosak.net", "authos.tosak.net", "doma.tosak.net", "grafana.tosak.net", "mail-admin.tosak.net", "mta-sts.tosak.net", "tosak.net", "www.tosak.net"}, nil, nil},
-		{true, []string{"argocd.tosak.net", "grafana.tosak.net"}, []string{"monitoring/grafana-admin", "pg-cluster/db-credentials", "pg-cluster/r2-backup-credentials", "pg-cluster/r2-source-credentials", "redis/redis"},
+		// A rehearsal makes the Secrets of the rehearsed project mail and of
+		// pg-drill, but not the drill's two omitted ones (telegram, results),
+		// and its zone checks the core hosts only.
+		{true, []string{"argocd.tosak.net", "grafana.tosak.net"}, []string{"mail/admin", "mail/blob-store", "mail/db-credentials", "mail/metrics", "mail/ses-smtp",
+			"monitoring/grafana-admin", "pg-cluster/db-credentials", "pg-cluster/r2-backup-credentials", "pg-cluster/r2-source-credentials",
+			"pg-drill/r2-readonly-credentials", "pg-drill/scw-mail-readonly", "redis/redis"},
 			[]string{"rehearsal-cuts"}},
 	} {
 		p, err := Build(Inputs{Rehearsal: tc.rehearsal, WorkTree: repoRoot, Synced: repoRoot, Catalog: repoCatalog(t), RehearsalBucket: "tosak-pg-backups-rehearsal"})
@@ -85,12 +90,17 @@ func TestBuildReadsTheRepository(t *testing.T) {
 		if !bytes.Contains(argocd.Manifest, []byte("argocd.argoproj.io/tracking-id: core-argocd:apps/Deployment:argocd/argocd-server")) {
 			t.Error("the argocd build is not tracked as core-argocd")
 		}
-		hasProjects := bytes.Contains(argocd.Manifest, []byte("name: projects\n"))
-		if hasProjects == tc.rehearsal {
-			t.Errorf("rehearsal %t: the projects ApplicationSet in the build is %t", tc.rehearsal, hasProjects)
+		// Both environments keep the projects ApplicationSet; a rehearsal's
+		// syncs the rehearsal overlays only.
+		if !bytes.Contains(argocd.Manifest, []byte("name: projects\n")) {
+			t.Errorf("rehearsal %t: no projects ApplicationSet in the build", tc.rehearsal)
+		}
+		rehearsalOverlay := bytes.Contains(argocd.Manifest, []byte("path: projects/mail/*/manifests/overlays/rehearsal\n"))
+		if rehearsalOverlay != tc.rehearsal {
+			t.Errorf("rehearsal %t: the rehearsal overlay in the projects generator is %t", tc.rehearsal, rehearsalOverlay)
 		}
 		healthy := p.Stages[4].(*Healthy)
-		if slices.Contains(healthy.Applications, "core-pg-drill") == tc.rehearsal {
+		if !slices.Contains(healthy.Applications, "core-pg-drill") {
 			t.Errorf("rehearsal %t: Applications %v", tc.rehearsal, healthy.Applications)
 		}
 	}
@@ -237,14 +247,14 @@ func TestRehearsalSecretsAreMadeOnce(t *testing.T) {
 	if err := stage.Run(context.Background(), []stage.Stage{s}, h, stage.Options{Out: &out, Apply: true}); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
-	if len(cp.secrets) != 5 {
-		t.Fatalf("made %v", cp.secrets)
+	if len(cp.secrets) != 12 {
+		t.Fatalf("made %d Secrets", len(cp.secrets))
 	}
 	first := cp.secrets["redis/redis"]
 	if err := stage.Run(context.Background(), []stage.Stage{s}, h, stage.Options{Out: &out, Apply: true}); err != nil {
 		t.Fatal(err)
 	}
-	if cp.secrets["redis/redis"] != first || len(cp.applied) != 5 {
+	if cp.secrets["redis/redis"] != first || len(cp.applied) != 12 {
 		t.Error("a second seed made a Secret again")
 	}
 	if strings.Contains(out.String(), "data:") {

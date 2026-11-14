@@ -1,6 +1,6 @@
 # Stalwart's HTTP listener 8080 inside the cluster: the backend of the
 # mail-admin route (projects/mail/httproute.yaml) and, later, the target of the
-# ServiceMonitor. Mail itself enters through load-balancer.yaml, not here.
+# ServiceMonitor. Mail itself enters through load-balancer/load-balancer.yaml, not here.
 apiVersion: v1
 kind: Service
 metadata:

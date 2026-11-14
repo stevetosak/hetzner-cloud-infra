@@ -1,0 +1,21 @@
+# The rehearsal overlay (ADR 0010, Amendment 2026-11-14): what dev syncs, plus
+# the hand-applied mail load balancer, with the message files in the rehearsal
+# bucket. The Secrets come from the seed, made from the rehearsalItem values.
+# service.yaml and the routes stay hand-applied, as on live.
+#
+# 💶 In a rehearsal this BUYS the mail load balancer (lb11) by sync, inside
+# the rehearsal project; `kluster down` deletes it with the project.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: mail
+
+resources:
+- ../dev
+- ../../load-balancer
+
+configMapGenerator:
+- name: stalwart-env
+  behavior: merge
+  literals:
+  - S3_BUCKET=tosak-mail-blobs-rehearsal

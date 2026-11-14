@@ -19,7 +19,9 @@
 #
 # Pass or fail, it writes drill/<UTC timestamp>.json to tosak-drill-results
 # (read by .github/scripts/watch.mjs `checkDrill`) and sends one Telegram
-# message.
+# message. With REPORT=log (the rehearsal cut core/rehearsal/pg-drill) it does
+# neither and only logs the result object, so a rehearsal pass never reaches
+# the watcher or the chat.
 #
 # 🔴 Never print a credential, a row or an API body. Names, counts and LSNs only.
 set -euo pipefail
@@ -29,6 +31,11 @@ set -euo pipefail
 : "${MAIL_BUCKET:=tosak-mail-blobs}"
 : "${CANARY_SHA256:=}"
 : "${MAIL_TIMEOUT:=2100}"           # seconds: the pod's own deadline is 1800
+: "${REPORT:=all}"                  # all: results bucket and Telegram; log: the log only
+case $REPORT in
+  all|log) ;;
+  *) echo "REPORT=$REPORT: want all or log" >&2; exit 2 ;;
+esac
 
 DRILL_NS=pg-drill
 DRILL=drill                       # the Cluster in drill/cluster.yaml
@@ -143,6 +150,12 @@ finish() {
   # (`-s` too: jq 1.6 exits 0 on empty input.)
   if ! { [ -s /tmp/result.json ] && jq -e '.finishedAt and .result' /tmp/result.json >/dev/null 2>&1; }; then
     printf '{"finishedAt":"%s","result":"%s"}\n' "$finished_at" "$result" >/tmp/result.json
+  fi
+  if [ "$REPORT" = log ]; then
+    log "result: $result (REPORT=log: nothing written to $RESULTS_BUCKET, no Telegram message), drill Cluster deleted: $cleaned"
+    log "result object: $(jq -c . /tmp/result.json)"
+    [ "$result" = pass ] && exit 0
+    exit 1
   fi
   if [ -z "${ENDPOINT:-}" ] \
      || ! aws_results s3 cp /tmp/result.json "s3://$RESULTS_BUCKET/$key" --quiet; then

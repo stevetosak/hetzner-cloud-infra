@@ -79,6 +79,19 @@ data:
           tls_config:
             server_name: mail.tosak.net
         timeout: 10s
+      imap_tls_rehearsal:
+        prober: tcp
+        tcp:
+          preferred_ip_protocol: ip4
+          query_response:
+          - expect: ^\* OK
+          - send: "a1 LOGOUT\r"
+          - expect: ^a1 OK
+          tls: true
+          tls_config:
+            insecure_skip_verify: true
+            server_name: mail.tosak.net
+        timeout: 10s
       smtp_starttls:
         prober: tcp
         tcp:
@@ -97,6 +110,25 @@ data:
           tls_config:
             server_name: mail.tosak.net
         timeout: 10s
+      smtp_starttls_rehearsal:
+        prober: tcp
+        tcp:
+          preferred_ip_protocol: ip4
+          query_response:
+          - expect: '^220 '
+          - send: "EHLO probe.tosak.net\r"
+          - expect: ^250[ -]STARTTLS
+          - send: "STARTTLS\r"
+          - expect: '^220 '
+          - starttls: true
+          - send: "EHLO probe.tosak.net\r"
+          - expect: '^250 '
+          - send: "QUIT\r"
+          - expect: '^221 '
+          tls_config:
+            insecure_skip_verify: true
+            server_name: mail.tosak.net
+        timeout: 10s
       smtp_tls:
         prober: tcp
         tcp:
@@ -107,6 +139,19 @@ data:
           - expect: '^221 '
           tls: true
           tls_config:
+            server_name: mail.tosak.net
+        timeout: 10s
+      smtp_tls_rehearsal:
+        prober: tcp
+        tcp:
+          preferred_ip_protocol: ip4
+          query_response:
+          - expect: '^220 '
+          - send: "QUIT\r"
+          - expect: '^221 '
+          tls: true
+          tls_config:
+            insecure_skip_verify: true
             server_name: mail.tosak.net
         timeout: 10s
 
@@ -169,7 +214,7 @@ spec:
         app.kubernetes.io/version: "v0.29.1"
         app.kubernetes.io/managed-by: Helm
       annotations:
-        checksum/config: 5a97acccf9f3bbc61ecae7af5079db8f4bddb6de126a49eea8a086d2aa6e83db
+        checksum/config: 763615f7f0da9ac22c5c3ac923fb019ef0da102bdd6d8582911b993b8b55c96d
     spec:
       automountServiceAccountToken: false
       serviceAccountName: blackbox-exporter

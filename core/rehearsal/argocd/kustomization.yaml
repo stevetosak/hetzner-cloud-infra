@@ -4,19 +4,25 @@
 #
 #   notifications controller   0 replicas: a rehearsal deploy must not send
 #                              Telegram messages or write the deploy catalog.
-#   projects ApplicationSet    removed: no application runs in a rehearsal.
-#   core ApplicationSet        the rehearsal list: pg-drill out (it restores
-#                              live's backups), limit-ranges out (it writes
-#                              only into application namespaces), cert-manager, argocd, cnpg,
-#                              monitoring and reloader pointed at their
+#   projects ApplicationSet    the rehearsed projects only (ADR 0010,
+#                              Amendment 2026-11-14), each from its overlay
+#                              manifests/overlays/rehearsal, from the branch
+#                              `rehearsal`. The seed makes their Namespaces
+#                              and Secrets (rehearsalItem values); a project
+#                              that is not listed does not run.
+#   core ApplicationSet        the rehearsal list: limit-ranges out (it
+#                              writes only into application namespaces),
+#                              cert-manager, argocd, cnpg, monitoring,
+#                              pg-drill and reloader pointed at their
 #                              rehearsal cuts; and branch
 #                              `rehearsal` instead of master, so a change is
 #                              rehearsed before it merges. Put it there with
 #                              `git push -f origin HEAD:rehearsal`.
 #
-# The list below replaces the whole list in core-applicationset.yaml. Keep the
-# two in step; `kluster services check` refuses a rehearsal element that is
-# not in the main list.
+# The core list below replaces the whole list in core-applicationset.yaml.
+# Keep the two in step; `kluster services check` refuses a rehearsal element
+# that is not in the main list, and a rehearsed project the projects
+# generator does not list or that has no rehearsal overlay.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
@@ -30,13 +36,21 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 0
-  - patch: |-
-      $patch: delete
-      apiVersion: argoproj.io/v1alpha1
+  - target:
+      group: argoproj.io
       kind: ApplicationSet
-      metadata:
-        name: projects
-        namespace: argocd
+      name: projects
+    patch: |-
+      - op: replace
+        path: /spec/generators/0/git/directories
+        value:
+          - path: projects/mail/*/manifests/overlays/rehearsal
+      - op: replace
+        path: /spec/generators/0/git/revision
+        value: rehearsal
+      - op: replace
+        path: /spec/template/spec/source/targetRevision
+        value: rehearsal
   - target:
       group: argoproj.io
       kind: ApplicationSet
@@ -51,6 +65,7 @@ patches:
           - {dir: gateway, path: core/gateway, namespace: envoy-gateway-system}
           - {dir: metrics-server, path: core/metrics-server, namespace: metrics-server}
           - {dir: monitoring, path: core/rehearsal/monitoring, namespace: monitoring}
+          - {dir: pg-drill, path: core/rehearsal/pg-drill, namespace: pg-drill}
           - {dir: redis, path: core/redis, namespace: redis}
           - {dir: reloader, path: core/rehearsal/reloader, namespace: reloader}
       - op: replace

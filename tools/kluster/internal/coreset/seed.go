@@ -14,14 +14,15 @@ import (
 type Seed struct {
 	Rehearsal bool
 	Elements  []Element
-	// Projects is empty in a rehearsal: its cut removes the projects
-	// ApplicationSet.
+	// Projects are the projects the environment syncs: on live the projects
+	// generator's list, in a rehearsal only the rehearsed projects its cut
+	// names.
 	Projects []string
 	// CRDFiles are every core/<dir>/crds.yaml, listed directory or not:
 	// core/gateway-api holds CRDs only and syncs nothing.
 	CRDFiles []string
-	// NamespaceFiles are the namespace files of each listed directory and,
-	// on live, of each project.
+	// NamespaceFiles are the namespace files of each listed directory and
+	// of each project the environment syncs.
 	NamespaceFiles []string
 }
 
@@ -40,10 +41,13 @@ func SeedFor(fsys fs.FS, rehearsal bool) (*Seed, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !rehearsal {
-		if s.Projects, err = Projects(fsys); err != nil {
-			return nil, err
-		}
+	if rehearsal {
+		s.Projects, err = RehearsalProjects(fsys)
+	} else {
+		s.Projects, err = Projects(fsys)
+	}
+	if err != nil {
+		return nil, err
 	}
 	if s.CRDFiles, err = fs.Glob(fsys, "core/*/crds.yaml"); err != nil {
 		return nil, err

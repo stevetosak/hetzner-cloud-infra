@@ -79,12 +79,17 @@ func (cluster) WriteFile(context.Context, string, string, os.FileMode) error { r
 func (cluster) ReadFile(context.Context, string) (string, error)             { return "", nil }
 
 func TestCutsHoldInARehearsal(t *testing.T) {
-	c := &Cuts{Bucket: "tosak-pg-backups-rehearsal"}
+	c := &Cuts{Bucket: "tosak-pg-backups-rehearsal", Revision: "rehearsal"}
 	h := &stage.Host{Name: "cp", Exec: cluster{
-		"deployments.apps/argocd-notifications-controller":     `{"spec":{"replicas":0}}`,
-		"clusterissuers.cert-manager.io/letsencrypt-prod":      `{"spec":{"selfSigned":{}}}`,
-		"objectstores.barmancloud.cnpg.io/tosak-pg-backups":    `{"spec":{"configuration":{"destinationPath":"s3://tosak-pg-backups-rehearsal/"}}}`,
-		"alertmanagers.monitoring.coreos.com/kps-alertmanager": `{"spec":{"replicas":1}}`,
+		"deployments.apps/argocd-notifications-controller": `{"spec":{"replicas":0}}`,
+		"applicationsets.argoproj.io/projects": `{"spec":{"generators":[{"git":{"revision":"rehearsal","directories":[{"path":"projects/mail/*/manifests/overlays/rehearsal"}]}}],` +
+			`"template":{"spec":{"source":{"targetRevision":"rehearsal"}}}}}`,
+		"clusterissuers.cert-manager.io/letsencrypt-prod":            `{"spec":{"selfSigned":{}}}`,
+		"objectstores.barmancloud.cnpg.io/tosak-pg-backups":          `{"spec":{"configuration":{"destinationPath":"s3://tosak-pg-backups-rehearsal/"}}}`,
+		"alertmanagers.monitoring.coreos.com/kps-alertmanager":       `{"spec":{"replicas":1}}`,
+		"probes.monitoring.coreos.com/":                              `{"items":[{"spec":{"targets":{"staticConfig":{"static":["10.0.4.3:25"]}}}}]}`,
+		"objectstores.barmancloud.cnpg.io/tosak-pg-backups-readonly": `{"spec":{"configuration":{"destinationPath":"s3://tosak-pg-backups-rehearsal/"}}}`,
+		"cronjobs.batch/restore-drill":                               `{"spec":{"suspend":true,"jobTemplate":{"spec":{"template":{"spec":{"containers":[{"env":[{"name":"REPORT","value":"log"}]}]}}}}}}`,
 	}}
 	st, err := c.Probe(context.Background(), h)
 	if err != nil || !st.Done {
@@ -95,17 +100,22 @@ func TestCutsHoldInARehearsal(t *testing.T) {
 // The negative test: a cluster as live is, every link in place. The Stage
 // names each one and stops the run.
 func TestCutsNameEveryLiveLink(t *testing.T) {
-	c := &Cuts{Bucket: "tosak-pg-backups-rehearsal"}
+	c := &Cuts{Bucket: "tosak-pg-backups-rehearsal", Revision: "rehearsal"}
 	h := &stage.Host{Name: "cp", Exec: cluster{
-		"deployments.apps/argocd-notifications-controller":     `{"spec":{"replicas":1}}`,
-		"secrets/argocd-notifications-secret":                  "secret/argocd-notifications-secret",
-		"applicationsets.argoproj.io/projects":                 `{}`,
-		"clusterissuers.cert-manager.io/letsencrypt-prod":      `{"spec":{"acme":{"server":"https://acme-v02.api.letsencrypt.org/directory"}}}`,
-		"secrets/cloudflare-dns-token":                         "secret/cloudflare-dns-token",
-		"objectstores.barmancloud.cnpg.io/tosak-pg-backups":    `{"spec":{"configuration":{"destinationPath":"s3://tosak-pg-backups/"}}}`,
-		"secrets/alertmanager-receivers":                       "secret/alertmanager-receivers",
-		"alertmanagers.monitoring.coreos.com/kps-alertmanager": `{"spec":{"secrets":["alertmanager-receivers"]}}`,
-		"probes.monitoring.coreos.com/":                        "probe.monitoring.coreos.com/public-hosts-2xx",
+		"deployments.apps/argocd-notifications-controller": `{"spec":{"replicas":1}}`,
+		"secrets/argocd-notifications-secret":              "secret/argocd-notifications-secret",
+		"applicationsets.argoproj.io/projects": `{"spec":{"generators":[{"git":{"revision":"HEAD","directories":[{"path":"projects/mail/*/manifests/overlays/dev"}]}}],` +
+			`"template":{"spec":{"source":{"targetRevision":"HEAD"}}}}}`,
+		"clusterissuers.cert-manager.io/letsencrypt-prod":            `{"spec":{"acme":{"server":"https://acme-v02.api.letsencrypt.org/directory"}}}`,
+		"secrets/cloudflare-dns-token":                               "secret/cloudflare-dns-token",
+		"objectstores.barmancloud.cnpg.io/tosak-pg-backups":          `{"spec":{"configuration":{"destinationPath":"s3://tosak-pg-backups/"}}}`,
+		"secrets/alertmanager-receivers":                             "secret/alertmanager-receivers",
+		"alertmanagers.monitoring.coreos.com/kps-alertmanager":       `{"spec":{"secrets":["alertmanager-receivers"]}}`,
+		"probes.monitoring.coreos.com/":                              `{"items":[{"spec":{"targets":{"staticConfig":{"static":["https://tosak.net/"]}}}}]}`,
+		"objectstores.barmancloud.cnpg.io/tosak-pg-backups-readonly": `{"spec":{"configuration":{"destinationPath":"s3://tosak-pg-backups/"}}}`,
+		"secrets/telegram":                                           "secret/telegram",
+		"secrets/r2-drill-results-credentials":                       "secret/r2-drill-results-credentials",
+		"cronjobs.batch/restore-drill":                               `{"spec":{"jobTemplate":{"spec":{"template":{"spec":{"containers":[{"env":[]}]}}}}}}`,
 	}}
 	var out bytes.Buffer
 	err := stage.Run(context.Background(), []stage.Stage{c}, h, stage.Options{Apply: true, Out: &out})
@@ -121,7 +131,7 @@ func TestCutsNameEveryLiveLink(t *testing.T) {
 			}
 		}
 	}
-	if n != 9 || !strings.Contains(err.Error(), "stops here") {
+	if n != 13 || !strings.Contains(err.Error(), "stops here") {
 		t.Errorf("%d links in the table; output:\n%s", n, out.String())
 	}
 }
@@ -146,5 +156,66 @@ func TestUntouchedZone(t *testing.T) {
 		if strings.Contains(got, live) {
 			t.Errorf("%s: the live address is printed: %s", name, got)
 		}
+	}
+}
+
+// Each Holds function of the new links fails on the one field that matters.
+func TestRehearsalLinkHolds(t *testing.T) {
+	c := &Cuts{Revision: "rehearsal"}
+	appSet := func(genRev, dir, tmplRev string) []byte {
+		return []byte(`{"spec":{"generators":[{"git":{"revision":"` + genRev + `","directories":[{"path":"` + dir + `"}]}}],` +
+			`"template":{"spec":{"source":{"targetRevision":"` + tmplRev + `"}}}}}`)
+	}
+	const reh = "projects/mail/*/manifests/overlays/rehearsal"
+	for name, tc := range map[string]struct {
+		obj  []byte
+		want bool
+	}{
+		"rehearsal overlays from rehearsal": {appSet("rehearsal", reh, "rehearsal"), true},
+		"the generator reads HEAD":          {appSet("HEAD", reh, "rehearsal"), false},
+		"the Applications sync HEAD":        {appSet("rehearsal", reh, "HEAD"), false},
+		"a dev overlay":                     {appSet("rehearsal", "projects/doma/*/manifests/overlays/dev", "rehearsal"), false},
+	} {
+		if got, err := rehearsedProjectsOnly(tc.obj, true, c); err != nil || got != tc.want {
+			t.Errorf("projects ApplicationSet, %s: %t, %v; want %t", name, got, err, tc.want)
+		}
+	}
+
+	cron := func(suspend, report string) []byte {
+		return []byte(`{"spec":{` + suspend + `"jobTemplate":{"spec":{"template":{"spec":{"containers":[{"env":[` + report + `]}]}}}}}}`)
+	}
+	for name, tc := range map[string]struct {
+		obj  []byte
+		want bool
+	}{
+		"suspended, log":     {cron(`"suspend":true,`, `{"name":"REPORT","value":"log"}`), true},
+		"not suspended":      {cron(`"suspend":false,`, `{"name":"REPORT","value":"log"}`), false},
+		"no suspend field":   {cron(``, `{"name":"REPORT","value":"log"}`), false},
+		"REPORT all":         {cron(`"suspend":true,`, `{"name":"REPORT","value":"all"}`), false},
+		"no REPORT variable": {cron(`"suspend":true,`, ``), false},
+	} {
+		if got, err := suspendedLogOnlyDrill(tc.obj, true, c); err != nil || got != tc.want {
+			t.Errorf("drill CronJob, %s: %t, %v; want %t", name, got, err, tc.want)
+		}
+	}
+
+	for target, want := range map[string]bool{
+		"10.0.4.3:25":                            true,
+		"https://10.0.4.3/":                      true,
+		"127.0.0.1:9115":                         true,
+		"blackbox-exporter.monitoring.svc:9115":  true,
+		"http://x.monitoring.svc.cluster.local/": true,
+		"mail.tosak.net:25":                      false,
+		"https://tosak.net/":                     false,
+		"46.62.209.249:443":                      false,
+		"[2001:db8::1]:25":                       false,
+	} {
+		if got := insideTarget(target); got != want {
+			t.Errorf("insideTarget(%q) = %t, want %t", target, got, want)
+		}
+	}
+	ingress := []byte(`{"items":[{"spec":{"targets":{"ingress":{"selector":{}}}}}]}`)
+	if ok, err := insideTargetsOnly(ingress, true, c); err != nil || ok {
+		t.Errorf("a Probe that discovers its targets: %t, %v", ok, err)
 	}
 }
