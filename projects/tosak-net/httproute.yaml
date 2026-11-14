@@ -4,9 +4,9 @@
 # own. 302, not 301, until the page is stable: a browser caches a 301 with no
 # end date. The redirect keeps the path.
 #
-# 🔴 Both hosts are also claimed by `apex-to-docs` (core/gateway/apex-redirect.yaml).
-# The Gateway API gives a tied host to the oldest route, so applying these
-# changes nothing until that route is deleted (the Plan's cut-over step).
+# Until 2026-11-14 the route `apex-to-docs` in the gateway namespace sent both
+# hosts to docs.tosak.net. A host claimed by two routes goes to the older one,
+# so that route was deleted by hand when these took over.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:

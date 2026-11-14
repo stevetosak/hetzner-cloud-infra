@@ -17,6 +17,3 @@ cd tools/kluster && kluster services seed --env live          # the namespace (P
 kubectl apply -f projects/tosak-net/site/manifests/service.yaml
 kubectl apply -f projects/tosak-net/httproute.yaml
 ```
-
-🔴 Until `apex-to-docs` (core/gateway/apex-redirect.yaml) is deleted, it keeps
-both hosts: the Gateway API gives a tied host to the oldest route.
