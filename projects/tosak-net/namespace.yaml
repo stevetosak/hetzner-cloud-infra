@@ -1,0 +1,12 @@
+# The namespace of tosak-net. The kluster seed applies it (`services seed`), not
+# ArgoCD: the tosak-net AppProject admits no cluster-scoped kind
+# (core/argocd/appprojects.yaml).
+#
+# The name equals the project's directory, its AppProject and the prefix of
+# its Applications (core/argocd/applicationset.yaml); both listeners of
+# core/gateway/gateway.yaml admit routes from it. `kluster project add`
+# wrote these entries; `kluster services check` keeps them in step.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tosak-net

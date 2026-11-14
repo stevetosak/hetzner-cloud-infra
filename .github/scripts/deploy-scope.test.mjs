@@ -34,10 +34,10 @@ const file = (over = {}) => ({ filename: DOMA, status: 'modified', additions: 1,
 const run = ({ p = pr(), commits = [commit(OPERATOR)], files = [] } = {}) =>
   judge({ pr: p, commits, files, projects, operators })
 
-test('the generator in the repository lists authos and doma', () => {
+test('the generator in the repository lists authos, doma and tosak-net', () => {
   const root = fileURLToPath(new URL('../../', import.meta.url))
   const text = readFileSync(root + APPLICATIONSET, 'utf8')
-  assert.deepEqual([...syncedProjects(text)].sort(), ['authos', 'doma'])
+  assert.deepEqual([...syncedProjects(text)].sort(), ['authos', 'doma', 'tosak-net'])
 })
 
 test('a generator without a project path fails closed', () => {

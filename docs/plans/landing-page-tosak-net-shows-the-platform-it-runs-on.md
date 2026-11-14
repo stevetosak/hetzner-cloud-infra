@@ -88,20 +88,20 @@ redirects to it; the apex redirect is gone from Git and from the live
 Gateway; the public-hosts Probe expects a 200 from the apex and reports
 success; and the page passes its browser tests at 1440 px and 375 px.
 
-- [ ] Build the page in `apps/site` from the design primitives. Reduced
+- [x] Build the page in `apps/site` from the design primitives. Reduced
       motion shows the plant at rest with the chapter text, and the page reads
       completely with JavaScript off.
-- [ ] Put the numbers in one build-time JSON with its measured time, in the
+- [x] Put the numbers in one build-time JSON with its measured time, in the
       shape tosak-status will return. Correct "Checked from outside every
       minute": the probes run inside the cluster and reach each host through
       its public address, out through Cloudflare and back.
-- [ ] Browser tests in CI with Playwright: every chapter runs without a
+- [x] Browser tests in CI with Playwright: every chapter runs without a
       script error, Pause holds the caption and the timer, the tour camera
       follows the steps, and an axe scan finds no violation.
-- [ ] Image `stevetosak/tosak-net-site`: an unprivileged static server pinned
+- [x] Image `stevetosak/tosak-net-site`: an unprivileged static server pinned
       by digest, built and tagged by the platform's app pipeline (read the
       `docker` and `app-ci` rules first).
-- [ ] The project in this repository: `projects/tosak-net/` with the site
+- [x] The project in this repository: `projects/tosak-net/` with the site
       component, its route for `tosak.net` and `www.tosak.net` (`www`
       redirects to the apex with a 302 until the page is stable), and every
       entry `kluster services check` asks for. Requests start from the guess

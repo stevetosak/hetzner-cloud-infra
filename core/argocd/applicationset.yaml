@@ -53,6 +53,7 @@ spec:
         directories:
           - path: projects/authos/*/manifests/overlays/dev
           - path: projects/doma/*/manifests/overlays/dev
+          - path: projects/tosak-net/*/manifests/overlays/dev
 
   # 🔴 An Application this generator owns carries NO resources finalizer while
   # this is true, so deleting the ApplicationSet leaves every Deployment

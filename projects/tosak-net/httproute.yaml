@@ -1,0 +1,49 @@
+# tosak.net serves the landing page; www.tosak.net sends visitors to it.
+#
+# Hostnames belong to a route, not to a rule, so `www` needs a route of its
+# own. 302, not 301, until the page is stable: a browser caches a 301 with no
+# end date. The redirect keeps the path.
+#
+# 🔴 Both hosts are also claimed by `apex-to-docs` (core/gateway/apex-redirect.yaml).
+# The Gateway API gives a tied host to the oldest route, so applying these
+# changes nothing until that route is deleted (the Plan's cut-over step).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: tosak-net
+  namespace: tosak-net
+  labels:
+    app: tosak-net-site
+spec:
+  parentRefs:
+    - name: tosak
+      namespace: gateway
+      sectionName: https
+  hostnames:
+    - tosak.net
+  rules:
+    - backendRefs:
+        - name: tosak-net-site
+          port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: tosak-net-www
+  namespace: tosak-net
+  labels:
+    app: tosak-net-site
+spec:
+  parentRefs:
+    - name: tosak
+      namespace: gateway
+      sectionName: https
+  hostnames:
+    - www.tosak.net
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            hostname: tosak.net
+            statusCode: 302

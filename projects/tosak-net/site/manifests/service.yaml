@@ -1,0 +1,14 @@
+# Applied out of band, like every component's Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: tosak-net-site
+  namespace: tosak-net
+spec:
+  selector:
+    app: tosak-net-site
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+  type: ClusterIP

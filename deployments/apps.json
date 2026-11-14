@@ -6,5 +6,6 @@
   "authos-duster": { "repo": "stevetosak/authos", "tagPrefix": "duster-v", "host": "authos-demo.tosak.net/duster" },
   "wasteio-api": { "repo": null, "tagPrefix": "wasteio-api-v" },
   "wasteio-frontend": { "repo": null, "tagPrefix": "wasteio-frontend-v" },
-  "wasteio-bin-agents": { "repo": null, "tagPrefix": "wasteio-bin-agents-v" }
+  "wasteio-bin-agents": { "repo": null, "tagPrefix": "wasteio-bin-agents-v" },
+  "tosak-net-site": { "repo": "stevetosak/tosak-net", "tagPrefix": "site-v", "host": "tosak.net" }
 }

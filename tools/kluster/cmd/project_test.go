@@ -50,20 +50,20 @@ func repoCopy(t *testing.T) string {
 func TestProjectAddPlanModeWritesNothing(t *testing.T) {
 	root := repoCopy(t)
 	var out bytes.Buffer
-	if err := projectAdd(root, coreset.AddRequest{Project: "tosak-net"}, false, &out); err != nil {
+	if err := projectAdd(root, coreset.AddRequest{Project: "example"}, false, &out); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "+          - path: projects/tosak-net/*/manifests/overlays/dev") {
+	if !strings.Contains(out.String(), "+          - path: projects/example/*/manifests/overlays/dev") {
 		t.Errorf("Plan Mode must print the diff:\n%s", out.String())
 	}
-	if _, err := os.Stat(filepath.Join(root, "projects/tosak-net")); err == nil {
-		t.Error("Plan Mode wrote projects/tosak-net")
+	if _, err := os.Stat(filepath.Join(root, "projects/example")); err == nil {
+		t.Error("Plan Mode wrote projects/example")
 	}
 }
 
 func TestProjectAddApplyWritesAndIsIdempotent(t *testing.T) {
 	root := repoCopy(t)
-	req := coreset.AddRequest{Project: "tosak-net", Component: "site", TagPrefix: "site-v"}
+	req := coreset.AddRequest{Project: "example", Component: "web", TagPrefix: "web-v"}
 	var out bytes.Buffer
 	if err := projectAdd(root, req, true, &out); err != nil {
 		t.Fatal(err)
@@ -75,7 +75,7 @@ func TestProjectAddApplyWritesAndIsIdempotent(t *testing.T) {
 	if err := projectAdd(root, req, true, &out); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "tosak-net is registered: nothing to change") {
+	if !strings.Contains(out.String(), "example is registered: nothing to change") {
 		t.Errorf("a second run must change nothing:\n%s", out.String())
 	}
 }
