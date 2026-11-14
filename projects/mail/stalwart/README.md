@@ -123,6 +123,17 @@ On 2026-11-14 Cloudflare passed requests from non-browser clients (no user
 agent, Go, Python) to the origin without a challenge; the check is repeated on
 the host itself once its DNS record exists.
 
+## Monitoring
+
+`manifests/base/podmonitor.yaml` scrapes the exporter with the basic-auth
+Secret `metrics`. Three blackbox probes (`core/monitoring/probes/mail.yaml`)
+reach `mail.tosak.net` on 25, 465 and 993 through the mail load balancer, and
+`core/monitoring/rules/mail.yaml` holds the alerts. The community edition has
+no queue-size gauge, so the relay to SES is watched through Stalwart's failure
+counters; a connect error to SES has no counter and shows only once Stalwart
+sends a delay notice. The probe on 25 sends EHLO, so Stalwart logs one failed
+SPF EHLO check a minute for it.
+
 ## Logins
 
 `STALWART_RECOVERY_ADMIN` (`admin` and the Secret `admin`) is the recovery

@@ -67,6 +67,48 @@ data:
           - 302
         prober: http
         timeout: 10s
+      imap_tls:
+        prober: tcp
+        tcp:
+          preferred_ip_protocol: ip4
+          query_response:
+          - expect: ^\* OK
+          - send: "a1 LOGOUT\r"
+          - expect: ^a1 OK
+          tls: true
+          tls_config:
+            server_name: mail.tosak.net
+        timeout: 10s
+      smtp_starttls:
+        prober: tcp
+        tcp:
+          preferred_ip_protocol: ip4
+          query_response:
+          - expect: '^220 '
+          - send: "EHLO probe.tosak.net\r"
+          - expect: ^250[ -]STARTTLS
+          - send: "STARTTLS\r"
+          - expect: '^220 '
+          - starttls: true
+          - send: "EHLO probe.tosak.net\r"
+          - expect: '^250 '
+          - send: "QUIT\r"
+          - expect: '^221 '
+          tls_config:
+            server_name: mail.tosak.net
+        timeout: 10s
+      smtp_tls:
+        prober: tcp
+        tcp:
+          preferred_ip_protocol: ip4
+          query_response:
+          - expect: '^220 '
+          - send: "QUIT\r"
+          - expect: '^221 '
+          tls: true
+          tls_config:
+            server_name: mail.tosak.net
+        timeout: 10s
 
 ---
 # Source: prometheus-blackbox-exporter/templates/service.yaml
@@ -127,7 +169,7 @@ spec:
         app.kubernetes.io/version: "v0.29.1"
         app.kubernetes.io/managed-by: Helm
       annotations:
-        checksum/config: 294c9ecfd98cdbfe715e5af7962493f4d6a78923ac66daaa144e441a888904c5
+        checksum/config: 5a97acccf9f3bbc61ecae7af5079db8f4bddb6de126a49eea8a086d2aa6e83db
     spec:
       automountServiceAccountToken: false
       serviceAccountName: blackbox-exporter

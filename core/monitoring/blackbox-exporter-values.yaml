@@ -59,3 +59,55 @@ config:
         fail_if_header_not_matches:
           - header: Location
             regexp: '^https://[a-z0-9-]+\.cloudflareaccess\.com/cdn-cgi/access/login/'
+    # The mail ports of mail.tosak.net (probes/mail.yaml). Each module speaks
+    # the protocol to its end with valid commands only: Stalwart bans an
+    # address for invalid commands (scan) and for sessions left open too long
+    # (loiter), and a probe every minute would reach either rate. `send`
+    # appends "\n", so each line ends in "\r" to make the CRLF.
+    # 25: STARTTLS must be offered and work, then EHLO again over TLS. Each
+    # EHLO name Stalwart has not seen in the session runs an SPF check, which
+    # fails for the probe and is logged at info, once a minute; nothing else.
+    smtp_starttls:
+      prober: tcp
+      timeout: 10s
+      tcp:
+        preferred_ip_protocol: ip4
+        tls_config:
+          server_name: mail.tosak.net
+        query_response:
+          - expect: "^220 "
+          - send: "EHLO probe.tosak.net\r"
+          - expect: "^250[ -]STARTTLS"
+          - send: "STARTTLS\r"
+          - expect: "^220 "
+          - starttls: true
+          - send: "EHLO probe.tosak.net\r"
+          - expect: "^250 "
+          - send: "QUIT\r"
+          - expect: "^221 "
+    # 465: implicit TLS. No EHLO, so no SPF check.
+    smtp_tls:
+      prober: tcp
+      timeout: 10s
+      tcp:
+        preferred_ip_protocol: ip4
+        tls: true
+        tls_config:
+          server_name: mail.tosak.net
+        query_response:
+          - expect: "^220 "
+          - send: "QUIT\r"
+          - expect: "^221 "
+    # 993: implicit TLS, the IMAP greeting, then LOGOUT.
+    imap_tls:
+      prober: tcp
+      timeout: 10s
+      tcp:
+        preferred_ip_protocol: ip4
+        tls: true
+        tls_config:
+          server_name: mail.tosak.net
+        query_response:
+          - expect: "^\\* OK"
+          - send: "a1 LOGOUT\r"
+          - expect: "^a1 OK"

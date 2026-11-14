@@ -21,6 +21,9 @@ resources:
   - blackbox-exporter.yaml
   - probes/public-hosts.yaml
   - rules/probes.yaml
+  # The mail ports and the relay to SES (Email Plan, Phase 2).
+  - probes/mail.yaml
+  - rules/mail.yaml
   # grafana.tosak.net, behind Cloudflare Access (ADR 0011).
   - httproute.yaml
   - vpa.yaml  # ADR 0014

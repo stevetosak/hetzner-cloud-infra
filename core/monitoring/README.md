@@ -23,7 +23,8 @@ server-side). It refuses a render that holds a helm hook or a random value.
 - **Rules.** The chart's rules minus the deny list in the values file
   (`defaultRules.disabled`, each with its reason; read it again on every chart
   upgrade). The custom rules are in `rules/`, each with promtool unit tests in
-  `rules/tests/`: WAL archiving, CNPG health and volume fill, certificates.
+  `rules/tests/`: WAL archiving, CNPG health and volume fill, certificates,
+  mail.
   `./core/monitoring/check-rules.sh` parses every rule and runs the tests.
 - **Monitors.** `monitors/` scrapes what the chart does not know: the
   PostgreSQL instances, cert-manager, ArgoCD (a PodMonitor, so core/argocd
@@ -39,7 +40,16 @@ server-side). It refuses a render that holds a helm hook or a random value.
   no module follows a redirect); `PublicHostDown` (`rules/probes.yaml`) pages
   after 5 minutes. `kluster services check` fails when a host of a synced
   HTTPRoute has no target, or a target has no synced route: a new route adds
-  its host here in the same change.
+  its host here in the same change. The check reads only the job
+  `public-hosts`, the job `PublicHostDown` watches.
+- **Mail.** `probes/mail.yaml` (job `mail-ports`) speaks SMTP with STARTTLS
+  on 25 and implicit TLS on 465 and 993 to `mail.tosak.net`, out through the
+  mail load balancer and back with PROXY protocol. The modules send valid
+  commands only, because Stalwart bans an address for invalid commands and
+  for sessions left open too long. `rules/mail.yaml` pages on a port down,
+  warns on a served certificate older than the renewal window, and on relay
+  failures and delivery notices from Stalwart's counters (its PodMonitor
+  lives with the mail project, beside the basic-auth Secret it reads).
 - **Grafana is public** at `grafana.tosak.net` (`httproute.yaml`), behind
   Cloudflare Access and then its own login. The Access application and its
   Emails policy are made in the Cloudflare dashboard; the proxied A record by

@@ -142,6 +142,12 @@ func TestEachRuleFires(t *testing.T) {
 		{"a probe without a route", func(t *testing.T, m fstest.MapFS) {
 			edit(t, m, "core/monitoring/probes/public-hosts.yaml", "        - https://www.tosak.net/\n", "        - https://www.tosak.net/\n        - https://imaps.tosak.net/\n")
 		}, "a probe targets imaps.tosak.net, which no synced HTTPRoute serves"},
+		{"a route whose probe is in another job", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, "core/monitoring/probes/public-hosts.yaml", "        - https://doma.tosak.net/api/health/live\n", "")
+			m["core/monitoring/probes/public-hosts.yaml"] = &fstest.MapFile{Data: append(m["core/monitoring/probes/public-hosts.yaml"].Data,
+				[]byte("---\napiVersion: monitoring.coreos.com/v1\nkind: Probe\nmetadata:\n  name: other\n  namespace: monitoring\n"+
+					"spec:\n  jobName: other\n  targets:\n    staticConfig:\n      static:\n        - https://doma.tosak.net/\n")...)}
+		}, "projects/doma/httproute.yaml: host doma.tosak.net has no probe"},
 		{"a probe that is not an https URL", func(t *testing.T, m fstest.MapFS) {
 			edit(t, m, "core/monitoring/probes/public-hosts.yaml", "        - https://www.tosak.net/\n", "        - www.tosak.net\n")
 		}, `target "www.tosak.net" is not an https URL`},

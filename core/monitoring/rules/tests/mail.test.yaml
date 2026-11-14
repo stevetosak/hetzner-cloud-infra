@@ -1,0 +1,135 @@
+rule_files: [mail.rules.yaml]
+evaluation_interval: 1m
+tests:
+  # A port that fails for 10 minutes pages after 5; another port and a probe
+  # that is not ours do not.
+  - interval: 1m
+    input_series:
+      - series: 'probe_success{job="mail-ports",instance="mail.tosak.net:25"}'
+        values: '1x5 0x10 1x5'
+      - series: 'probe_success{job="mail-ports",instance="mail.tosak.net:993"}'
+        values: '1x20'
+      - series: 'probe_success{job="public-hosts",instance="https://tosak.net/"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: MailPortDown
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: MailPortDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: mail-ports
+              instance: mail.tosak.net:25
+            exp_annotations:
+              summary: "mail.tosak.net:25 does not answer as expected"
+              description: >-
+                The probe of mail.tosak.net:25 fails for 5 minutes. On 25
+                the probe needs STARTTLS, on 465 and 993 a TLS handshake for
+                mail.tosak.net. Check the pod in mail, the Service stalwart-mail
+                and its load balancer mail-lb, and the PROXY trust of the
+                listeners (overrideProxyTrustedNetworks in settings.ndjson).
+      - eval_time: 20m
+        alertname: MailPortDown
+        exp_alerts: []
+
+  # 20 days left is an old certificate (after 1h); 80 days is a fresh one.
+  - interval: 1m
+    input_series:
+      - series: 'probe_ssl_earliest_cert_expiry{job="mail-ports",instance="mail.tosak.net:465"}'
+        values: '1728000x90'
+      - series: 'probe_ssl_earliest_cert_expiry{job="mail-ports",instance="mail.tosak.net:993"}'
+        values: '6912000x90'
+    alert_rule_test:
+      - eval_time: 59m
+        alertname: MailServedCertificateStale
+        exp_alerts: []
+      - eval_time: 61m
+        alertname: MailServedCertificateStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: mail-ports
+              instance: mail.tosak.net:465
+            exp_annotations:
+              summary: "mail.tosak.net:465 serves a certificate that expires in 19d 22h 59m 0s"
+              description: >-
+                cert-manager renews mail.tosak.net 30 days before it expires,
+                so a certificate with less than 21 days left is an old one. If
+                the Certificate mail/mail-tosak-net is renewed, Stalwart did not
+                restart after the renewal: check Reloader and restart the pod.
+                If it is not, CertificateRenewalOverdue says why.
+
+  # The relay counters. In a test every series is new for its first 30
+  # minutes, so the cases start later. greeting_failed exists from the start
+  # at 1. auth_failed first appears at 50m with the value 1 and never grows:
+  # a rate would miss it. At 90m both grow at once: two counters of one pod
+  # must not collide. A counter outside mail (a drill) is not ours.
+  - interval: 1m
+    input_series:
+      - series: 'stalwart_delivery_greeting_failed_total{namespace="mail",job="stalwart",instance="10.244.1.9:8080"}'
+        values: '1x90 2x40'
+      - series: 'stalwart_delivery_auth_failed_total{namespace="mail",job="stalwart",instance="10.244.1.9:8080"}'
+        values: '_x50 1x40 2x40'
+      - series: 'stalwart_delivery_auth_failed_total{namespace="pg-drill",job="stalwart",instance="10.244.2.4:8080"}'
+        values: '1x60 2x70'
+      - series: 'stalwart_delivery_completed_total{namespace="mail",job="stalwart",instance="10.244.1.9:8080"}'
+        values: '1+1x130'
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: MailRelayFailing
+        exp_alerts: []
+      - eval_time: 52m
+        alertname: MailRelayFailing
+        exp_alerts:
+          - exp_labels: &relay_labels
+              severity: warning
+              namespace: mail
+            exp_annotations: &relay_annotations
+              summary: Stalwart's relay to Amazon SES fails.
+              description: >-
+                In the last 30 minutes a delivery to SES failed at the SMTP
+                level: authentication, the greeting, STARTTLS, or SES rejected
+                the sender, a recipient or the message. Read the pod's log for
+                delivery.* events. Authentication: the SMTP credentials in the
+                Secret mail/ses-smtp. A rejection: the SES account (sending
+                paused, quota, an unverified identity).
+      - eval_time: 85m
+        alertname: MailRelayFailing
+        exp_alerts: []
+      - eval_time: 95m
+        alertname: MailRelayFailing
+        exp_alerts:
+          - exp_labels: *relay_labels
+            exp_annotations: *relay_annotations
+      - eval_time: 125m
+        alertname: MailRelayFailing
+        exp_alerts: []
+
+  # A failure notice that first appears at 40m.
+  - interval: 1m
+    input_series:
+      - series: 'stalwart_delivery_dsn_perm_fail_total{namespace="mail",job="stalwart",instance="10.244.1.9:8080"}'
+        values: '_x40 1x50'
+    alert_rule_test:
+      - eval_time: 39m
+        alertname: MailNotDelivered
+        exp_alerts: []
+      - eval_time: 42m
+        alertname: MailNotDelivered
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: mail
+            exp_annotations:
+              summary: Stalwart gave up on a message or reported it delayed.
+              description: >-
+                In the last 30 minutes Stalwart sent a failure or delay notice
+                (DSN) to a sender: a message was not delivered, or is still
+                waiting in the queue. A delay without MailRelayFailing points at
+                a connection to SES that does not open. Read the pod's log for
+                delivery.* and queue.* events.
+      - eval_time: 75m
+        alertname: MailNotDelivered
+        exp_alerts: []
