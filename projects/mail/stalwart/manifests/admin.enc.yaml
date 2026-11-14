@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: admin
+    namespace: mail
+type: Opaque
+data:
+    password: ENC[AES256_GCM,data:Ul56udn06tinWhvUgPEVFdRkRV2Dq9r/XmqU5A==,iv:/F+3cCFGlHCWQU/7lt2dXdOdtTbqdRv4NZdhXaIK7os=,tag:o43ITh4UH3TkdbC+Sg7BXg==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBRODJFNUtBRzErazl6YW1X
+            MW9ZY0FWcnhscE1yeTBNTVdBVGNYM3F3QVdrCjdxKzR6SVhQOUVxRUFVMUZjOXgv
+            cTJYNFFPdFNhL1lJaUJ3NVdFNEw3S1UKLS0tIHJaR0d6YVljdEpSQ2prZER4VXh6
+            bzE5TkFVbXNyNWpwTUVGSGVMbHh1ekkKTh2wrFNGCfsceaP9zreW/kBGzvEyJdVb
+            x7LEV5GrvYID+i01BUOaUbqNsXnOekyarhOGI7oB9MWVOWJcQ/vbkA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1djev7m4tq9z9lgrd8r3unhlzgzfkx3j6vz6dltu4rumqnnu7fq5q0aqtnd
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBjck40OWh2RmNrWjZDekRM
+            OThoQVNmSEhqZ0Y5VVBKTGZzcWlvdlNlM0JBCkhhaWlaRWlKbmRSVDU3OTA3cXAw
+            MG9aYU0zNWNQTWpoNDhTVWtVMWpuaUkKLS0tIGJoSHJTZElOdWk0YVRGNjF5S29u
+            M1VuUVArM2ZjNFNQYVJYOHdLU01qSW8K6hSby9lPvXaWTGNzZam2y0Xez6S9HRJv
+            i3UgCZJD8PyqPj0xEOpWGromDY8nTePjWpcP4/RjIWls2kiX3VHOnw==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age167896gaqg05ht7eaa78z2jhk4p9gxnyfep8ft3f8cvu8wh3dd3hscv3n8j
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-11-14T09:43:37Z"
+    mac: ENC[AES256_GCM,data:nY9V94/DRWXT29GwHx5+3bQAk8WziIAjl/aACxD6Pv3UQ7fMbZjkwbp3bACZKUEPXsa5RrA9xSd7skyNRCAiVVonKfeuFB4ZAAtnnmwXIJB7qZWu2kNimdI2XLPPn7GM3FZdYH5nIfAVvBCAuarGYRUol8H1+Xz3aYLJY8Avd4Q=,iv:VjnKPIm+SX/UOISq/sp9I7mLtAnYSBTILwOzeLwf5lI=,tag:anOKmCPGwdr8lkJhm8Otow==,type:str]
+    version: 3.13.3

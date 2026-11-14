@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: metrics
+    namespace: mail
+type: kubernetes.io/basic-auth
+data:
+    password: ENC[AES256_GCM,data:R58FUTOr5sXQ8sEOyw7MIOC7zFWbUvVLUFzDG8ZmE3mlTPw/MNQdK3/OHOkHjcU8Dk55bYygmk0=,iv:A98gMcxJRC++9qhRF/1E67oJiwuaG2GyRNUKD+AS4ds=,tag:2OCCAHe34xolx1IUdjah/A==,type:str]
+    username: ENC[AES256_GCM,data:uyWQcU8BylgLshvNRo91wg==,iv:OBYlNbyRwigDCASgWdSqes+9KkCL6M++L1Qau4R9yw4=,tag:0UgfzAvoT0G2DykC06l0PQ==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSA3ZUVSVlgyTlEweXM2dG9T
+            TWVOc0U4SW9EejhFWHR4eGJ1cm5DdE1mb1JRClEyS041VzNmUWRoaHJyVUdycUdQ
+            ZndoS1NTUXVwZHhKak16ODBaVURxSkUKLS0tIGFOT2hHY3hjcExhYXlxOFlpQ2pS
+            SVY2THIxRG8rR3I5d05GYjFZc3ZpRmsK+UKcv17TUVOTEp2rl73CGpm3u/ooD4og
+            3KtLwsZwDjIc4tFrhZyFArLbG7VM+p+W0M0rV2t8AzgWI3wpSUz8KA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1djev7m4tq9z9lgrd8r3unhlzgzfkx3j6vz6dltu4rumqnnu7fq5q0aqtnd
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBPVy9WVktDRXhaQi9LQW1U
+            ZWd3OUUrd3lDc3lVbnR0MHJwQURlcDdpNzBnCml0ZWVGaUJoYjRYV05QZWtYWFMx
+            bHV1R1h1TEd1SkdIRnlSRzBkb3FzancKLS0tIGJNQXd5TzFOME1ma1dsdXIwM3Rz
+            Y25ac3JPcWFFYjBDM1psOEhvdjVLcUkK7NXg8a65Bz5C3K2kTSNHJZNdocOzBQG9
+            VTvN+Cf/dIlHVNbl/XXlyCb8fexNiuYSx1gKzcUO4PgyiKSzmUFjUA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age167896gaqg05ht7eaa78z2jhk4p9gxnyfep8ft3f8cvu8wh3dd3hscv3n8j
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-11-14T09:43:15Z"
+    mac: ENC[AES256_GCM,data:qXYGXsvkq9Bobh/AelIgdFvSNTT2EES5VUZzyL9Rk3eRz7xL2fiPvKw2BaR3iZBuXPvsamK2VOHqC4WX50kLfndNDFzPsfPIZqz6ejc0Tubcl2Wbthp4vjhITI9l/r4RfjE2m602N8LEcavwlWEo8VXBONQEYoSnDcksfrizaQw=,iv:ofUGxWxbpJMQpIm18C8t7v9TSjEFYLkQLGeh/E4cqQU=,tag:yS6yPNs22sOz9xGN9q+2vg==,type:str]
+    version: 3.13.3
