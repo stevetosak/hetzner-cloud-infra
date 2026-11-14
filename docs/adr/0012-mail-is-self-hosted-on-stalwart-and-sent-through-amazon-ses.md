@@ -231,3 +231,24 @@ Multi-AZ at €0.000022 per GB without naming the time unit; read as per hour,
 that is about €0.016 per GB-month, and egress to the internet costs €0.01 per
 GB. The figure is assumed until the first invoice confirms it. Old versions
 are billed as stored data until they expire, as they would have been on B2.
+
+**2026-11-14 — Stalwart's key cannot change its bucket.** The amendment of
+2026-11-08 gives the read-write keys `ObjectStorageFullAccess`. That permission
+set includes `ObjectStorageBucketsWrite`, so a stolen Stalwart key could
+suspend versioning or delete the lifecycle rule, and with them the 30 days of
+old versions that make a deletion recoverable. The read-write policies of both
+Projects carry instead `ObjectStorageObjectsRead`, `ObjectStorageObjectsWrite`,
+`ObjectStorageObjectsDelete` and `ObjectStorageBucketsRead`, which is all
+Stalwart's blob store needs. That these keys are refused a bucket change is
+assumed from Scaleway's permission-set reference and not tested, because the
+test that proves it would suspend versioning if it failed. Object Storage has
+no resource-level conditions in Scaleway's IAM, so the split into one Project
+per bucket stays.
+
+Two settings the decision did not name were set as well. Both buckets encrypt
+at rest with SSE-ONE, Scaleway's managed keys (read back as default encryption
+`AES256`). The lifecycle rule is set in the console, which offers the
+expiry of non-current versions, the expiry of delete markers and the abort of
+multipart uploads; no API call is needed. The keys were checked on
+2026-11-14: each lists only its own bucket, each read-only key is refused a
+write, and both buckets read back versioning and the 30-day rule.
