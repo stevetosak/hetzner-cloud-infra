@@ -19,3 +19,18 @@ configMapGenerator:
   behavior: merge
   literals:
   - S3_BUCKET=tosak-mail-blobs-rehearsal
+
+# The rehearsal ClusterIssuer is self-signed, and a self-signed certificate's
+# issuer is its subject. With dnsNames only, both are empty, and Stalwart
+# 1.0.3 refuses the Certificate object (`issuer: required`), so apply-settings
+# fails and Stalwart never starts. A Let's Encrypt certificate always names
+# its issuer, so live keeps the base unchanged.
+patches:
+- target:
+    group: cert-manager.io
+    kind: Certificate
+    name: mail-tosak-net
+  patch: |-
+    - op: add
+      path: /spec/commonName
+      value: mail.tosak.net
