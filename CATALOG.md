@@ -6,6 +6,7 @@ _Generated from `history.jsonl` on this branch by `deployments/render-catalog.mj
 
 | App | Version | Commit | Env | Deployed (UTC) |
 | --- | --- | --- | --- | --- |
+| tosak-net-site | site-v0.0.0+a873df3 | [a873df3](https://github.com/stevetosak/tosak-net/commit/a873df37df1917a0d0c32bf3d1a415e53b8faa16) | dev | 2026-11-14T00:48:05Z |
 | core-vpa | unknown | - | dev | 2026-11-08T08:34:20Z |
 | core-metrics-server | unknown | - | dev | 2026-11-03T19:40:27Z |
 | core-monitoring | unknown | - | dev | 2026-11-01T12:07:52Z |
@@ -28,6 +29,7 @@ _Generated from `history.jsonl` on this branch by `deployments/render-catalog.mj
 
 | App | Version | Commit | Env | Deployed (UTC) |
 | --- | --- | --- | --- | --- |
+| tosak-net-site | site-v0.0.0+a873df3 | [a873df3](https://github.com/stevetosak/tosak-net/commit/a873df37df1917a0d0c32bf3d1a415e53b8faa16) | dev | 2026-11-14T00:48:05Z |
 | core-vpa | unknown | - | dev | 2026-11-08T08:34:20Z |
 | core-metrics-server | unknown | - | dev | 2026-11-03T19:40:27Z |
 | core-monitoring | unknown | - | dev | 2026-11-01T12:07:52Z |
@@ -47,6 +49,5 @@ _Generated from `history.jsonl` on this branch by `deployments/render-catalog.mj
 | doma-web | v0.3.0-7-gd0fa1d7 | [d0fa1d7](https://github.com/stevetosak/doma/commit/d0fa1d74932ca2df272c89aff47621dbbb3cddc2) | dev | 2026-10-23T10:35:30Z |
 | doma-web | v0.3.0-5-gae7a54a | [ae7a54a](https://github.com/stevetosak/doma/commit/ae7a54a120561ae89d1e37ba5f64aed3e80cf79a) | dev | 2026-10-03T22:06:43Z |
 | authos-api | unknown | [e9a30ae](https://github.com/stevetosak/authos/commit/e9a30ae12f993dee38b7e3cfd7a3ab9367857406) | dev | 2026-10-01T18:57:14Z |
-| authos-duster | unknown | [e9a30ae](https://github.com/stevetosak/authos/commit/e9a30ae12f993dee38b7e3cfd7a3ab9367857406) | dev | 2026-10-01T18:56:34Z |
 
 </details>
