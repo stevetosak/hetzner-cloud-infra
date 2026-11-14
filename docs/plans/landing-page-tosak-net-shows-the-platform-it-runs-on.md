@@ -26,9 +26,9 @@ its own, with
 The prototype is one HTML file built by a Python generator, outside any
 repository. Its proof numbers (checks, releases, the drill) were measured by
 hand on 2026-11-08 and baked in with that date. The live numbers come from a
-small service, tosak-status, which reads Prometheus and the deploy catalog and
-returns one cached JSON of rounded values. Prometheus itself is never
-exposed.
+small service, tosak-status, which reads Prometheus, its own daily history
+and the restore drill's results, and returns one cached JSON of rounded
+values. Prometheus itself is never exposed.
 
 The build shape was settled with the operator on 2026-11-09. One new public
 repository, `stevetosak/tosak-net`, holds a pnpm workspace: `packages/design`
@@ -122,6 +122,26 @@ success; and the page passes its browser tests at 1440 px and 375 px.
 
 ## Live numbers from tosak-status
 
+The grill of 2026-11-14 changed what the page counts. Counts of volume
+(checks, releases, applications in sync, recorded decisions) read as small for
+a personal platform and say nothing about whether it can be trusted. What an
+engineer trusts is a measured guarantee, so every number the page keeps is
+one: how available each public host was, how far behind the offsite copy of
+the data can fall, how long a verified restore takes, and how long a rebuild
+from nothing takes. The GitOps and records chapters keep their text and lose
+their numbers.
+
+A guarantee needs a long window, and Prometheus keeps three days on an
+emptyDir that a pod restart erases (`retention: 3d` in
+`core/monitoring/kube-prometheus-stack-values.yaml`; on 2026-11-14 the oldest
+sample was 2026-11-11 06:00 UTC). tosak-status therefore keeps its own
+history: one row per probe target and UTC day in its own database on the
+shared PostgreSQL cluster, written once the day closes and filled at start-up
+for every missing day Prometheus still holds. An outage of the service shorter
+than three days loses nothing; a longer gap stays a gap, and the page counts
+only the days it has. The history is backed up and drilled with every other
+database, the mechanism the page itself advertises.
+
 **Done when:** tosak-status runs in the cluster and answers
 `https://tosak.net/api/status` with one JSON of rounded values, cached for
 about 60 seconds; no Prometheus endpoint is reachable from a public host; the
@@ -129,20 +149,30 @@ page shows the live values with their measured time and falls back to the
 build-time values when the service fails; and every value matches a manual
 query taken at the same time.
 
-- [ ] Decide in a grill the source and window of each number: checks and
-      failures (the public-hosts Probe), applications that match Git (Argo CD's
-      application metrics), releases (the deploy catalog), recorded decisions
-      (the Decision pages), the last restore drill (the `restore-drill` Job),
-      and the per-host share of passed checks. Each is counted either since a
-      fixed date or over a rolling window.
+- [x] Decide in a grill the source and window of each number. Decided
+      2026-11-14:
+
+      | Number | Source | Window |
+      |---|---|---|
+      | Checks, failed checks and availability per host | `probe_success` of the `public-hosts` job, all its targets; the page picks the hosts it shows | 30 rolling days of the daily history; no stated target |
+      | How far behind the offsite copy fell | `cnpg_pg_stat_archiver_seconds_since_last_archival` (its daily max) and the failed archivals | 30 rolling days; `archive_timeout` is 300 s, so the worst case is about 5 min |
+      | The restore drill: restore time, rows checked, result, date | the newest result JSON in R2 `tosak-drill-results`, read with a read-only token for that bucket | the last run; the next is the 1st of the month |
+      | The rebuild from an empty project | the rehearsal Log of 2026-10-25: `up --db fresh --apply` in about 18 min | build-time, updated by hand after each rehearsal |
+
+      The rebuild chapter states what was measured: a fresh database, with
+      the restore proven by the monthly drill. A rebuild timed with
+      `--db recover` from empty does not exist yet.
 - [ ] The contract: one JSON Schema in the repository. The Go service's tests
       validate its response against the schema, and the site's types are
       generated from it.
 - [ ] The service in `services/status`: Go, the standard library's HTTP
       server and Prometheus' Go API client. It refreshes one snapshot about
       every 60 seconds, serves the last good one with its time, and sets a
-      matching `Cache-Control`. `/health/live` and `/health` follow the
-      platform convention. Any credential it needs is a Secret Catalog entry.
+      matching `Cache-Control`. It writes the daily history to the
+      `tosak_status` database and fills missing days at start-up.
+      `/health/live` and `/health` follow the platform convention. Its
+      credentials (the database role, the read-only R2 token for
+      `tosak-drill-results`) are Secret Catalog entries.
 - [ ] Image `stevetosak/tosak-net-status` as the second component of
       `projects/tosak-net/`, and an `/api/status` rule on the `tosak.net`
       route.
