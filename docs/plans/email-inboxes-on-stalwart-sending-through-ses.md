@@ -166,19 +166,23 @@ run of the Restore Drill passes its mail phase. Bounce and complaint tests go
 to the SES mailbox simulator, never to an invented address: AWS counts a
 bounce from an invented address against the account.
 
-- [ ] Add the project entries that `kluster services check` asks for: the
+- [x] Add the project entries that `kluster services check` asks for: the
       namespace file, the AppProject, the generator line, `mail` in the
       Gateway's `allowedRoutes`, and `mail` in Reloader's namespaces with its
-      Role and RoleBinding.
-- [ ] Add the database `core/cnpg/databases/mail.yaml`, owned by `tosak`, and
-      list it in `core/cnpg/kustomization.yaml`.
+      Role and RoleBinding. **Done 2026-11-14** (`feat/mail`, 39593ff):
+      `kluster services check` passes on the branch.
+- [x] Add the database `core/cnpg/databases/mail.yaml`, owned by `tosak`, and
+      list it in `core/cnpg/kustomization.yaml`. **Done 2026-11-14**
+      (`feat/mail`, 39593ff); the rehearsal's drill restored its 29 tables.
 - [ ] Add the Secrets to the Secret Catalog: SES SMTP, the Scaleway
       read-write key and the admin password (issued), and the metrics
       basic-auth password (generated); and the Scaleway read-only key for
       `pg-drill` (issued). Each bucket key's `rehearsalItem` names its
       rehearsal key (`kluster/scw-mail-rehearsal-rw`,
-      `kluster/scw-mail-rehearsal-ro`).
-- [ ] Write the Stalwart Deployment: one replica with `strategy: Recreate`,
+      `kluster/scw-mail-rehearsal-ro`). **Done 2026-11-14** (`feat/mail`,
+      829f7ad and 602ba0e); `kluster secrets check` passes, and the
+      rehearsal seeded every one from its `rehearsalItem`.
+- [x] Write the Stalwart Deployment: one replica with `strategy: Recreate`,
       no volume, the in-memory store in process, the Reloader annotation, a
       first memory request of 256 Mi (an estimate, measured in the rehearsal
       and set by the capacity Plan's sizing rule). Each process leases a node
@@ -188,8 +192,9 @@ bounce from an invented address against the account.
       data store, its password from a file) comes from a ConfigMap. The
       probes are Stalwart's own: `/healthz/live` and `/healthz/ready` on the
       HTTP listener 8080. The container runs as UID 2000 and keeps
-      `NET_BIND_SERVICE` under `drop: [ALL]`.
-      - [ ] Write the Stalwart settings as an NDJSON plan in git, and decide
+      `NET_BIND_SERVICE` under `drop: [ALL]`. **Done 2026-11-14**
+      (`feat/mail`, 2338738).
+      - [x] Write the Stalwart settings as an NDJSON plan in git, and decide
         how it is applied (the first start runs in recovery mode with the
         issued admin password; later applies use the API). The plan sets the blob store to
         `S3` explicitly, because `Default` keeps the message files in the data
@@ -199,30 +204,51 @@ bounce from an invented address against the account.
         never delivers to a foreign MX; and it enables the Prometheus exporter
         with basic auth. The full-text index then lives in PostgreSQL (the
         search store's default); the rehearsal measures what that adds.
-- [ ] Write the `LoadBalancer` Service for 25, 465 and 993 with the Hetzner
+        **Done 2026-11-14** (`feat/mail`, 2338738): an init container
+        applies the plan on every start, in recovery mode with the issued
+        admin password.
+- [x] Write the `LoadBalancer` Service for 25, 465 and 993 with the Hetzner
       annotations (`lb11`, `hel1`, PROXY protocol on), and set the trusted
       networks on the listeners for 25, 465 and 993 only
       (`overrideProxyTrustedNetworks`), to the source range the pod sees
       behind the load balancer. A connection from a trusted network without a
       PROXY header is closed, and the global list would also exempt that range
-      from auto-ban.
-- [ ] Add the cert-manager `Certificate` for `mail.tosak.net` in `mail`, from
-      `letsencrypt-prod`, mounted into the pod.
-- [ ] Route `mail-admin.tosak.net` on the Gateway to Stalwart's admin paths
+      from auto-ban. **Done 2026-11-14** (`feat/mail`, 6a38fe2): the source
+      range is the load balancer's private address `10.0.4.3/32`, and an
+      internet scanner's address in the rehearsal's Stalwart log proves the
+      PROXY header arrives.
+- [x] Add the cert-manager `Certificate` for `mail.tosak.net` in `mail`, from
+      `letsencrypt-prod`, mounted into the pod. **Done 2026-11-14**
+      (`feat/mail`, dcac50d). The rehearsal issues it from its self-signed
+      issuer; the first `letsencrypt-prod` issue is in Phase 3.
+- [x] Route `mail-admin.tosak.net` on the Gateway to Stalwart's admin paths
       only, add its Cloudflare Access application (the operator's email only),
-      and give it an `http_access` probe target, as Grafana has.
-- [ ] Serve the MTA-STS policy at `mta-sts.tosak.net` with an `HTTPRoute` and
+      and give it an `http_access` probe target, as Grafana has. **Done
+      2026-11-14** (`feat/mail`, 91ba76a and 1004d23) for the route and the
+      probe target; admin bans hit the forwarded client, never the Envoy
+      pod. The Access application is a hand step of Phase 3, before the
+      route goes live.
+- [x] Serve the MTA-STS policy at `mta-sts.tosak.net` with an `HTTPRoute` and
       an `HTTPRouteFilter` direct response from a ConfigMap, mode `testing`,
       and check that Cloudflare does not answer the policy fetch with a bot
-      challenge.
-- [ ] Add monitoring: a ServiceMonitor for the Stalwart exporter (never
+      challenge. **Done 2026-11-14** (`feat/mail`, 59026a4): Envoy served
+      the policy in the rehearsal, and on 2026-11-14 Cloudflare passed
+      fetches of `tosak.net/.well-known/mta-sts.txt` to the origin with no
+      challenge. The fetch on `mta-sts.tosak.net` itself is checked in
+      Phase 3, after its record exists.
+- [x] Add monitoring: a ServiceMonitor for the Stalwart exporter (never
       routed), blackbox probes on `mail.tosak.net` ports 25, 465 and 993 with
       certificate expiry, and alert rules to Telegram. Prove that the probes go
       out through the mail load balancer and back with PROXY protocol, not
-      straight to the pod.
-- [ ] Write the DNS check script: for one domain, `dig` every record in its
+      straight to the pod. **Done 2026-11-14** (`feat/mail`, 9f04936) with
+      a PodMonitor instead of a ServiceMonitor, because the ClusterIP Service
+      is applied by hand and the monitor reads the basic-auth Secret from its
+      own namespace. The rehearsal's probes went through the load balancer.
+- [x] Write the DNS check script: for one domain, `dig` every record in its
       list and read the SES verified status, and fail on any difference.
-- [ ] Add the mail phase to the Restore Drill as ADR 0003's amendment of
+      **Done 2026-11-14** (`feat/mail`, 4838e73): `projects/mail/dns_check.py`
+      with its tests; its first run on `tosak.net` is in Phase 3.
+- [x] Add the mail phase to the Restore Drill as ADR 0003's amendment of
       2026-11-02 describes: the copy as of the replay end, the throw-away
       Stalwart with no SES credentials, no relay route, the read-only key and
       no Service, the canary `drill@tosak.net` checked by sha256, and K = 20
@@ -232,6 +258,8 @@ bounce from an invented address against the account.
       settings before any mail service starts, for example by starting in
       recovery mode (only the management listener runs, according to the
       documentation; the build proves it) and applying a drill plan first.
+      **Done 2026-11-14** (`feat/mail`, 64c4241 and the four fixes of step
+      12): the rehearsal's eighth drill run passed its mail phase.
 - [x] Run the rehearsal and record the measured memory, the proofs in the
       finish line above, and every fault found, in the Task Record. A
       rehearsal ran no application and no drill until 2026-11-14, so the
@@ -308,7 +336,9 @@ production drill passes its mail phase, the mailboxes `dmarc@tosak.net` and
       because its allow list on `master` does not name `mail` yet.
 - [ ] Merge `feat/mail`. Argo CD syncs the project, the Gateway's allow list,
       the probes and the rules. Check that the pod is ready and every mail
-      and host probe passes within the five minutes before the alerts fire;
+      and host probe passes within the five minutes before the alerts fire,
+      and that a fetch of `https://mta-sts.tosak.net/.well-known/mta-sts.txt`
+      gets the policy, not a Cloudflare challenge;
       `core-gateway` and `core-monitoring` sync on their own, so the routes
       can lag the probes by one sync. Rebuild the installed `kluster` binary,
       which refuses the new port probes until it has the probe-job filter.
