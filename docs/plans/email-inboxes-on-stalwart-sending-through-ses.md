@@ -330,7 +330,7 @@ answered back to it, the DNS check script passes for `tosak.net`, the first
 production drill passes its mail phase, the mailboxes `dmarc@tosak.net` and
 `drill@tosak.net` exist, and DMARC and TLS reports arrive at `dmarc@`.
 
-- [ ] Before the merge, put in place everything the merge's probes test
+- [x] Before the merge, put in place everything the merge's probes test
       that is applied by hand, so that `MailPortDown` and `PublicHostDown` do
       not page (operator, 2026-11-14). The merge of `feat/mail` makes Argo
       CD sync the probes and alert rules at once, while the parts they test
@@ -343,7 +343,14 @@ production drill passes its mail phase, the mailboxes `dmarc@tosak.net` and
       application for `mail-admin.tosak.net`; and publish rows 1, 9 and 10
       of the list below. Until the merge, the Gateway refuses the routes,
       because its allow list on `master` does not name `mail` yet.
-- [ ] Merge `feat/mail`. Argo CD syncs the project, the Gateway's allow list,
+      **Done 2026-11-15**: the seed created the namespace and its six
+      Secrets; `mail-lb` came up with the public address 135.181.84.29. The
+      `Certificate` stayed unready until the Cloudflare token in
+      `cert-manager/cloudflare-dns-token` was replaced: the old one could
+      look up the zone but not read its records, the same fault that would
+      have blocked the wildcard renewal from 2026-11-19 (PR #126). `mail-tls`
+      was then issued in about 80 seconds.
+- [x] Merge `feat/mail`. Argo CD syncs the project, the Gateway's allow list,
       the probes and the rules. Check that the pod is ready and every mail
       and host probe passes within the five minutes before the alerts fire,
       and that a fetch of `https://mta-sts.tosak.net/.well-known/mta-sts.txt`
@@ -351,15 +358,44 @@ production drill passes its mail phase, the mailboxes `dmarc@tosak.net` and
       `core-gateway` and `core-monitoring` sync on their own, so the routes
       can lag the probes by one sync. Rebuild the installed `kluster` binary,
       which refuses the new port probes until it has the probe-job filter.
-- [ ] Publish the other records for `tosak.net` in Cloudflare by hand, from
+      **Done 2026-11-15**: PR #127; the pod was ready four minutes after the
+      merge and the host probes passed, but `MailPortDown` fired for 25 and
+      465. The in-cluster probe dialled the public address, which leaves the
+      node, and Hetzner blocks outbound 25 and 465. The probes now dial the
+      load balancer's private address 10.0.4.3 and keep the instance label
+      `mail.tosak.net:<port>` (PR #128); all three ports passed within a
+      minute of the sync.
+- [x] Publish the other records for `tosak.net` in Cloudflare by hand, from
       the list below, then run the DNS check script. Row 8 passes only after
       the next step adds its `rua`.
-- [ ] Create the operator's account, `dmarc@tosak.net` and the canary
+      **Done 2026-11-15**: 14 of 15 checks passed, row 8 failing as planned,
+      after a fix to the script itself: it took every address of the load
+      balancer, including the private one, as an expected value of row 1
+      (PR #129).
+- [x] Create the operator's account, `dmarc@tosak.net` and the canary
       `drill@tosak.net`; deliver the canary message once and record its sha256
       for the drill. Then add `rua=mailto:dmarc@tosak.net` to the DMARC record
       (row 8), which went up early without it.
-- [ ] Send and receive with an outside mailbox (Gmail) in both directions, and
+      **Done 2026-11-15**: the web UI sign-in first failed with "client
+      metadata documents are disabled": Stalwart accepts its UI as an OAuth
+      client only on the host of its public URL, so the main container sets
+      `STALWART_PUBLIC_URL=https://mail-admin.tosak.net` (PR #130). The
+      operator created `steve@tosak.net`, `dmarc@tosak.net` (its own
+      password, in `kluster/mail-dmarc`) and `drill@tosak.net` (no
+      credential); each was proven by an IMAPS login over the public path.
+      The canary went in by IMAP APPEND rather than SMTP, because an
+      unauthenticated SMTP delivery fails DMARC and lands in Junk Mail, which
+      Stalwart empties after 30 days. Its digest, read back with
+      `mail_check.py canary-digests` and equal to the sha256 of the appended
+      bytes, is `CANARY_SHA256` in the CronJob (PR #131, read back on the
+      live object). With the `rua` added the DNS check passes 15 of 15.
+- [x] Send and receive with an outside mailbox (Gmail) in both directions, and
       read the message headers for SPF, DKIM and DMARC passes.
+      **Done 2026-11-15**: a message from Thunderbird left through SES and
+      reached the Gmail Inbox with SPF, DKIM and DMARC passing in Gmail's
+      "Show original". The Gmail reply passed Stalwart's iprev, SPF, DKIM and
+      DMARC checks and was filed in INBOX as ham (Stalwart log). An outside
+      host's relay attempt through port 25 the same day was refused.
 - [ ] Turn SES email feedback forwarding on for `tosak.net` once its MX
       points at Stalwart, so a sender learns of a bounce in their own inbox;
       the SNS topic keeps the operator's copy.
