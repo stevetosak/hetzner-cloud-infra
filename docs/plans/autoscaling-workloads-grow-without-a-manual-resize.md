@@ -69,7 +69,7 @@ live by driving one container past its request.
       uses node memory for seconds, about 400 MiB if all of them start
       together. The compare also showed `argocd-server` at 109 MiB on an
       80 Mi request; its request became 144 Mi in the same change.
-- [ ] Add the alerts: each resize as a notification grouped by namespace over
+- [x] Add the alerts: each resize as a notification grouped by namespace over
       5 minutes; an Infeasible resize, a Pending pod and an OOM kill at once;
       node memory available under 15 % (warning) and under 8 % or
       MemoryPressure (critical); a node's requests above 90 % of allocatable
@@ -83,6 +83,12 @@ live by driving one container past its request.
       resource state reads only CRD kinds. `vpa-compare.py` shows the
       template's request in its `git` column and flags the drift, and the
       alert waits as a deferred item (operator, 2026-11-15).
+      Done 2026-11-15 (PR #138): the target `monitoring/vpa-updater` is up,
+      the groups `vpa` and `nodes` load with all 15 rules healthy, none of
+      the new alerts fires, and Alertmanager's loaded config holds the
+      `telegram-notice` route (Prometheus and Alertmanager APIs). The
+      updater's counters appear only at the first resize, so the
+      notification itself is proven by the last step.
 - [ ] Measure the kubelet and system memory on each worker and set
       `kubeReserved`, `systemReserved` and a soft eviction threshold through
       kluster, one node at a time.
