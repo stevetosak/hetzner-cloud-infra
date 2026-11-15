@@ -114,10 +114,34 @@ func (a *app) dialControlPlane(ctx context.Context) (*stage.Host, func(), error)
 		}
 		addr, user, sudo = srv.PublicIP, "root", false
 	}
+	return a.dialPinned(ctx, cp.Name, addr, user, sudo, cp.VpnIP)
+}
+
+// dialWorker reaches a Worker as dialControlPlane reaches the Control
+// Plane: live as node.user on its VPN address with sudo, a rehearsal as
+// root on its public address through bootstrap SSH the caller opened.
+func (a *app) dialWorker(ctx context.Context, w workerset.Worker) (*stage.Host, func(), error) {
+	addr, user, sudo := w.VpnIP, a.cfg.Node.User, true
+	if !a.env.IsLive() {
+		srv, err := a.api.Server(ctx, w.Name)
+		if err != nil {
+			return nil, nil, err
+		}
+		if srv == nil {
+			return nil, nil, fmt.Errorf("the project has no server %s", w.Name)
+		}
+		addr, user, sudo = srv.PublicIP, "root", false
+	}
+	return a.dialPinned(ctx, w.Name, addr, user, sudo, w.VpnIP)
+}
+
+// dialPinned logs in to a host at addr, verified only by kluster's pins.
+// vpnIP is the address `kluster pin import` takes for it on live.
+func (a *app) dialPinned(ctx context.Context, name, addr, user string, sudo bool, vpnIP string) (*stage.Host, func(), error) {
 	if ok, err := a.pins.Has(addr); err != nil {
 		return nil, nil, err
 	} else if !ok {
-		return nil, nil, fmt.Errorf("no pin for %s at %s: kluster trusts only its pins (live: kluster pin import %s)", cp.Name, addr, cp.VpnIP)
+		return nil, nil, fmt.Errorf("no pin for %s at %s: kluster trusts only its pins (live: kluster pin import %s)", name, addr, vpnIP)
 	}
 	cb, err := a.pins.Callback()
 	if err != nil {
@@ -131,8 +155,8 @@ func (a *app) dialControlPlane(ctx context.Context) (*stage.Host, func(), error)
 	defer cancel()
 	c, err := remote.Dial(wait, addr, remote.Config{User: user, Auth: auth, HostKeyCallback: cb, Sudo: sudo})
 	if err != nil {
-		return nil, nil, fmt.Errorf("login to %s: %w", cp.Name, err)
+		return nil, nil, fmt.Errorf("login to %s: %w", name, err)
 	}
-	fmt.Fprintf(a.out, "[%s] login as %s at %s verified against the pinned host key\n", cp.Name, user, addr)
-	return &stage.Host{Name: cp.Name, Addr: addr, Exec: c}, func() { _ = c.Close() }, nil
+	fmt.Fprintf(a.out, "[%s] login as %s at %s verified against the pinned host key\n", name, user, addr)
+	return &stage.Host{Name: name, Addr: addr, Exec: c}, func() { _ = c.Close() }, nil
 }

@@ -41,6 +41,24 @@ node:
   user: tosak
   networkInterface: enp7s0
 
+# What each node's kubelet keeps back from its pods, set by `kluster node
+# kubelet-config <name>` through the kube-system kubelet-config ConfigMap, so
+# a new Worker gets it at its join. The sum of both reserves covers the
+# memory outside the pods (p99 541-651 MiB per worker, 2026-11-12..15);
+# enforceNodeAllocatable is [pods] only, so the split between the two is
+# accounting. evictionHard stays the kubelet default (memory.available
+# 100Mi): a partial evictionHard zeroes the other signals' defaults.
+kubelet:
+  kubeReserved:
+    memory: 160Mi
+  systemReserved:
+    memory: 480Mi
+  evictionSoft:
+    memory.available: 300Mi
+  evictionSoftGracePeriod:
+    memory.available: 1m
+  evictionMaxPodGracePeriod: 30
+
 # How `kluster node add` fills a new entry in the Worker set. A new Worker
 # takes the lowest free address of each pool; the VPN pool skips every
 # address a peer above holds.

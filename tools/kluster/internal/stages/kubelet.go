@@ -149,6 +149,9 @@ func (r KubeletRoom) refusal(rm room) string {
 }
 
 func (r KubeletRoom) Preview(ctx context.Context, h *stage.Host) (string, error) {
+	if h.Exec == nil {
+		return "# refuses when the pods on " + r.Node + " request more memory than its allocatable with the new values\n", nil
+	}
 	rm, _, err := r.room(ctx, h)
 	if err != nil {
 		return "", err
@@ -199,6 +202,11 @@ func (c KubeletConfigMap) Probe(ctx context.Context, h *stage.Host) (stage.Statu
 }
 
 func (c KubeletConfigMap) Preview(ctx context.Context, h *stage.Host) (string, error) {
+	cmd := "kubectl -n " + kubeletCMNamespace + " patch configmap " + kubeletCMName + " --type merge (data." + kubeletCMKey +
+		": " + strings.Join(sortedFields(c.Want), ", ") + ")\n"
+	if h.Exec == nil {
+		return cmd, nil
+	}
 	doc, err := c.read(ctx, h)
 	if err != nil {
 		return "", err
@@ -207,8 +215,16 @@ func (c KubeletConfigMap) Preview(ctx context.Context, h *stage.Host) (string, e
 	if err != nil {
 		return "", err
 	}
-	return "kubectl -n " + kubeletCMNamespace + " patch configmap " + kubeletCMName + " --type merge (data." + kubeletCMKey + ")\n" +
-		filediff.Unified(kubeletCMPath, doc, merged), nil
+	return cmd + filediff.Unified(kubeletCMPath, doc, merged), nil
+}
+
+func sortedFields(m map[string]any) []string {
+	names := make([]string, 0, len(m))
+	for n := range m {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func (c KubeletConfigMap) Act(ctx context.Context, h *stage.Host) error {
