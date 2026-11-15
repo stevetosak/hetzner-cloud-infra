@@ -206,3 +206,22 @@ While hosting is managed, every Extra costs the operator a review, and every
 Client-owned registry is a dependency the platform does not control: an
 expired pull credential stops that Client's next rollout, which is why the
 alert is part of the decision.
+
+## Amendments
+
+**2026-11-15: an application incorporates the platform; it is not built
+around it.** The operator set the rule after the decision: a Client's code
+must not be shaped by tosak.net, and every platform service is optional. Four
+changes to Spec version 1 follow from it. The Spec maps each value the
+platform provides onto the application's own environment variable names, for
+example `services.database.env: { DATABASE_URL: url }`, instead of handing
+over a Secret with fixed key names. The port, the health paths and the size
+are optional, and the platform's conventions fill them when they are absent.
+The root filesystem stays read-only, `/tmp` stays writable by default, and the
+Spec may name further writable paths. The smallest valid Spec is a name, one
+component with an image, and one host; the `services` block and each of its
+members are optional. What remains asked of the code is what any careful host
+asks: run as a non-root user, keep no state on the local disk, and answer a
+liveness path. Checking an application against these rules before it deploys
+becomes a service of its own
+([Contract validator](../plans/contract-validator-onboarding-proves-an-app-fits-the-platform.md)).
