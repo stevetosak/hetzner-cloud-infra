@@ -396,9 +396,14 @@ production drill passes its mail phase, the mailboxes `dmarc@tosak.net` and
       "Show original". The Gmail reply passed Stalwart's iprev, SPF, DKIM and
       DMARC checks and was filed in INBOX as ham (Stalwart log). An outside
       host's relay attempt through port 25 the same day was refused.
-- [ ] Turn SES email feedback forwarding on for `tosak.net` once its MX
+- [x] Turn SES email feedback forwarding on for `tosak.net` once its MX
       points at Stalwart, so a sender learns of a bounce in their own inbox;
       the SNS topic keeps the operator's copy.
+      **Done 2026-11-15**: turned on with
+      `aws sesv2 put-email-identity-feedback-attributes` and read back on
+      both SES APIs. A send to `bounce@simulator.amazonses.com` came back as
+      a bounce from SES to port 25, passed SPF, DKIM and DMARC, and was filed
+      in the sender's INBOX (Stalwart log).
 - [ ] Report to the operator when the TLS reports show no failures; the
       operator decides when to change MTA-STS from `testing` to `enforce`, and
       when to raise DMARC above `p=none`.
