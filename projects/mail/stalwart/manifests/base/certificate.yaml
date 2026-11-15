@@ -1,0 +1,29 @@
+# The certificate Stalwart presents on 25 (STARTTLS), 465 and 993 (ADR 0012).
+#
+# Mail does not pass through the Gateway, so the wildcard in `gateway` cannot
+# serve it: a Secret is mounted only in its own namespace. This one lives in
+# `mail` and is mounted at /run/secrets/tls; the settings plan points the
+# Certificate object at tls.crt and tls.key and matches it on its one name,
+# `mail.tosak.net` (base/config/settings.ndjson). A second name here needs the
+# same name in the plan's subjectAlternativeNames, or the reconcile creates a
+# second object and removes the first.
+#
+# Issued by DNS-01 through cert-manager, which already holds the Cloudflare
+# token; Stalwart's own ACME client stays unused, so no zone-editing token is
+# in a pod that faces port 25. Stalwart reads the files only at start:
+# Reloader restarts the pod when cert-manager renews the Secret.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: mail-tosak-net
+spec:
+  secretName: mail-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - mail.tosak.net
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always

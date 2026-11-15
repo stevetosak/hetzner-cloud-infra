@@ -50,7 +50,7 @@ func TestAddProjectRegistersEverywhereTheCheckAsks(t *testing.T) {
 		t.Fatalf("the registered repository fails the check: %v", errs)
 	}
 	projects, err := Projects(m)
-	if err != nil || !slices.Equal(projects, []string{"authos", "doma", "tosak-net", "example"}) {
+	if err != nil || !slices.Equal(projects, []string{"authos", "doma", "tosak-net", "mail", "example"}) {
 		t.Fatalf("projects = %v, %v", projects, err)
 	}
 	want := []string{ProjectsAppSetFile, AppProjectsFile, GatewayFile, LimitRangesDir + "/kustomization.yaml",
@@ -72,19 +72,19 @@ func TestAddProjectRegistersEverywhereTheCheckAsks(t *testing.T) {
 		}
 	}
 	for _, s := range []struct{ file, line string }{
-		{ProjectsAppSetFile, "          - path: projects/tosak-net/*/manifests/overlays/dev\n          - path: projects/example/*/manifests/overlays/dev\n"},
-		{AppProjectsFile, "    - {server: https://kubernetes.default.svc, namespace: tosak-net}\n    - {server: https://kubernetes.default.svc, namespace: example}\n"},
+		{ProjectsAppSetFile, "          - path: projects/mail/*/manifests/overlays/dev\n          - path: projects/example/*/manifests/overlays/dev\n"},
+		{AppProjectsFile, "    - {server: https://kubernetes.default.svc, namespace: mail}\n    - {server: https://kubernetes.default.svc, namespace: example}\n"},
 		{AppProjectsFile, "      kind: '*'\n---\napiVersion: argoproj.io/v1alpha1\nkind: AppProject\nmetadata:\n  name: example\n"},
 		{AppProjectsFile, "      kind: '*'\n---\n# THE CORE PROJECT"},
-		{LimitRangesDir + "/kustomization.yaml", "  - tosak-net\n  - example\n"},
-		{AppsFile, `  "tosak-net-site": { "repo": "stevetosak/tosak-net", "tagPrefix": "site-v", "host": "tosak.net" },` + "\n" +
+		{LimitRangesDir + "/kustomization.yaml", "  - mail\n  - example\n"},
+		{AppsFile, `  "mail-stalwart": { "repo": null, "tagPrefix": "v" },` + "\n" +
 			`  "example-web": { "repo": "stevetosak/example", "tagPrefix": "web-v", "host": "example.tosak.net" }` + "\n}"},
 	} {
 		if !strings.Contains(string(m[s.file].Data), s.line) {
 			t.Errorf("%s lacks %q", s.file, s.line)
 		}
 	}
-	if n := strings.Count(string(m[GatewayFile].Data), "values: [gateway, argocd, authos, doma, tosak-net, example, monitoring]\n"); n != 2 {
+	if n := strings.Count(string(m[GatewayFile].Data), "values: [gateway, argocd, authos, doma, tosak-net, mail, example, monitoring]\n"); n != 2 {
 		t.Errorf("%s: %d listeners admit example, want 2", GatewayFile, n)
 	}
 	if n := strings.Count(string(m[AppProjectsFile].Data), "# THE CORE PROJECT"); n != 1 {
@@ -127,7 +127,7 @@ func TestAddProjectPutsARowAfterTheProjectsRows(t *testing.T) {
 		t.Errorf("the row is not after authos-duster:\n%s", s)
 	}
 	var rows map[string]json.RawMessage
-	if err := json.Unmarshal(m[AppsFile].Data, &rows); err != nil || len(rows) != 10 {
+	if err := json.Unmarshal(m[AppsFile].Data, &rows); err != nil || len(rows) != 11 {
 		t.Errorf("catalog: %d rows, %v", len(rows), err)
 	}
 }

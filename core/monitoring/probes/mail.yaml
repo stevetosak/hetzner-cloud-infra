@@ -1,0 +1,63 @@
+# The mail ports of mail.tosak.net (Email Plan, Phase 2): SMTP with STARTTLS
+# on 25, implicit TLS on 465 and 993. One Probe per module, as in
+# public-hosts.yaml; the modules are in blackbox-exporter-values.yaml.
+#
+# The probe goes out to the public address of the mail load balancer and back
+# in through it: the Service reports ipMode Proxy (the Hetzner CCM sets it
+# with PROXY protocol, as on the Gateway's load balancer), so kube-proxy does
+# not short-cut the address to the pod. The load balancer adds the PROXY
+# header, so one probe tests DNS, the load balancer, the PROXY trust, the pod,
+# the protocol and the certificate Stalwart serves. Alerts: rules/mail.yaml.
+#
+# These targets are not public hosts: the job is mail-ports, and kluster
+# services check pairs only the job public-hosts with HTTPRoutes.
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: mail-smtp
+  namespace: monitoring
+spec:
+  jobName: mail-ports
+  module: smtp_starttls
+  prober:
+    url: blackbox-exporter.monitoring.svc:9115
+  interval: 1m
+  scrapeTimeout: 15s
+  targets:
+    staticConfig:
+      static:
+        - mail.tosak.net:25
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: mail-submissions
+  namespace: monitoring
+spec:
+  jobName: mail-ports
+  module: smtp_tls
+  prober:
+    url: blackbox-exporter.monitoring.svc:9115
+  interval: 1m
+  scrapeTimeout: 15s
+  targets:
+    staticConfig:
+      static:
+        - mail.tosak.net:465
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: mail-imaps
+  namespace: monitoring
+spec:
+  jobName: mail-ports
+  module: imap_tls
+  prober:
+    url: blackbox-exporter.monitoring.svc:9115
+  interval: 1m
+  scrapeTimeout: 15s
+  targets:
+    staticConfig:
+      static:
+        - mail.tosak.net:993

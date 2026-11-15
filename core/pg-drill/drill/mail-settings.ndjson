@@ -1,0 +1,8 @@
+{"@type":"update","object":"SystemSettings","value":{"defaultCertificateId":null}}
+{"@type":"reconcile","object":"Certificate","matchOn":["subjectAlternativeNames"],"value":{}}
+{"@type":"reconcile","object":"NetworkListener","value":{"imap":{"name":"imap","protocol":"imap","bind":{"127.0.0.1:143":true},"useTls":false,"implicitTls":false},"http":{"name":"http","protocol":"http","bind":{"127.0.0.1:8080":true},"useTls":false,"implicitTls":false}}}
+{"@type":"update","object":"Imap","value":{"allowPlainTextAuth":true}}
+{"@type":"reconcile","object":"MtaRoute","value":{"local":{"@type":"Local","name":"local","description":"Local delivery"}}}
+{"@type":"update","object":"MtaOutboundStrategy","value":{"route":{"match":{},"else":"'local'"}}}
+{"@type":"update","object":"BlobStore","value":{"@type":"FileSystem","path":"/blobs","depth":0}}
+{"@type":"update","object":"Metrics","value":{"prometheus":{"@type":"Disabled"}}}

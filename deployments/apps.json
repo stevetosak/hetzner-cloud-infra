@@ -7,5 +7,6 @@
   "wasteio-api": { "repo": null, "tagPrefix": "wasteio-api-v" },
   "wasteio-frontend": { "repo": null, "tagPrefix": "wasteio-frontend-v" },
   "wasteio-bin-agents": { "repo": null, "tagPrefix": "wasteio-bin-agents-v" },
-  "tosak-net-site": { "repo": "stevetosak/tosak-net", "tagPrefix": "site-v", "host": "tosak.net" }
+  "tosak-net-site": { "repo": "stevetosak/tosak-net", "tagPrefix": "site-v", "host": "tosak.net" },
+  "mail-stalwart": { "repo": null, "tagPrefix": "v" }
 }

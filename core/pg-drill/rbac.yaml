@@ -9,6 +9,11 @@
 # Cluster gives the image, the archive's serverName and `initdb.database`; the
 # Database objects give every other database production declares. Neither
 # object holds a secret. No exec, no Secrets, no pods there.
+#
+# The mail phase (drill/mail-pod.yaml): in `pg-drill`, create and delete the
+# drill Stalwart pod and this run's Secret `drill-stalwart`, read the pod logs
+# (the replay end time and the result), and read the drill Cluster's Service.
+# In `mail`: READ the Stalwart Deployment for its two image references.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -28,9 +33,10 @@ rules:
     resources: [objectstores]
     verbs: [get]
   # get: exec needs it. list: the check that no other drill is running.
+  # watch: `kubectl delete --wait` of the drill Stalwart.
   - apiGroups: ['']
     resources: [pods]
-    verbs: [get, list]
+    verbs: [get, list, watch]
   # list: the wait until the drill's PVC is gone.
   - apiGroups: ['']
     resources: [persistentvolumeclaims]
@@ -38,6 +44,28 @@ rules:
   - apiGroups: ['']
     resources: [pods/exec]
     verbs: [create]
+  # The drill Stalwart. `create` cannot be limited by name.
+  - apiGroups: ['']
+    resources: [pods]
+    verbs: [create]
+  - apiGroups: ['']
+    resources: [pods]
+    resourceNames: [drill-stalwart]
+    verbs: [delete]
+  - apiGroups: ['']
+    resources: [pods/log]
+    verbs: [get]
+  - apiGroups: ['']
+    resources: [secrets]
+    verbs: [create]
+  - apiGroups: ['']
+    resources: [secrets]
+    resourceNames: [drill-stalwart]
+    verbs: [get, delete]
+  - apiGroups: ['']
+    resources: [services]
+    resourceNames: [drill-rw]
+    verbs: [get]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -78,6 +106,31 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: restore-drill-read-production
+subjects:
+  - kind: ServiceAccount
+    name: restore-drill
+    namespace: pg-drill
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: restore-drill-read-mail
+  namespace: mail
+rules:
+  - apiGroups: [apps]
+    resources: [deployments]
+    resourceNames: [stalwart]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: restore-drill-read-mail
+  namespace: mail
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: restore-drill-read-mail
 subjects:
   - kind: ServiceAccount
     name: restore-drill

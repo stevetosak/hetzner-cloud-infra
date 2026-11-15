@@ -140,12 +140,16 @@ func Build(in Inputs) (*Plan, error) {
 	for _, e := range p.Elements {
 		routes = append(routes, e.Manifest)
 	}
-	for _, proj := range ss.Projects {
-		b, err := fs.ReadFile(synced, "projects/"+proj+"/httproute.yaml")
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return nil, err
+	// A project's routes are applied by hand. A rehearsed project's hosts may
+	// have no DNS record yet, so a rehearsal's zone checks the core routes only.
+	if !in.Rehearsal {
+		for _, proj := range ss.Projects {
+			b, err := fs.ReadFile(synced, "projects/"+proj+"/httproute.yaml")
+			if err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return nil, err
+			}
+			routes = append(routes, b)
 		}
-		routes = append(routes, b)
 	}
 	if p.Hosts, err = hostnames(routes); err != nil {
 		return nil, err
@@ -176,7 +180,11 @@ func Build(in Inputs) (*Plan, error) {
 	// The cuts are proven once core is in step, before anything goes on
 	// (ADR 0009, Amendment 2026-10-25).
 	if in.Rehearsal {
-		p.Stages = append(p.Stages, &Cuts{Bucket: in.RehearsalBucket})
+		rev, err := coreset.TargetRevision(synced, true)
+		if err != nil {
+			return nil, err
+		}
+		p.Stages = append(p.Stages, &Cuts{Bucket: in.RehearsalBucket, Revision: rev})
 		p.Monitoring = &Monitoring{Waiting: wait}
 	}
 	p.Zone = &Zone{Reader: in.Zone, Hosts: p.Hosts, Address: addr, Rehearsal: in.Rehearsal}

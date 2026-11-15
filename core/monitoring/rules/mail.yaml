@@ -1,0 +1,99 @@
+# Mail (Email Plan, Phase 2): the ports of mail.tosak.net from the probes
+# probes/mail.yaml, and the relay to Amazon SES from Stalwart's own metrics
+# (the ServiceMonitor in projects/mail/stalwart/manifests/base).
+#
+# Stalwart 1.0's community edition has no queue-size gauge
+# (stalwart_queue_messages is filled only in the enterprise edition), so the
+# relay is watched through its failure counters. A counter exists only from
+# its first event on, and a new pod starts without it, so each relay rule
+# fires on a counter that grew in the last 30 minutes or appeared in them.
+# Not increase(): it drops the metric name, and two counters of one pod then
+# collide ("vector cannot contain metrics with the same labelset"); matching
+# on __name__ keeps them apart. A connect error to SES has no counter: it
+# shows as MailNotDelivered once Stalwart sends the delay notice.
+#
+# Unit tests: rules/tests/mail.test.yaml, run by check-rules.sh.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: mail
+  namespace: monitoring
+spec:
+  groups:
+    - name: mail
+      rules:
+        - alert: MailPortDown
+          # 5m: a pod restart (Recreate: the old pod stops first) must not page.
+          expr: probe_success{job="mail-ports"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.instance }} does not answer as expected"
+            description: >-
+              The probe of {{ $labels.instance }} fails for 5 minutes. On 25
+              the probe needs STARTTLS, on 465 and 993 a TLS handshake for
+              mail.tosak.net. Check the pod in mail, the Service stalwart-mail
+              and its load balancer mail-lb, and the PROXY trust of the
+              listeners (overrideProxyTrustedNetworks in settings.ndjson).
+
+        - alert: MailServedCertificateStale
+          # cert-manager renews 30 days before expiry and Reloader restarts
+          # the pod; Stalwart reads the certificate only at start.
+          expr: probe_ssl_earliest_cert_expiry{job="mail-ports"} - time() < 21 * 86400
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.instance }} serves a certificate that expires in {{ $value | humanizeDuration }}"
+            description: >-
+              cert-manager renews mail.tosak.net 30 days before it expires,
+              so a certificate with less than 21 days left is an old one. If
+              the Certificate mail/mail-tosak-net is renewed, Stalwart did not
+              restart after the renewal: check Reloader and restart the pod.
+              If it is not, CertificateRenewalOverdue says why.
+
+        - alert: MailRelayFailing
+          expr: |
+            count by (namespace) (
+                {namespace="mail", __name__=~"stalwart_delivery_(auth_failed|greeting_failed|start_tls_error|start_tls_unavailable|mail_from_rejected|rcpt_to_rejected|message_rejected)_total"}
+                > on (__name__, namespace, job, instance)
+                {namespace="mail", __name__=~"stalwart_delivery_(auth_failed|greeting_failed|start_tls_error|start_tls_unavailable|mail_from_rejected|rcpt_to_rejected|message_rejected)_total"} offset 30m
+              or
+                {namespace="mail", __name__=~"stalwart_delivery_(auth_failed|greeting_failed|start_tls_error|start_tls_unavailable|mail_from_rejected|rcpt_to_rejected|message_rejected)_total"}
+                unless on (__name__, namespace, job, instance)
+                {namespace="mail", __name__=~"stalwart_delivery_(auth_failed|greeting_failed|start_tls_error|start_tls_unavailable|mail_from_rejected|rcpt_to_rejected|message_rejected)_total"} offset 30m
+            )
+          labels:
+            severity: warning
+          annotations:
+            summary: Stalwart's relay to Amazon SES fails.
+            description: >-
+              In the last 30 minutes a delivery to SES failed at the SMTP
+              level: authentication, the greeting, STARTTLS, or SES rejected
+              the sender, a recipient or the message. Read the pod's log for
+              delivery.* events. Authentication: the SMTP credentials in the
+              Secret mail/ses-smtp. A rejection: the SES account (sending
+              paused, quota, an unverified identity).
+
+        - alert: MailNotDelivered
+          expr: |
+            count by (namespace) (
+                {namespace="mail", __name__=~"stalwart_delivery_dsn_(perm|temp)_fail_total"}
+                > on (__name__, namespace, job, instance)
+                {namespace="mail", __name__=~"stalwart_delivery_dsn_(perm|temp)_fail_total"} offset 30m
+              or
+                {namespace="mail", __name__=~"stalwart_delivery_dsn_(perm|temp)_fail_total"}
+                unless on (__name__, namespace, job, instance)
+                {namespace="mail", __name__=~"stalwart_delivery_dsn_(perm|temp)_fail_total"} offset 30m
+            )
+          labels:
+            severity: warning
+          annotations:
+            summary: Stalwart gave up on a message or reported it delayed.
+            description: >-
+              In the last 30 minutes Stalwart sent a failure or delay notice
+              (DSN) to a sender: a message was not delivered, or is still
+              waiting in the queue. A delay without MailRelayFailing points at
+              a connection to SES that does not open. Read the pod's log for
+              delivery.* and queue.* events.

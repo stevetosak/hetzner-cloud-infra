@@ -1,0 +1,120 @@
+# mail-admin.tosak.net: Stalwart's web admin, behind Cloudflare Access (the
+# operator's email only); the admin password is the second gate.
+#
+# Only the paths the admin UI uses are routed (Stalwart 1.0.3,
+# crates/http/src/request.rs): the UI application under /admin, its asset
+# files /ui-<hash>.css and .js, the login page, OAuth (/auth, /.well-known),
+# the management API (/api) and JMAP (/jmap). Not routed: /metrics and
+# /healthz (scraped and probed inside the cluster), /account, /dav, /scim and
+# autoconfig. The path list is read from the source; the rehearsal proves it by
+# loading the UI.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mail-admin
+  namespace: mail
+spec:
+  parentRefs:
+    - name: tosak
+      namespace: gateway
+      sectionName: https
+  hostnames:
+    - mail-admin.tosak.net
+  rules:
+    - matches:
+        - path:
+            type: Exact
+            value: /
+      filters:
+        - type: RequestRedirect
+          requestRedirect:
+            path:
+              type: ReplaceFullPath
+              replaceFullPath: /admin/
+            statusCode: 302
+    - matches:
+        - path: {type: PathPrefix, value: /admin}
+        - path: {type: PathPrefix, value: /login}
+        - path: {type: PathPrefix, value: /auth}
+        - path: {type: PathPrefix, value: /.well-known}
+        - path: {type: PathPrefix, value: /api}
+        - path: {type: PathPrefix, value: /jmap}
+        - path: {type: RegularExpression, value: '/ui-[A-Za-z0-9]+\.(css|js)'}
+      backendRefs:
+        - name: stalwart
+          port: 80
+---
+# mta-sts.tosak.net: the MTA-STS policy of tosak.net (RFC 8461, ADR 0012). The
+# name is fixed by the RFC, the only exception to the naming rule (ADR 0008).
+# The Gateway answers the one policy path itself; no Stalwart path is public
+# for it, and every other path gets the Gateway's 404.
+#
+# 🔴 The policy is a pair with the TXT record _mta-sts.tosak.net
+# "v=STSv1; id=<id>". A sender fetches the policy again only when the id
+# changes, so a policy change without a new id is never seen. The id is the
+# first 32 hex characters of the sha256 of `response.body`:
+#   kubectl -n mail get cm mta-sts-policy -o jsonpath='{.data.response\.body}' \
+#     | sha256sum | cut -c1-32
+# For the body below: 4905e08b6a657d5ef7e28f323fee1653.
+#
+# mode testing: senders report failures (TLS-RPT, _smtp._tls.tosak.net) but
+# still deliver. The operator switches to enforce once the reports are clean.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mta-sts-policy
+  namespace: mail
+data:
+  response.body: |
+    version: STSv1
+    mode: testing
+    mx: mail.tosak.net
+    max_age: 86400
+---
+# The direct-response body is an Envoy format string: a `%` in the policy
+# would be read as a command operator.
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: HTTPRouteFilter
+metadata:
+  name: mta-sts-policy
+  namespace: mail
+spec:
+  directResponse:
+    statusCode: 200
+    contentType: text/plain
+    body:
+      type: ValueRef
+      valueRef:
+        group: ""
+        kind: ConfigMap
+        name: mta-sts-policy
+    # Cloudflare caches a .txt for two hours by default; a short max-age lets
+    # a changed policy reach the edge within minutes.
+    header:
+      set:
+        - name: Cache-Control
+          value: max-age=300
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mta-sts
+  namespace: mail
+spec:
+  parentRefs:
+    - name: tosak
+      namespace: gateway
+      sectionName: https
+  hostnames:
+    - mta-sts.tosak.net
+  rules:
+    - matches:
+        - path:
+            type: Exact
+            value: /.well-known/mta-sts.txt
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: gateway.envoyproxy.io
+            kind: HTTPRouteFilter
+            name: mta-sts-policy

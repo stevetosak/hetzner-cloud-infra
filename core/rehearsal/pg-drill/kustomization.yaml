@@ -1,0 +1,73 @@
+# The rehearsal cut of core/pg-drill (ADR 0010, Amendment 2026-11-14). In a
+# rehearsal the Application core-pg-drill points here, so the Restore Drill
+# and its mail phase are proven before they reach live.
+#
+#   ObjectStore tosak-pg-backups-readonly   reads the rehearsal backups in
+#                       tosak-pg-backups-rehearsal, which the rehearsal
+#                       Cluster archives to (core/rehearsal/cnpg). Its Secret
+#                       r2-readonly-credentials holds the rehearsal token
+#                       there (secrets.yaml, rehearsalItem
+#                       kluster/r2-backup-rehearsal-rw).
+#   CronJob restore-drill   suspended: a rehearsal drill runs only when
+#                       started by hand. MAIL_BUCKET is the rehearsal bucket;
+#                       REPORT=log, and the Telegram and results-bucket
+#                       variables are removed (both Secrets are `rehearsal:
+#                       omit`), so a rehearsal pass never reaches the outside
+#                       watcher or the chat.
+#
+# Each env removal is guarded by a test of the name at that index, from the
+# highest index down, so a reordered CronJob fails the build instead of
+# removing the wrong variable.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../pg-drill
+patches:
+  - target:
+      group: barmancloud.cnpg.io
+      kind: ObjectStore
+      name: tosak-pg-backups-readonly
+    patch: |-
+      - op: test
+        path: /spec/configuration/destinationPath
+        value: s3://tosak-pg-backups/
+      - op: replace
+        path: /spec/configuration/destinationPath
+        value: s3://tosak-pg-backups-rehearsal/
+  - target:
+      group: batch
+      kind: CronJob
+      name: restore-drill
+    patch: |-
+      - op: add
+        path: /spec/suspend
+        value: true
+      - op: test
+        path: /spec/jobTemplate/spec/template/spec/containers/0/env/13/name
+        value: TG_CHAT_ID
+      - op: remove
+        path: /spec/jobTemplate/spec/template/spec/containers/0/env/13
+      - op: test
+        path: /spec/jobTemplate/spec/template/spec/containers/0/env/12/name
+        value: TG_BOT_TOKEN
+      - op: remove
+        path: /spec/jobTemplate/spec/template/spec/containers/0/env/12
+      - op: test
+        path: /spec/jobTemplate/spec/template/spec/containers/0/env/11/name
+        value: RESULTS_ACCESS_SECRET_KEY
+      - op: remove
+        path: /spec/jobTemplate/spec/template/spec/containers/0/env/11
+      - op: test
+        path: /spec/jobTemplate/spec/template/spec/containers/0/env/10/name
+        value: RESULTS_ACCESS_KEY_ID
+      - op: remove
+        path: /spec/jobTemplate/spec/template/spec/containers/0/env/10
+      - op: test
+        path: /spec/jobTemplate/spec/template/spec/containers/0/env/1
+        value: {name: MAIL_BUCKET, value: tosak-mail-blobs}
+      - op: replace
+        path: /spec/jobTemplate/spec/template/spec/containers/0/env/1/value
+        value: tosak-mail-blobs-rehearsal
+      - op: add
+        path: /spec/jobTemplate/spec/template/spec/containers/0/env/-
+        value: {name: REPORT, value: log}

@@ -1,0 +1,25 @@
+# Prometheus scrapes Stalwart's exporter on the pod's HTTP port 8080
+# (/metrics/prometheus); the path is never routed through the Gateway. The
+# exporter needs basic auth: the user and password come from the Secret
+# metrics, which a monitor reads from its own namespace, so the monitor lives
+# here with the project and not in core/monitoring. A PodMonitor, not a
+# ServiceMonitor: the ClusterIP Service is applied by hand, and the scrape
+# must not wait for it. The alerts on these metrics: core/monitoring/rules/mail.yaml.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: stalwart
+spec:
+  selector:
+    matchLabels:
+      app: stalwart
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics/prometheus
+      basicAuth:
+        username:
+          name: metrics
+          key: username
+        password:
+          name: metrics
+          key: password

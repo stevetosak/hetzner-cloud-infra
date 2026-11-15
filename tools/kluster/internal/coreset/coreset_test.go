@@ -77,8 +77,11 @@ func TestListsAreRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if slices.ContainsFunc(reh, func(e Element) bool { return e.Dir == "pg-drill" }) {
-		t.Errorf("the rehearsal list must leave the Restore Drill out: %+v", reh)
+	if !slices.Contains(reh, Element{Dir: "pg-drill", Path: "core/rehearsal/pg-drill", Namespace: "pg-drill"}) {
+		t.Errorf("the rehearsal list must run the Restore Drill from its cut: %+v", reh)
+	}
+	if rp, err := RehearsalProjects(fsys); err != nil || !slices.Equal(rp, []string{"mail"}) {
+		t.Errorf("RehearsalProjects = %v, %v; want [mail]", rp, err)
 	}
 	for rehearsal, want := range map[bool]string{false: "HEAD", true: "rehearsal"} {
 		if rev, err := TargetRevision(fsys, rehearsal); err != nil || rev != want {
@@ -89,7 +92,7 @@ func TestListsAreRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(projects, []string{"authos", "doma", "tosak-net"}) {
+	if !slices.Equal(projects, []string{"authos", "doma", "tosak-net", "mail"}) {
 		t.Errorf("projects = %v", projects)
 	}
 }
@@ -142,6 +145,12 @@ func TestEachRuleFires(t *testing.T) {
 		{"a probe without a route", func(t *testing.T, m fstest.MapFS) {
 			edit(t, m, "core/monitoring/probes/public-hosts.yaml", "        - https://www.tosak.net/\n", "        - https://www.tosak.net/\n        - https://imaps.tosak.net/\n")
 		}, "a probe targets imaps.tosak.net, which no synced HTTPRoute serves"},
+		{"a route whose probe is in another job", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, "core/monitoring/probes/public-hosts.yaml", "        - https://doma.tosak.net/api/health/live\n", "")
+			m["core/monitoring/probes/public-hosts.yaml"] = &fstest.MapFile{Data: append(m["core/monitoring/probes/public-hosts.yaml"].Data,
+				[]byte("---\napiVersion: monitoring.coreos.com/v1\nkind: Probe\nmetadata:\n  name: other\n  namespace: monitoring\n"+
+					"spec:\n  jobName: other\n  targets:\n    staticConfig:\n      static:\n        - https://doma.tosak.net/\n")...)}
+		}, "projects/doma/httproute.yaml: host doma.tosak.net has no probe"},
 		{"a probe that is not an https URL", func(t *testing.T, m fstest.MapFS) {
 			edit(t, m, "core/monitoring/probes/public-hosts.yaml", "        - https://www.tosak.net/\n", "        - www.tosak.net\n")
 		}, `target "www.tosak.net" is not an https URL`},
@@ -169,13 +178,13 @@ func TestEachRuleFires(t *testing.T) {
 			// The first listener only: the check reads each one.
 			s := string(m[GatewayFile].Data)
 			m[GatewayFile] = &fstest.MapFile{Data: []byte(strings.Replace(s,
-				"values: [gateway, argocd, authos, doma, tosak-net, monitoring]", "values: [gateway, argocd, authos, tosak-net, monitoring]", 1))}
+				"values: [gateway, argocd, authos, doma, tosak-net, mail, monitoring]", "values: [gateway, argocd, authos, tosak-net, mail, monitoring]", 1))}
 		}, "does not admit routes from doma"},
 		{"a component missing from the deploy catalog", func(t *testing.T, m fstest.MapFS) {
 			edit(t, m, AppsFile, `"doma-web"`, `"doma"`)
 		}, "no entry doma-web"},
 		{"a reloaded project outside Reloader's scope", func(t *testing.T, m fstest.MapFS) {
-			edit(t, m, ReloaderFile, "--namespaces=authos,doma,redis,reloader", "--namespaces=authos,redis,reloader")
+			edit(t, m, ReloaderFile, "--namespaces=authos,doma,mail,redis,reloader", "--namespaces=authos,mail,redis,reloader")
 		}, "--namespaces does not name doma"},
 		{"a reloaded project outside the core AppProject", func(t *testing.T, m fstest.MapFS) {
 			edit(t, m, AppProjectsFile, "    - {server: https://kubernetes.default.svc, namespace: doma}\n", "")
@@ -193,8 +202,29 @@ func TestEachRuleFires(t *testing.T) {
 			delete(m, "core/redis/namespace.yaml")
 		}, "namespace redis of core-redis is in no namespace file"},
 		{"a rehearsal that syncs master", func(t *testing.T, m fstest.MapFS) {
-			edit(t, m, RehearsalArgoCDFile, "        path: /spec/template/spec/source/targetRevision\n", "        path: /spec/template/spec/source/repoURL\n")
-		}, "no replace of /spec/template/spec/source/targetRevision"},
+			edit(t, m, RehearsalArgoCDFile, "        path: /spec/template/spec/source/targetRevision\n        value: rehearsal\n  - target:",
+				"        path: /spec/template/spec/source/repoURL\n        value: rehearsal\n  - target:")
+		}, "no replace of /spec/template/spec/source/targetRevision in the ApplicationSet projects"},
+		{"rehearsed projects from another revision", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, RehearsalArgoCDFile, "        path: /spec/generators/0/git/revision\n        value: rehearsal\n",
+				"        path: /spec/generators/0/git/revision\n        value: HEAD\n")
+		}, `the projects generator reads "HEAD"`},
+		{"a rehearsed project live does not sync", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, RehearsalArgoCDFile, "          - path: projects/mail/*/manifests/overlays/rehearsal\n",
+				"          - path: projects/mail/*/manifests/overlays/rehearsal\n          - path: projects/imaps/*/manifests/overlays/rehearsal\n")
+		}, "rehearses imaps, which the projects generator"},
+		{"a rehearsed project without a rehearsal overlay", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, RehearsalArgoCDFile, "          - path: projects/mail/*/manifests/overlays/rehearsal\n",
+				"          - path: projects/mail/*/manifests/overlays/rehearsal\n          - path: projects/doma/*/manifests/overlays/rehearsal\n")
+		}, "rehearses doma, which has no projects/doma/*/manifests/overlays/rehearsal"},
+		{"a rehearsed project from the dev overlay", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, RehearsalArgoCDFile, "          - path: projects/mail/*/manifests/overlays/rehearsal\n",
+				"          - path: projects/mail/*/manifests/overlays/dev\n")
+		}, `"projects/mail/*/manifests/overlays/dev" is not projects/<project>/*/manifests/overlays/rehearsal`},
+		{"a Secret in a rehearsal overlay", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, "projects/mail/stalwart/manifests/overlays/rehearsal/kustomization.yaml", "- ../../load-balancer\n",
+				"- ../../load-balancer\n- ../../admin.enc.yaml\n")
+		}, "a Secret: kluster secrets apply owns it"},
 		{"an issued key a rehearsal would make fresh", func(t *testing.T, m fstest.MapFS) {
 			edit(t, m, catalog.FileName, "    file: core/cert-manager/cloudflare-dns-token.enc.yaml\n    rehearsal: omit\n",
 				"    file: core/cert-manager/cloudflare-dns-token.enc.yaml\n")
@@ -208,8 +238,12 @@ func TestEachRuleFires(t *testing.T) {
 				"        field: access_key_id\n")
 		}, "pg-cluster/r2-source-credentials.ACCESS_KEY_ID is issued"},
 		{"an omit no rehearsal needs", func(t *testing.T, m fstest.MapFS) {
-			edit(t, m, catalog.FileName, "    file: core/pg-drill/telegram.enc.yaml\n", "    file: core/pg-drill/telegram.enc.yaml\n    rehearsal: omit\n")
-		}, "pg-drill/telegram has rehearsal: omit, but no rehearsal namespace holds it"},
+			edit(t, m, catalog.FileName, "    file: projects/authos/api/manifests/credentials.enc.yaml\n",
+				"    file: projects/authos/api/manifests/credentials.enc.yaml\n    rehearsal: omit\n")
+		}, "authos/credentials has rehearsal: omit, but no rehearsal namespace holds it"},
+		{"a rehearsed project's issued key without its rehearsal item", func(t *testing.T, m fstest.MapFS) {
+			edit(t, m, catalog.FileName, "        field: password\n        rehearsalItem: kluster/mail-admin-rehearsal\n", "        field: password\n")
+		}, "mail/admin.password is issued"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

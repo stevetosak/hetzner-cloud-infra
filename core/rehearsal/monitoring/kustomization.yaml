@@ -7,8 +7,16 @@
 #   receivers mount       removed from the Alertmanager; the Secret
 #                         monitoring/alertmanager-receivers is `rehearsal:
 #                         omit` in the Secret Catalog.
-#   Probes                deleted: no probe of the live hosts.
-#                         blackbox-exporter itself stays, so its pod is proven.
+#   Probes                the public-hosts Probes deleted: no probe of the
+#                         live hosts. The mail Probes (rehearsed project
+#                         `mail`, ADR 0010, Amendment 2026-11-14) go to the
+#                         mail load balancer's fixed private address
+#                         10.0.4.3, through the load balancer and its PROXY
+#                         header, with the *_rehearsal modules (a rehearsal
+#                         certificate is self-signed). The stage
+#                         rehearsal-cuts refuses any Probe target that is not
+#                         a private address or a cluster name, so a Probe
+#                         added later must get its own patch here.
 #
 # The Grafana route stays: it attaches to the rehearsal Gateway only, and the
 # zone stage accepts grafana.tosak.net while it points at live.
@@ -35,13 +43,77 @@ patches:
     patch: |-
       - op: remove
         path: /spec/secrets
-  # Every Probe, by kind: a Probe added later is cut too.
-  - target:
-      group: monitoring.coreos.com
-      kind: Probe
-    patch: |-
+  # The public-hosts Probes (core/monitoring/probes/public-hosts.yaml).
+  - patch: |-
       $patch: delete
       apiVersion: monitoring.coreos.com/v1
       kind: Probe
       metadata:
-        name: any
+        name: public-hosts-2xx
+        namespace: monitoring
+  - patch: |-
+      $patch: delete
+      apiVersion: monitoring.coreos.com/v1
+      kind: Probe
+      metadata:
+        name: public-hosts-302
+        namespace: monitoring
+  - patch: |-
+      $patch: delete
+      apiVersion: monitoring.coreos.com/v1
+      kind: Probe
+      metadata:
+        name: public-hosts-access
+        namespace: monitoring
+  # The mail Probes (core/monitoring/probes/mail.yaml).
+  - target:
+      group: monitoring.coreos.com
+      kind: Probe
+      name: mail-smtp
+    patch: |-
+      - op: test
+        path: /spec/targets/staticConfig/static
+        value: [mail.tosak.net:25]
+      - op: replace
+        path: /spec/targets/staticConfig/static
+        value: [10.0.4.3:25]
+      - op: test
+        path: /spec/module
+        value: smtp_starttls
+      - op: replace
+        path: /spec/module
+        value: smtp_starttls_rehearsal
+  - target:
+      group: monitoring.coreos.com
+      kind: Probe
+      name: mail-submissions
+    patch: |-
+      - op: test
+        path: /spec/targets/staticConfig/static
+        value: [mail.tosak.net:465]
+      - op: replace
+        path: /spec/targets/staticConfig/static
+        value: [10.0.4.3:465]
+      - op: test
+        path: /spec/module
+        value: smtp_tls
+      - op: replace
+        path: /spec/module
+        value: smtp_tls_rehearsal
+  - target:
+      group: monitoring.coreos.com
+      kind: Probe
+      name: mail-imaps
+    patch: |-
+      - op: test
+        path: /spec/targets/staticConfig/static
+        value: [mail.tosak.net:993]
+      - op: replace
+        path: /spec/targets/staticConfig/static
+        value: [10.0.4.3:993]
+      - op: test
+        path: /spec/module
+        value: imap_tls
+      - op: replace
+        path: /spec/module
+        value: imap_tls_rehearsal

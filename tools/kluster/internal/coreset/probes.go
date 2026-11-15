@@ -17,8 +17,15 @@ import (
 // A route without a probe would go down unseen; a probe without a route
 // would page for a host nobody serves.
 //
+// Only the Probes of the job PublicHostsJob count: PublicHostDown watches
+// that job alone, so a target in another job does not cover a host. Probes of
+// other jobs (the mail ports, which are TCP and have no route) are not read.
+//
 // A file that cannot be found or read stops the check. A route or Probe that
 // cannot be decoded is named, and the check goes on with the others.
+// PublicHostsJob is the jobName of the Probes of the public hosts.
+const PublicHostsJob = "public-hosts"
+
 func checkProbes(fsys fs.FS, core []Element) []error {
 	files, err := syncedRouteFiles(fsys, core)
 	if err != nil {
@@ -81,8 +88,14 @@ func indexHosts(fsys fs.FS, files []string) (idx hostIndex, errs []error, err er
 				into = idx.routes
 				hosts, err = routeHostnames(o)
 			case "Probe":
+				var public bool
+				if public, err = isPublicHostsProbe(o); err == nil && !public {
+					continue
+				}
 				into = idx.targets
-				hosts, err = probeHosts(o)
+				if err == nil {
+					hosts, err = probeHosts(o)
+				}
 			default:
 				continue
 			}
@@ -157,6 +170,20 @@ func routeHostnames(o Object) ([]string, error) {
 		return nil, err
 	}
 	return r.Spec.Hostnames, nil
+}
+
+// isPublicHostsProbe reports whether a Probe belongs to the job
+// PublicHostsJob.
+func isPublicHostsProbe(o Object) (bool, error) {
+	var p struct {
+		Spec struct {
+			JobName string `yaml:"jobName"`
+		} `yaml:"spec"`
+	}
+	if err := o.Node.Decode(&p); err != nil {
+		return false, err
+	}
+	return p.Spec.JobName == PublicHostsJob, nil
 }
 
 // probeHosts returns the host of each static target of a Probe. A Probe

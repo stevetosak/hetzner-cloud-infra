@@ -25,8 +25,8 @@ spec:
       # A retry would restore a second time and report twice. A failure is
       # reported and the next month runs again.
       backoffLimit: 0
-      # Ready may take 30 min, the cleanup up to 10.
-      activeDeadlineSeconds: 3600
+      # Ready may take 30 min, the mail phase 35, the cleanup up to 10.
+      activeDeadlineSeconds: 5400
       template:
         spec:
           serviceAccountName: restore-drill
@@ -48,6 +48,16 @@ spec:
               env:
                 - name: READY_TIMEOUT
                   value: 30m
+                # The mail phase (drill/mail-pod.yaml). A rehearsal run sets
+                # the rehearsal bucket. CANARY_SHA256 is the sha256 of the
+                # canary message in drill@tosak.net as IMAP returns it,
+                # recorded once in Phase 3 of the Email Plan with
+                # `drill/mail_check.py canary-digests`; until then the mail
+                # phase fails.
+                - name: MAIL_BUCKET
+                  value: tosak-mail-blobs
+                - name: CANARY_SHA256
+                  value: ""
                 - name: JOB_NAME
                   valueFrom:
                     fieldRef:

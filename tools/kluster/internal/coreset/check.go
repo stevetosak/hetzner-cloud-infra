@@ -46,6 +46,7 @@ func Check(fsys fs.FS) []error {
 	}
 	errs = append(errs, orphans(fsys, "core", core, func(e Element) string { return e.Path })...)
 	errs = append(errs, checkRehearsal(fsys, core)...)
+	errs = append(errs, checkRehearsalProjects(fsys)...)
 	errs = append(errs, checkProjects(fsys, dests)...)
 	errs = append(errs, checkProbes(fsys, core)...)
 	for _, rehearsal := range []bool{false, true} {
@@ -152,6 +153,51 @@ func checkRehearsal(fsys fs.FS, core []Element) []error {
 		}
 	}
 	return append(errs, orphans(fsys, RehearsalDir, reh, func(e Element) string { return e.Path })...)
+}
+
+// checkRehearsalProjects refuses a rehearsed project that live does not
+// sync, one without a rehearsal overlay, and a projects generator that reads
+// another revision than the rehearsal's core Applications.
+func checkRehearsalProjects(fsys fs.FS) []error {
+	reh, err := RehearsalProjects(fsys)
+	if err != nil {
+		return []error{err}
+	}
+	live, err := Projects(fsys)
+	if err != nil {
+		return []error{err}
+	}
+	var errs []error
+	for _, p := range reh {
+		if !slices.Contains(live, p) {
+			errs = append(errs, fmt.Errorf("%s: rehearses %s, which the projects generator in %s does not list", RehearsalArgoCDFile, p, ProjectsAppSetFile))
+			continue
+		}
+		comps, err := componentsAt(fsys, p, RehearsalOverlaySuffix)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if len(comps) == 0 {
+			errs = append(errs, fmt.Errorf("%s: rehearses %s, which has no projects/%s/*/%s", RehearsalArgoCDFile, p, p, RehearsalOverlaySuffix))
+		}
+		for _, c := range comps {
+			errs = append(errs, checkKustomization(fsys, "projects/"+p+"/"+c+"/"+RehearsalOverlaySuffix)...)
+		}
+	}
+	want, err := TargetRevision(fsys, true)
+	if err != nil {
+		return append(errs, err)
+	}
+	gen, tmpl, err := rehearsalProjectRevisions(fsys)
+	if err != nil {
+		return append(errs, err)
+	}
+	if gen != want || tmpl != want {
+		errs = append(errs, fmt.Errorf("%s: the projects generator reads %q and its Applications sync %q; both must be %q, the rehearsal's core revision",
+			RehearsalArgoCDFile, gen, tmpl, want))
+	}
+	return errs
 }
 
 // orphans refuses a kustomization directly under parent that no element
