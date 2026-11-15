@@ -260,6 +260,23 @@ reserve takes about 640 MiB from each Worker's allocatable memory. On live on
 (`kubectl get node -o json`); under the new values it is 3153804Ki, about
 3079 MiB.
 
+Run on live on 2026-11-16 in the order k8swk2, k8swk1, k8swk3. Every
+Worker then read 3153804Ki to 3153812Ki allocatable, `configz` held the
+values with `containerRuntimeEndpoint` kept, and no pod was Failed. The pods
+on k8swk2 requested 1760 MiB and those on k8swk1 2768 MiB; on k8swk3 they
+requested 3072 MiB, a margin of 7 MiB, beside the PostgreSQL primary. Room
+was made first: `kubectl cordon k8swk3`, then the Grafana pod (784 MiB, no
+volume) was deleted and came back on k8swk2, and the run found 2288 MiB;
+`kubectl uncordon k8swk3` followed.
+
+🔴 **A cordon on the node of the CloudNativePG primary starts a switchover.**
+CloudNativePG moved the primary from `tosak-pg-cluster-1` to
+`tosak-pg-cluster-2` within eight seconds of the cordon ("Current primary is
+running on unschedulable node k8swk3"), a short write outage, and restarted
+the old primary as a replica; the Cluster was healthy again with 3 of 3
+instances ready. Before a cordon, read `status.currentPrimary` of the Cluster
+and the node its pod runs on.
+
 ## Why this was done by hand
 
 `infra/scripts/bootstrap/bootstrap_workers.sh` and the `kluster` CLI both call

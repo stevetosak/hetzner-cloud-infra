@@ -89,9 +89,15 @@ live by driving one container past its request.
       `telegram-notice` route (Prometheus and Alertmanager APIs). The
       updater's counters appear only at the first resize, so the
       notification itself is proven by the last step.
-- [ ] Measure the kubelet and system memory on each worker and set
+- [x] Measure the kubelet and system memory on each worker and set
       `kubeReserved`, `systemReserved` and a soft eviction threshold through
       kluster, one node at a time.
+      Done 2026-11-16 (PR #141, `kluster node kubelet-config`): k8swk2, k8swk1
+      and k8swk3 run 160Mi / 480Mi, soft eviction at 300Mi after 1m; each
+      Worker's allocatable memory is 3079 MiB, all Ready, no pod rejected
+      (`configz`, `kubectl get node`). k8swk3 needed room first; the cordon
+      for it switched the PostgreSQL primary over
+      ([workers runbook](../runbook/workers.md#set-the-kubelet-reserve)).
 - [ ] Move the cluster services and applications to `InPlaceOrRecreate` and
       remove their memory limits, once every worker has its reserve.
       PostgreSQL, Redis (`maxmemory` below its limit) and the JVMs
