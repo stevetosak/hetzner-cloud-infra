@@ -32,6 +32,47 @@ the old way; match by ID.
 
 _Avoid_: project, tenant, service.
 
+Every Application has one owner: tosak itself, or a Client.
+
+## Client
+
+An outside party whose Application the cluster hosts. A Client owns its
+Application's code and decides whether it is open or closed source; nothing
+of a Client's Application belongs in tosak's public repositories.
+
+A Client's Application is described the same way as tosak's own. What differs
+is who may change that description: while hosting is managed, only tosak
+does; self-service, when it comes, lets the Client change it too.
+
+_Avoid_: tenant, customer.
+
+## Application Spec
+
+The one description of an Application: its components, its hosts, and the
+platform services it uses, such as a database, Secrets, an identity client or
+a mail sender. It says what the Application needs, never how the cluster
+provides it; the platform's standards are applied to it, not copied into it.
+
+_Avoid_: manifest, values, config.
+
+## Extra
+
+A Kubernetes object an Application carries beside its Application Spec, for a
+need the Spec cannot yet express. An Extra that many Applications carry marks
+what the Spec should learn next.
+
+## Application Registry
+
+The list of Applications admitted to the platform: each one's name, its owner,
+and where its Application Spec lives. An Application that is not in the
+Registry gets nothing from the platform. Being admitted is a decision tosak
+makes; holding a Spec somewhere is not enough.
+
+The Registry is private, because it names Clients.
+
+_Avoid_: app list, catalog (the Deploy Catalog and the Secret Catalog are other
+things).
+
 ## Node
 
 **Ambiguous. Do not use unqualified.**
