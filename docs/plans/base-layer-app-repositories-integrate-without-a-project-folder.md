@@ -59,10 +59,12 @@ object in its namespace from the platform chart through the Registry
 generator, and a new image version reaches it through Image Updater, proven in
 the rehearsal project.
 
-- [ ] Write the platform Helm chart and its `values.schema.json` for Spec v1:
-      components, hosts and `services.database`, with the platform's
-      standards (security context, `/tmp`, probe conventions,
-      `revisionHistoryLimit`) applied, not taken from the Spec.
+- [ ] Write the platform Helm chart and its `values.schema.json` for Spec v1
+      as amended on 2026-11-15: components, hosts and `services.database`,
+      platform values mapped onto the application's own environment names,
+      and the platform's standards (security context, writable `/tmp` and
+      declared paths, probe conventions as defaults, `revisionHistoryLimit`)
+      applied, not taken from the Spec.
 - [ ] Create the private Registry repository and the Registry generator: one
       multi-source Application per entry, with the chart from this repository
       and the Spec and Extras from the entry's repository. Argo CD reads the
@@ -127,6 +129,8 @@ what the contract allows.
 - [ ] Enforce the limits self-service needs: allowed kinds for Extras,
       quotas, no `LoadBalancer` or `NodePort`. Trigger: before the first
       Client gets write access.
+- [ ] Onboard self-service Clients through the contract validator
+      ([Contract validator](./contract-validator-onboarding-proves-an-app-fits-the-platform.md)).
 
 ## Open questions
 
