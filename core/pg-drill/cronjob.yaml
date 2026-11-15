@@ -51,13 +51,14 @@ spec:
                 # The mail phase (drill/mail-pod.yaml). A rehearsal run sets
                 # the rehearsal bucket. CANARY_SHA256 is the sha256 of the
                 # canary message in drill@tosak.net as IMAP returns it,
-                # recorded once in Phase 3 of the Email Plan with
-                # `drill/mail_check.py canary-digests`; until then the mail
-                # phase fails.
+                # recorded in Phase 3 of the Email Plan with
+                # `drill/mail_check.py canary-digests`. The message was put
+                # into INBOX with IMAP APPEND on 2026-11-15
+                # (Message-ID <restore-drill-canary-2026-11-15@tosak.net>).
                 - name: MAIL_BUCKET
                   value: tosak-mail-blobs
                 - name: CANARY_SHA256
-                  value: ""
+                  value: 2b92d991ee30f331c3dc5c6cb9eafffefd2cb6fa1f6dddce176fbc6da862f648
                 - name: JOB_NAME
                   valueFrom:
                     fieldRef:
