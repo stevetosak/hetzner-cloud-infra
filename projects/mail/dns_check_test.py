@@ -111,6 +111,12 @@ class Matchers(unittest.TestCase):
         self.assertIn("DNS only", match(["104.21.84.103", MAIL_IP]))
 
 
+class LoadBalancerAddress(unittest.TestCase):
+    def test_only_the_public_ipv4_address_belongs_in_the_a_record(self):
+        ingress = ["135.181.84.29", "2a01:4f9:c015:283::1", "10.0.4.3"]
+        self.assertEqual(dc.public_ipv4(ingress), ["135.181.84.29"])
+
+
 class SesAndPolicy(unittest.TestCase):
     def test_a_good_identity_has_no_fault(self):
         self.assertEqual(dc.ses_faults(identity(), "tosak.net"), [])
