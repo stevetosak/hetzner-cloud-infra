@@ -73,9 +73,6 @@ patches:
     patch: |-
       - op: test
         path: /spec/targets/staticConfig/static
-        value: [mail.tosak.net:25]
-      - op: replace
-        path: /spec/targets/staticConfig/static
         value: [10.0.4.3:25]
       - op: test
         path: /spec/module
@@ -90,9 +87,6 @@ patches:
     patch: |-
       - op: test
         path: /spec/targets/staticConfig/static
-        value: [mail.tosak.net:465]
-      - op: replace
-        path: /spec/targets/staticConfig/static
         value: [10.0.4.3:465]
       - op: test
         path: /spec/module
@@ -106,9 +100,6 @@ patches:
       name: mail-imaps
     patch: |-
       - op: test
-        path: /spec/targets/staticConfig/static
-        value: [mail.tosak.net:993]
-      - op: replace
         path: /spec/targets/staticConfig/static
         value: [10.0.4.3:993]
       - op: test
