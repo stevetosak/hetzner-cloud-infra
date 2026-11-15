@@ -113,6 +113,13 @@ is reachable only from inside the cluster, so only a pod can forge the header.
 Kubelet probes and Prometheus scrapes arrive without the header; the tracer
 drops the `http.x-forwarded-missing` warning they cause.
 
+The admin UI signs in through OAuth, and its client id is a URL on the host
+that serves it. Stalwart accepts such a client only on the host of its public
+URL, which defaults to `https://mail.tosak.net` (the default hostname); any
+other host goes to client-metadata-document lookup, which is disabled, and the
+login stops with "client metadata documents are disabled". The main container
+therefore sets `STALWART_PUBLIC_URL=https://mail-admin.tosak.net`.
+
 ## The MTA-STS policy
 
 `mta-sts.tosak.net/.well-known/mta-sts.txt` is not served by Stalwart: the same
