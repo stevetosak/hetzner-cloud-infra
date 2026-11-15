@@ -118,6 +118,12 @@ and deploy through Image Updater, and the `projects` generator is gone.
 private repository, admitted through the Registry, after the isolation group
 is done.
 
+- [ ] Decide in a grill how a Client's own domain reaches the Gateway. The
+      Gateway accepts only Cloudflare connections (Authenticated Origin Pulls
+      with the platform's own CA, `core/gateway/client-traffic-policy.yaml`)
+      and holds only the `*.tosak.net` certificate. Candidates: Cloudflare for
+      SaaS custom hostnames, the Client's own Cloudflare zone with a leaf
+      signed by the platform's CA, or a second listener.
 - [ ] Admit the first Client: Registry entry, Spec, Secret Catalog and image
       pull credential.
 
