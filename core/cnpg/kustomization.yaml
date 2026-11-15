@@ -31,16 +31,16 @@ patches:
       - op: test
         path: /spec/template/spec/containers/0/name
         value: manager
-      # Memory raised from 64Mi: the new pod held 81 MiB from its start
-      # (ADR 0013 first-hour check, 2026-11-05).
+      # Memory from the 2026-11-12..15 peak of 46 MiB (VPA target 61); a new pod held
+      # 81 MiB from its start (2026-11-05), under the limit.
       - op: replace
         path: /spec/template/spec/containers/0/resources
         value:
           requests:
             cpu: 10m
-            memory: 112Mi
+            memory: 64Mi
           limits:
-            memory: 224Mi
+            memory: 128Mi
   - target:
       group: apps
       kind: Deployment

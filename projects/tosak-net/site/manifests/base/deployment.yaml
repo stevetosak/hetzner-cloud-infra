@@ -59,13 +59,13 @@ spec:
               port: http
             initialDelaySeconds: 3
             periodSeconds: 10
-          # The first guess of ADR 0013; resized from three days of data.
+          # Sized by ADR 0013 from the 2026-11-12..15 peak: 10 MiB, under 1m.
           resources:
             requests:
-              cpu: 50m
-              memory: 256Mi
+              cpu: 10m
+              memory: 32Mi
             limits:
-              memory: 512Mi
+              memory: 64Mi
       volumes:
         - name: tmp
           emptyDir: {}

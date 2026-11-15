@@ -661,10 +661,10 @@ spec:
           - "--reload-strategy=annotations"
         resources:
           limits:
-            memory: 64Mi
+            memory: 128Mi
           requests:
             cpu: 10m
-            memory: 32Mi
+            memory: 64Mi
       securityContext: 
         runAsNonRoot: true
         runAsUser: 65534
