@@ -126,3 +126,58 @@ func TestDatabasesReadsInstancesAndReady(t *testing.T) {
 		t.Error("a Cluster that asks for no instances is not healthy")
 	}
 }
+
+func TestParsePodsReadsTheEffectiveMemoryRequest(t *testing.T) {
+	pods, err := ParsePods([]byte(`{"items":[
+ {"metadata":{"namespace":"a","name":"plain"},"spec":{"containers":[
+   {"resources":{"requests":{"memory":"64Mi"}}},{"resources":{"requests":{"memory":"32Mi"}}}]},
+  "status":{"phase":"Running"}},
+ {"metadata":{"namespace":"a","name":"sidecar"},"spec":{
+   "initContainers":[{"restartPolicy":"Always","resources":{"requests":{"memory":"48Mi"}}},
+                     {"resources":{"requests":{"memory":"16Mi"}}}],
+   "containers":[{"resources":{"requests":{"memory":"64Mi"}}}]},"status":{"phase":"Running"}},
+ {"metadata":{"namespace":"a","name":"big-init"},"spec":{
+   "initContainers":[{"resources":{"requests":{"memory":"512Mi"}}}],
+   "containers":[{"resources":{"requests":{"memory":"64Mi"}}}],"overhead":{"memory":"10Mi"}},
+  "status":{"phase":"Running"}},
+ {"metadata":{"namespace":"a","name":"none"},"spec":{"containers":[{}]},
+  "status":{"phase":"Failed","reason":"OutOfmemory"}}
+]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]int64{"plain": 96, "sidecar": 112, "big-init": 522, "none": 0}
+	for _, p := range pods {
+		if got := p.MemoryRequest.Value() / (1 << 20); got != want[p.Name] {
+			t.Errorf("%s: %dMi, want %dMi", p.Name, got, want[p.Name])
+		}
+	}
+	if p := pods[3]; !p.Finished || p.Phase != "Failed" || p.Reason != "OutOfmemory" {
+		t.Errorf("the refused pod: %+v", p)
+	}
+	if _, err := ParsePods([]byte(`{"items":[{"spec":{"containers":[{"resources":{"requests":{"memory":"lots"}}}]}}]}`)); err == nil {
+		t.Error("a request that is no quantity was taken")
+	}
+}
+
+func TestParseNodesReadsMemory(t *testing.T) {
+	nodes, err := ParseNodes([]byte(`{"items":[{"metadata":{"name":"k8swk2"},
+  "status":{"capacity":{"memory":"3911564Ki"},"allocatable":{"memory":"3809164Ki"}}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := nodes[0]; n.CapacityMemory != "3911564Ki" || n.AllocatableMemory != "3809164Ki" {
+		t.Errorf("got %+v", n)
+	}
+}
+
+func TestPatchConfigMapDataSendsOneKey(t *testing.T) {
+	r := &recorder{}
+	if err := (Kubectl{Exec: r}).PatchConfigMapData(context.Background(), "kube-system", "kubelet-config", "kubelet", "a: 'b'\n"); err != nil {
+		t.Fatal(err)
+	}
+	want := `KUBECONFIG=/etc/kubernetes/admin.conf kubectl '-n' 'kube-system' 'patch' 'configmap' 'kubelet-config' '--type' 'merge' '-p' '{"data":{"kubelet":"a: '\''b'\''\n"}}'`
+	if r.cmd != want {
+		t.Errorf("ran\n%s\nwant\n%s", r.cmd, want)
+	}
+}
