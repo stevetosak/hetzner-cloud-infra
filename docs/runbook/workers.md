@@ -198,6 +198,68 @@ seeded key, which proves that `-replace` creates the server with the new
 `user_data` although the Module ignores changes to it. The database gate's
 CloudNativePG path is not proven yet.
 
+## Set the kubelet reserve
+
+The kubelet keeps back memory for itself and the system so that a burst in the
+pods cannot starve them; [ADR 0014](../adr/0014-the-vertical-pod-autoscaler-sizes-the-clusters-own-workloads-and-node-memory-is-their-ceiling.md)
+makes that reserve the ceiling of the cluster's own workloads. The values live
+in the `kubelet:` block of `kluster.yaml`: `kubeReserved` 160Mi,
+`systemReserved` 480Mi, soft eviction at `memory.available` 300Mi after one
+minute, and a 30-second grace period for a pod the soft threshold evicts. The
+two reserves together cover the memory outside the pods, measured at a p99 of
+541 to 651 MiB per Worker from 2026-11-12 to 2026-11-15. Because
+`enforceNodeAllocatable` is `[pods]` only, the split between them is
+accounting. `evictionHard` is not set and stays at the kubelet default
+(`memory.available` 100Mi): a partial `evictionHard` zeroes the defaults of the
+other signals.
+
+`kluster node kubelet-config <name>` sets the values on one Worker per run,
+in five Stages:
+
+1. **kubelet-room** (Control Plane) — reads the running configuration through
+   `configz` and refuses a Worker whose unfinished pods request more memory
+   than it offers under the new values, naming the three largest. A restarted
+   kubelet admits its pods again and rejects with `OutOfmemory` those that no
+   longer fit. Done when the kubelet already runs the values.
+2. **kubelet-configmap** (Control Plane) — merges the values into
+   `kube-system/kubelet-config` (`data.kubelet`), with a unified diff in Plan
+   Mode. kubeadm writes this ConfigMap into every node it joins, so a new
+   Worker gets the values at its join (assumed from kubeadm's design, not yet
+   proven on a build).
+3. **kubelet-config-file** (Worker) — backs up `/var/lib/kubelet/config.yaml`
+   to `config.yaml.bak-kluster-<UTC time>` and runs `kubeadm upgrade node phase
+   kubelet-config`, which writes the file from the ConfigMap and keeps the
+   `containerRuntimeEndpoint` from `instance-config.yaml`.
+4. **kubelet-restart** (Worker) — refuses while the file does not hold the
+   values, runs `systemctl restart kubelet` and waits up to two minutes for
+   `configz` to show them.
+5. **kubelet-proof** (Control Plane) — waits up to two minutes for the Node to
+   be Ready, `configz` to hold the values, allocatable memory to equal capacity
+   minus both reserves and `evictionHard`, and no pod on the Node to be Failed
+   with a reason that starts with `OutOf` or with `UnexpectedAdmissionError`.
+
+A Stage whose Probe passes is skipped, so a stopped run resumes. On live
+kluster reaches both hosts through WireGuard as the operator with `sudo` and
+opens no firewall. It dials both before any Stage runs, so a Worker without a
+pin at its VPN address stops the run before anything changes; the pin comes
+from a one-time `kluster pin import <vpn address>`
+([host keys](./host-keys.md#a-server-kluster-did-not-build)). A rehearsal
+opens bootstrap SSH on both firewalls and closes it at the end; there Plan
+Mode lists the Stages without reading either host.
+
+```sh
+cd tools/kluster
+kluster pin import 10.100.0.3             # once per Worker
+kluster node kubelet-config k8swk2        # Plan Mode: room, ConfigMap diff
+kluster node kubelet-config k8swk2 --apply
+```
+
+Run one Worker at a time and check the room of the next before it starts: the
+reserve takes about 640 MiB from each Worker's allocatable memory. On live on
+2026-11-16 a Worker's capacity read 3911564Ki and its allocatable 3809164Ki
+(`kubectl get node -o json`); under the new values it is 3153804Ki, about
+3079 MiB.
+
 ## Why this was done by hand
 
 `infra/scripts/bootstrap/bootstrap_workers.sh` and the `kluster` CLI both call

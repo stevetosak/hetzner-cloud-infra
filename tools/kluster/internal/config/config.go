@@ -43,6 +43,7 @@ type Config struct {
 	Terraform    Terraform      `yaml:"terraform"`
 	Envs         map[string]Env `yaml:"envs"`
 	SSH          SSH            `yaml:"ssh"`
+	Kubelet      Kubelet        `yaml:"kubelet"`
 
 	// dir is the directory kluster.yaml was read from. Module paths are
 	// relative to it.
@@ -305,6 +306,9 @@ func (c *Config) validate() error {
 	}
 	if k := c.Versions.Kubernetes; semver.Canonical(k) != k || semver.Prerelease(k) != "" {
 		errs = append(errs, fmt.Errorf("versions.kubernetes %q must be an exact release with its patch, such as v1.37.0: a minor alone floats the patch", k))
+	}
+	if err := c.Kubelet.validate(); err != nil {
+		errs = append(errs, err)
 	}
 	if c.Cluster.PodMTU <= 0 || c.WireGuard.Port <= 0 {
 		errs = append(errs, errors.New("cluster.podMTU and wireguard.port are required"))

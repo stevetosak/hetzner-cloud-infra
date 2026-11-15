@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/api/resource"
+
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/local"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/stage"
 )
@@ -43,6 +45,10 @@ type Node struct {
 	// Uninitialized is the cloud provider's taint, there until the cloud
 	// controller has seen the Node.
 	Uninitialized bool
+	// CapacityMemory and AllocatableMemory are the Node's memory as the
+	// kubelet reports it, quantities such as 3911564Ki.
+	CapacityMemory    string
+	AllocatableMemory string
 }
 
 // UninitializedTaint is set on a Node of a kubelet run with
@@ -77,6 +83,8 @@ func ParseNodes(b []byte) ([]Node, error) {
 				NodeInfo   struct {
 					KubeletVersion string `json:"kubeletVersion"`
 				} `json:"nodeInfo"`
+				Capacity    map[string]string `json:"capacity"`
+				Allocatable map[string]string `json:"allocatable"`
 			} `json:"status"`
 		} `json:"items"`
 	}
@@ -86,7 +94,8 @@ func ParseNodes(b []byte) ([]Node, error) {
 	nodes := make([]Node, 0, len(list.Items))
 	for _, it := range list.Items {
 		n := Node{Name: it.Metadata.Name, Kubelet: it.Status.NodeInfo.KubeletVersion, ProviderID: it.Spec.ProviderID,
-			Unschedulable: it.Spec.Unschedulable}
+			Unschedulable: it.Spec.Unschedulable, CapacityMemory: it.Status.Capacity["memory"],
+			AllocatableMemory: it.Status.Allocatable["memory"]}
 		for _, t := range it.Spec.Taints {
 			n.Uninitialized = n.Uninitialized || t.Key == UninitializedTaint
 		}
@@ -117,6 +126,13 @@ type Pod struct {
 	Mirror bool
 	// Finished pods (Succeeded or Failed) run nothing.
 	Finished bool
+	// Phase and Reason are the pod's status; a pod the kubelet refused at
+	// admission is Failed with a reason such as OutOfmemory.
+	Phase, Reason string
+	// MemoryRequest is what the scheduler counts for the pod: the larger of
+	// its containers with its sidecars, and its largest init container,
+	// plus its overhead.
+	MemoryRequest resource.Quantity
 }
 
 // Remains reports whether the pod still holds work a drain must move.
@@ -144,8 +160,10 @@ func ParsePods(b []byte) ([]Pod, error) {
 				Annotations     map[string]string       `json:"annotations"`
 				OwnerReferences []struct{ Kind string } `json:"ownerReferences"`
 			} `json:"metadata"`
+			Spec   podSpec `json:"spec"`
 			Status struct {
-				Phase string `json:"phase"`
+				Phase  string `json:"phase"`
+				Reason string `json:"reason"`
 			} `json:"status"`
 		} `json:"items"`
 	}
@@ -155,7 +173,13 @@ func ParsePods(b []byte) ([]Pod, error) {
 	pods := make([]Pod, 0, len(list.Items))
 	for _, it := range list.Items {
 		p := Pod{Namespace: it.Metadata.Namespace, Name: it.Metadata.Name,
-			Finished: it.Status.Phase == "Succeeded" || it.Status.Phase == "Failed"}
+			Finished: it.Status.Phase == "Succeeded" || it.Status.Phase == "Failed",
+			Phase:    it.Status.Phase, Reason: it.Status.Reason}
+		req, err := it.Spec.memoryRequest()
+		if err != nil {
+			return nil, fmt.Errorf("pod %s/%s: %w", p.Namespace, p.Name, err)
+		}
+		p.MemoryRequest = req
 		_, p.Mirror = it.Metadata.Annotations[mirrorAnnotation]
 		for _, o := range it.Metadata.OwnerReferences {
 			p.DaemonSet = p.DaemonSet || o.Kind == "DaemonSet"
@@ -163,6 +187,106 @@ func ParsePods(b []byte) ([]Pod, error) {
 		pods = append(pods, p)
 	}
 	return pods, nil
+}
+
+type container struct {
+	RestartPolicy string `json:"restartPolicy"`
+	Resources     struct {
+		Requests map[string]string `json:"requests"`
+	} `json:"resources"`
+}
+
+type podSpec struct {
+	Containers     []container       `json:"containers"`
+	InitContainers []container       `json:"initContainers"`
+	Overhead       map[string]string `json:"overhead"`
+}
+
+// memoryRequest is the pod's effective memory request: the containers and
+// the sidecars (init containers with restartPolicy Always) run together, a
+// plain init container runs alone before them, with the sidecars started
+// ahead of it.
+func (s podSpec) memoryRequest() (resource.Quantity, error) {
+	var total, sidecars, initPeak resource.Quantity
+	for _, c := range s.InitContainers {
+		q, err := memoryOf(c.Resources.Requests)
+		if err != nil {
+			return q, err
+		}
+		if c.RestartPolicy == "Always" {
+			sidecars.Add(q)
+			continue
+		}
+		q.Add(sidecars)
+		if q.Cmp(initPeak) > 0 {
+			initPeak = q
+		}
+	}
+	total.Add(sidecars)
+	for _, c := range s.Containers {
+		q, err := memoryOf(c.Resources.Requests)
+		if err != nil {
+			return q, err
+		}
+		total.Add(q)
+	}
+	if initPeak.Cmp(total) > 0 {
+		total = initPeak
+	}
+	o, err := memoryOf(s.Overhead)
+	if err != nil {
+		return o, err
+	}
+	total.Add(o)
+	return total, nil
+}
+
+func memoryOf(m map[string]string) (resource.Quantity, error) {
+	v, ok := m["memory"]
+	if !ok {
+		return resource.Quantity{}, nil
+	}
+	q, err := resource.ParseQuantity(v)
+	if err != nil {
+		return q, fmt.Errorf("memory %q: %w", v, err)
+	}
+	return q, nil
+}
+
+// Configz reads the running kubelet's configuration of a Node, through the
+// API server's node proxy.
+func (k Kubectl) Configz(ctx context.Context, node string) (string, error) {
+	return k.Run(ctx, "get", "--raw", "/api/v1/nodes/"+node+"/proxy/configz")
+}
+
+// ConfigMapData reads one key of a ConfigMap's data.
+func (k Kubectl) ConfigMapData(ctx context.Context, namespace, name, key string) (string, error) {
+	out, err := k.Run(ctx, "-n", namespace, "get", "configmap", name, "-o", "json")
+	if err != nil {
+		return "", err
+	}
+	var cm struct {
+		Data map[string]string `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(out), &cm); err != nil {
+		return "", fmt.Errorf("reading configmap %s/%s: %w", namespace, name, err)
+	}
+	v, ok := cm.Data[key]
+	if !ok {
+		return "", fmt.Errorf("configmap %s/%s has no key %s", namespace, name, key)
+	}
+	return v, nil
+}
+
+// PatchConfigMapData sets one key of a ConfigMap's data with a merge patch;
+// every other key stays.
+func (k Kubectl) PatchConfigMapData(ctx context.Context, namespace, name, key, value string) error {
+	patch, err := json.Marshal(map[string]any{"data": map[string]string{key: value}})
+	if err != nil {
+		return err
+	}
+	_, err = k.Run(ctx, "-n", namespace, "patch", "configmap", name, "--type", "merge", "-p", string(patch))
+	return err
 }
 
 // Database is a CloudNativePG Cluster as the database gate reads it.
