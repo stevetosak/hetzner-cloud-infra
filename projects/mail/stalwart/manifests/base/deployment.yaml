@@ -116,6 +116,13 @@ spec:
             # permanent admin login.
             - name: STALWART_RECOVERY_ADMIN
               value: admin:$(STALWART_ADMIN_PASSWORD)
+            # The web UI's OAuth client id is a URL on the host it is served
+            # from. Stalwart trusts only the public URL's host (default
+            # https://<defaultHostname>, mail.tosak.net) and sends any other
+            # to client-metadata-document lookup, which is disabled, so the
+            # login fails. Normal mode only; recovery mode trusts the origin.
+            - name: STALWART_PUBLIC_URL
+              value: https://mail-admin.tosak.net
           ports:
             - name: smtp
               containerPort: 25
