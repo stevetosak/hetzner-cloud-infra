@@ -175,18 +175,27 @@ def read_mail_lb_ipv4() -> list[str]:
     result = subprocess.run(command, capture_output=True, text=True)
     if result.returncode != 0:
         raise LookupFailed(f"kubectl get service {namespace}/{name}: {result.stderr.strip()}")
-    addresses = [a for a in result.stdout.split() if _is_ipv4(a)]
+    addresses = public_ipv4(result.stdout.split())
     if not addresses:
-        raise LookupFailed(f"service {namespace}/{name} has no IPv4 load balancer address yet")
+        raise LookupFailed(f"service {namespace}/{name} has no public IPv4 load balancer address yet")
     return addresses
 
 
-def _is_ipv4(text: str) -> bool:
-    try:
-        ipaddress.IPv4Address(text)
-        return True
-    except ValueError:
-        return False
+def public_ipv4(addresses: Iterable[str]) -> list[str]:
+    """The public IPv4 addresses of a load balancer's ingress list.
+
+    The list also holds the IPv6 address and the private network address
+    (load-balancer.hetzner.cloud/private-ipv4); neither belongs in the A record.
+    """
+    public = []
+    for text in addresses:
+        try:
+            address = ipaddress.IPv4Address(text)
+        except ValueError:
+            continue
+        if not address.is_private:
+            public.append(text)
+    return public
 
 
 def _https_get(url: str) -> tuple[bytes, str]:
