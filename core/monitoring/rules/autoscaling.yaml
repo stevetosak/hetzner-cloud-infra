@@ -1,0 +1,239 @@
+# The alerts of the Vertical Pod Autoscaler and the nodes it fills (ADR 0014,
+# Autoscaling Plan).
+#
+# Once VPA sizes the cluster's own workloads and their memory limits are gone,
+# a container no longer stops at its own limit: it grows into the node's free
+# memory. These rules say when VPA changed something, when it could not, and
+# when a node runs short.
+#
+# The VPA updater's counters (monitors/vpa.yaml) carry the VPA's name and
+# namespace. A counter series appears only at its first increment, already at
+# 1, so increase() alone misses it; each recording rule below also counts a
+# series that was not there 10 minutes ago. The guard on `up` 10 minutes ago
+# keeps the existing series from looking new after Prometheus loses its data
+# (an emptyDir, ADR 0011) or when the scrape is new.
+#
+#   VPAResized            a notification, one per VPA, grouped by namespace
+#                         over 5 minutes (Alertmanager route in
+#                         kube-prometheus-stack-values.yaml)
+#   VPAResizeFailed       an in-place resize was refused or failed (Infeasible:
+#                         the node has no room), or an eviction failed
+#   PodUnschedulable      a pod no node can take
+#   NodeMemoryAvailableLow   under 15 % available (warning), under 8 % (critical)
+#   NodeMemoryPressure    the kubelet reports MemoryPressure: it evicts next
+#   NodeMemoryRequestsHigh   a node's pods request over 90 % of its allocatable
+#   NodePressureEviction  the kubelet evicted a pod
+#
+# An OOM kill is ContainerOOMKilled in rules/capacity.yaml.
+#
+# The drift of a recommendation from its Git value has no alert: no metric
+# holds the workload template's request (kube-state-metrics reads only CRD
+# kinds through customResourceState). vpa-compare.py flags it.
+#
+# Unit tests: rules/tests/autoscaling.test.yaml, run by check-rules.sh.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: autoscaling
+  namespace: monitoring
+spec:
+  groups:
+    - name: vpa
+      rules:
+        # Pods VPA changed in the last 10 minutes, per VPA; `how` says in place
+        # or by eviction (the fallback when in place is Infeasible).
+        - record: vpa:resized_pods:increase10m
+          labels: {how: in place}
+          expr: |
+            label_replace(
+              sum by (vpa_namespace, vpa_name) (
+                (increase(vpa_updater_in_place_updated_pods_total[10m]) > 0)
+                  or
+                (vpa_updater_in_place_updated_pods_total unless vpa_updater_in_place_updated_pods_total offset 10m)
+              ),
+              "namespace", "$1", "vpa_namespace", "(.+)"
+            )
+              and on () (count(up{job="monitoring/vpa-updater"} offset 10m) > 0)
+        - record: vpa:resized_pods:increase10m
+          labels: {how: by eviction}
+          expr: |
+            label_replace(
+              sum by (vpa_namespace, vpa_name) (
+                (increase(vpa_updater_evicted_pods_total[10m]) > 0)
+                  or
+                (vpa_updater_evicted_pods_total unless vpa_updater_evicted_pods_total offset 10m)
+              ),
+              "namespace", "$1", "vpa_namespace", "(.+)"
+            )
+              and on () (count(up{job="monitoring/vpa-updater"} offset 10m) > 0)
+
+        # Attempts that did not resize, per VPA and reason.
+        - record: vpa:failed_resizes:increase10m
+          labels: {how: in place}
+          expr: |
+            label_replace(
+              sum by (vpa_namespace, vpa_name, reason) (
+                (increase(vpa_updater_failed_in_place_update_attempts_total[10m]) > 0)
+                  or
+                (vpa_updater_failed_in_place_update_attempts_total unless vpa_updater_failed_in_place_update_attempts_total offset 10m)
+              ),
+              "namespace", "$1", "vpa_namespace", "(.+)"
+            )
+              and on () (count(up{job="monitoring/vpa-updater"} offset 10m) > 0)
+        - record: vpa:failed_resizes:increase10m
+          labels: {how: in place, reason: Infeasible}
+          expr: |
+            label_replace(
+              sum by (vpa_namespace, vpa_name) (
+                (increase(vpa_updater_in_place_infeasible_skip_pods_total[10m]) > 0)
+                  or
+                (vpa_updater_in_place_infeasible_skip_pods_total unless vpa_updater_in_place_infeasible_skip_pods_total offset 10m)
+              ),
+              "namespace", "$1", "vpa_namespace", "(.+)"
+            )
+              and on () (count(up{job="monitoring/vpa-updater"} offset 10m) > 0)
+        - record: vpa:failed_resizes:increase10m
+          labels: {how: by eviction}
+          expr: |
+            label_replace(
+              sum by (vpa_namespace, vpa_name, reason) (
+                (increase(vpa_updater_failed_eviction_attempts_total[10m]) > 0)
+                  or
+                (vpa_updater_failed_eviction_attempts_total unless vpa_updater_failed_eviction_attempts_total offset 10m)
+              ),
+              "namespace", "$1", "vpa_namespace", "(.+)"
+            )
+              and on () (count(up{job="monitoring/vpa-updater"} offset 10m) > 0)
+
+        - alert: VPAResized
+          expr: vpa:resized_pods:increase10m > 0
+          labels:
+            severity: info
+          annotations:
+            summary: "VPA resized {{ $labels.vpa_name }} in {{ $labels.namespace }} ({{ $labels.how }})."
+            description: >-
+              The new requests: kubectl -n {{ $labels.namespace }} get pods -o
+              custom-columns=NAME:.metadata.name,REQ:.spec.containers[*].resources.requests.
+              Git keeps the start value; core/monitoring/vpa-compare.py shows
+              when the recommendation has moved more than 2x from it.
+
+        - alert: VPAResizeFailed
+          expr: vpa:failed_resizes:increase10m > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "VPA could not resize {{ $labels.vpa_name }} in {{ $labels.namespace }} ({{ $labels.how }}: {{ $labels.reason }})."
+            description: >-
+              Infeasible means no node has room for the new request in place;
+              VPA then evicts the pod, and the scheduler must find it a node.
+              A failed eviction is usually a PodDisruptionBudget. See kubectl
+              -n {{ $labels.namespace }} get events --field-selector
+              involvedObject.kind=Pod and the free memory of the nodes.
+
+    - name: nodes
+      rules:
+        # Share of each node's memory the kernel can still give out.
+        - record: node:memory_available:ratio
+          expr: |
+            max by (node) (
+              label_replace(
+                node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes
+                  * on (instance) group_left (nodename) node_uname_info,
+                "node", "$1", "nodename", "(.*)"
+              )
+            )
+
+        # Share of each node's allocatable memory its pods request (Running
+        # and Pending pods bound to it; native sidecars count, through the
+        # recording rule of rules/capacity.yaml).
+        - record: node:memory_requests:ratio
+          expr: |
+            sum by (node) (
+              sum by (namespace, pod, node) (namespace_pod_container:memory_requests:bytes)
+                * on (namespace, pod) group_left ()
+              max by (namespace, pod) (kube_pod_status_phase{phase=~"Pending|Running"})
+            )
+              / on (node)
+            max by (node) (kube_node_status_allocatable{resource="memory"})
+
+        # One name, two severities: the critical one inhibits the warning
+        # (the inhibit rule matches on alertname).
+        - alert: NodeMemoryAvailableLow
+          expr: node:memory_available:ratio < 0.15
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.node }} has {{ $value | humanizePercentage }} of its memory available."
+            description: >-
+              Containers without a memory limit grow into the node's free
+              memory (ADR 0014). Find what grew (Grafana, Kubernetes / Compute
+              Resources / Node); below the kubelet's eviction threshold it
+              evicts pods.
+        - alert: NodeMemoryAvailableLow
+          expr: node:memory_available:ratio < 0.08
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.node }} has {{ $value | humanizePercentage }} of its memory available."
+            description: >-
+              Containers without a memory limit grow into the node's free
+              memory (ADR 0014). Find what grew (Grafana, Kubernetes / Compute
+              Resources / Node); below the kubelet's eviction threshold it
+              evicts pods.
+
+        - alert: NodeMemoryPressure
+          expr: max by (node) (kube_node_status_condition{condition="MemoryPressure", status="true"}) == 1
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.node }} reports MemoryPressure."
+            description: >-
+              The kubelet is past its eviction threshold and evicts pods, the
+              ones furthest above their request first. Find what grew on the
+              node, and move or shrink it.
+
+        - alert: NodeMemoryRequestsHigh
+          expr: node:memory_requests:ratio > 0.9
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "The pods on {{ $labels.node }} request {{ $value | humanizePercentage }} of its allocatable memory."
+            description: >-
+              VPA can raise a request only while the node has room; past it a
+              resize is Infeasible and the pod is evicted. Lower a request that
+              is above its use, spread the pods, or add a worker (Capacity
+              Plan, order of purchase).
+
+        - alert: PodUnschedulable
+          expr: max by (namespace, pod) (kube_pod_status_unschedulable) == 1
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.pod }} cannot be scheduled."
+            description: >-
+              No node can take the pod: kubectl -n {{ $labels.namespace }}
+              describe pod {{ $labels.pod }} shows why (usually memory
+              requests).
+
+        # A pod the kubelet evicted stays Failed until it is deleted: the rule
+        # fires for its first 15 minutes only.
+        - alert: NodePressureEviction
+          expr: |
+            (
+              (max by (namespace, pod) (kube_pod_status_reason{reason="Evicted"}) == 1)
+                unless
+              (max by (namespace, pod) (kube_pod_status_reason{reason="Evicted"} offset 15m) == 1)
+            )
+              and on () (count(up{job="kube-state-metrics"} offset 15m) > 0)
+          labels:
+            severity: critical
+          annotations:
+            summary: "The kubelet evicted {{ $labels.namespace }}/{{ $labels.pod }}."
+            description: >-
+              Its node ran short of memory or disk: kubectl -n
+              {{ $labels.namespace }} describe pod {{ $labels.pod }} names the
+              resource. Its controller has started a new pod.

@@ -73,8 +73,16 @@ live by driving one container past its request.
       5 minutes; an Infeasible resize, a Pending pod and an OOM kill at once;
       node memory available under 15 % (warning) and under 8 % or
       MemoryPressure (critical); a node's requests above 90 % of allocatable
-      for 30 minutes; any memory-pressure eviction; and a recommendation more
-      than twice or less than half its Git value for 7 days.
+      for 30 minutes; and any memory-pressure eviction. They are
+      `rules/autoscaling.yaml` with the updater's PodMonitor
+      `monitors/vpa.yaml`, and the OOM kill is the existing
+      `ContainerOOMKilled`; the chart's `NodeMemoryHighUtilization` is in the
+      deny list, replaced by `NodeMemoryAvailableLow`. A recommendation more
+      than twice or less than half its Git value gets no alert: no metric
+      holds a workload template's request, because kube-state-metrics' custom
+      resource state reads only CRD kinds. `vpa-compare.py` shows the
+      template's request in its `git` column and flags the drift, and the
+      alert waits as a deferred item (operator, 2026-11-15).
 - [ ] Measure the kubelet and system memory on each worker and set
       `kubeReserved`, `systemReserved` and a soft eviction threshold through
       kluster, one node at a time.

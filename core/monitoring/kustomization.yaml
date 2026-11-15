@@ -27,6 +27,9 @@ resources:
   # grafana.tosak.net, behind Cloudflare Access (ADR 0011).
   - httproute.yaml
   - vpa.yaml  # ADR 0014
+  # The VPA updater's counters and the resize and node alerts (ADR 0014).
+  - monitors/vpa.yaml
+  - rules/autoscaling.yaml
 
 # The pinned upstream dashboards (dashboards/fetch.sh), one ConfigMap each.
 # Grafana's sidecar loads every ConfigMap with grafana_dashboard: "1".

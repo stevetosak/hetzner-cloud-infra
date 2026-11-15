@@ -62,7 +62,9 @@ windowsMonitoring:
 # are already gone: the chart renders a component's rules only while its
 # scrape is on. The over-commit rules go because the cluster is over-committed
 # by design; KubeMemoryOvercommit fires from the first day (the requests do
-# not fit on two Workers).
+# not fit on two Workers). NodeMemoryHighUtilization (90 % used for 15
+# minutes) goes because NodeMemoryAvailableLow in rules/autoscaling.yaml
+# replaces it: a warning under 15 % available, critical under 8 % (ADR 0014).
 #
 # 🔴 Read this list again on each chart upgrade: a renamed rule comes back on.
 # A new entry needs its reason here. The custom rules are in rules/.
@@ -71,6 +73,7 @@ defaultRules:
   disabled:
     KubeCPUOvercommit: true
     KubeMemoryOvercommit: true
+    NodeMemoryHighUtilization: true
 
 # ---------------------------------------------------------------------------
 # Operator
@@ -204,6 +207,13 @@ alertmanager:
           repeat_interval: 1m
         - receiver: 'null'
           matchers: ['alertname = "InfoInhibitor"']
+        # A VPA resize is info, yet the operator sees each one (ADR 0014):
+        # grouped by namespace, collected for 5 minutes, never a resolved
+        # message. It sits above the info route, which would drop it.
+        - receiver: telegram-notice
+          matchers: ['alertname = "VPAResized"']
+          group_wait: 5m
+          group_interval: 5m
         # info stays in Grafana (ADR 0011).
         - receiver: 'null'
           matchers: ['severity = "info"']
@@ -214,6 +224,11 @@ alertmanager:
           - bot_token_file: /etc/alertmanager/secrets/alertmanager-receivers/telegram-bot-token
             chat_id_file: /etc/alertmanager/secrets/alertmanager-receivers/telegram-chat-id
             send_resolved: true
+      - name: telegram-notice
+        telegram_configs:
+          - bot_token_file: /etc/alertmanager/secrets/alertmanager-receivers/telegram-bot-token
+            chat_id_file: /etc/alertmanager/secrets/alertmanager-receivers/telegram-chat-id
+            send_resolved: false
       - name: healthchecks
         webhook_configs:
           - url_file: /etc/alertmanager/secrets/alertmanager-receivers/watchdog-ping-url

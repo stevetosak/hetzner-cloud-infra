@@ -1,0 +1,22 @@
+# Scrapes the VPA updater (port `prometheus`, 8943): its counters of in-place
+# updates, evictions and failed attempts, each labelled with the VPA's name
+# and namespace (vpa_name, vpa_namespace). rules/autoscaling.yaml turns them
+# into the resize notification and the failed-resize alert (ADR 0014).
+#
+# The recommender and the admission controller are not scraped: their
+# metrics are quality summaries and latencies, which no rule reads. A
+# recommendation per VPA is in the object's status, not in any metric.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: vpa-updater
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames: [vpa]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vertical-pod-autoscaler
+      app.kubernetes.io/component: updater
+  podMetricsEndpoints:
+    - port: prometheus

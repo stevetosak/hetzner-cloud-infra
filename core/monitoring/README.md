@@ -24,8 +24,18 @@ server-side). It refuses a render that holds a helm hook or a random value.
   (`defaultRules.disabled`, each with its reason; read it again on every chart
   upgrade). The custom rules are in `rules/`, each with promtool unit tests in
   `rules/tests/`: WAL archiving, CNPG health and volume fill, certificates,
-  mail.
+  mail, container memory against its request and limit, autoscaling.
   `./core/monitoring/check-rules.sh` parses every rule and runs the tests.
+- **Autoscaling.** `monitors/vpa.yaml` scrapes the VPA updater;
+  `rules/autoscaling.yaml` sends each resize to the Alert Chat as a notice
+  (its own Alertmanager route, grouped by namespace over 5 minutes, no
+  resolved message), warns on a resize that failed, and pages on node memory
+  running short, MemoryPressure, an eviction or a pod no node can take
+  ([ADR 0014](../../docs/adr/0014-the-vertical-pod-autoscaler-sizes-the-clusters-own-workloads-and-node-memory-is-their-ceiling.md)).
+  No metric holds a workload template's request, so the drift of a
+  recommendation from its Git value has no alert:
+  `python3 -I core/monitoring/vpa-compare.py 3d` flags it (`MEM>2x`,
+  `MEM<0.5x`), with unit tests in `vpa_compare_test.py`.
 - **Monitors.** `monitors/` scrapes what the chart does not know: the
   PostgreSQL instances, cert-manager, ArgoCD (a PodMonitor, so core/argocd
   needs no metrics Services) and Envoy Gateway (controller and proxies).

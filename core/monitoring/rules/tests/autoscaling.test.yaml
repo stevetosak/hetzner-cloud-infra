@@ -1,0 +1,244 @@
+# Unit tests of rules/autoscaling.yaml. Run by core/monitoring/check-rules.sh,
+# which writes the rule files next to this one as <metadata.name>.rules.yaml.
+# node:memory_requests:ratio reads a recording rule of rules/capacity.yaml.
+rule_files: [capacity.rules.yaml, autoscaling.rules.yaml]
+evaluation_interval: 1m
+
+tests:
+  # The first in-place resize of a VPA: its counter series appears at 20 m,
+  # already at 1. The notification fires at once and clears when the series
+  # is 10 minutes old. A second VPA's counter that was there from the start
+  # and grows at 30 m fires too.
+  - interval: 1m
+    input_series:
+      - {series: 'up{job="monitoring/vpa-updater"}', values: '1x60'}
+      - {series: 'vpa_updater_in_place_updated_pods_total{job="monitoring/vpa-updater",namespace="vpa",vpa_name="doma",vpa_namespace="doma",vpa_size_log2="0",update_mode="InPlaceOrRecreate"}', values: '_x20 1x40'}
+      - {series: 'vpa_updater_evicted_pods_total{job="monitoring/vpa-updater",namespace="vpa",vpa_name="grafana",vpa_namespace="monitoring",vpa_size_log2="0"}', values: '2x29 3x30'}
+    alert_rule_test:
+      - {eval_time: 15m, alertname: VPAResized}
+      - eval_time: 22m
+        alertname: VPAResized
+        exp_alerts:
+          - exp_labels: {severity: info, how: in place, namespace: doma, vpa_name: doma, vpa_namespace: doma}
+            exp_annotations:
+              summary: "VPA resized doma in doma (in place)."
+              description: >-
+                The new requests: kubectl -n doma get pods -o
+                custom-columns=NAME:.metadata.name,REQ:.spec.containers[*].resources.requests.
+                Git keeps the start value; core/monitoring/vpa-compare.py shows
+                when the recommendation has moved more than 2x from it.
+      - eval_time: 32m
+        alertname: VPAResized
+        exp_alerts:
+          - exp_labels: {severity: info, how: by eviction, namespace: monitoring, vpa_name: grafana, vpa_namespace: monitoring}
+            exp_annotations:
+              summary: "VPA resized grafana in monitoring (by eviction)."
+              description: >-
+                The new requests: kubectl -n monitoring get pods -o
+                custom-columns=NAME:.metadata.name,REQ:.spec.containers[*].resources.requests.
+                Git keeps the start value; core/monitoring/vpa-compare.py shows
+                when the recommendation has moved more than 2x from it.
+      - {eval_time: 45m, alertname: VPAResized}
+
+  # Prometheus starts with an empty disk (or the scrape is new): every
+  # existing counter series looks new, but `up` 10 minutes ago is missing,
+  # so nothing fires. Ten minutes later the series are no longer new.
+  - interval: 1m
+    input_series:
+      - {series: 'up{job="monitoring/vpa-updater"}', values: '1x30'}
+      - {series: 'vpa_updater_in_place_updated_pods_total{vpa_name="doma",vpa_namespace="doma"}', values: '4x30'}
+      - {series: 'vpa_updater_failed_eviction_attempts_total{vpa_name="doma",vpa_namespace="doma",reason="PDB"}', values: '1x30'}
+    alert_rule_test:
+      - {eval_time: 1m, alertname: VPAResized}
+      - {eval_time: 5m, alertname: VPAResized}
+      - {eval_time: 5m, alertname: VPAResizeFailed}
+      - {eval_time: 15m, alertname: VPAResized}
+      - {eval_time: 15m, alertname: VPAResizeFailed}
+
+  # An in-place resize refused as Infeasible, and a failed in-place update
+  # with its own reason, each fire the warning with the reason.
+  - interval: 1m
+    input_series:
+      - {series: 'up{job="monitoring/vpa-updater"}', values: '1x40'}
+      - {series: 'vpa_updater_in_place_infeasible_skip_pods_total{vpa_name="grafana",vpa_namespace="monitoring",vpa_size_log2="0"}', values: '_x20 1x20'}
+      - {series: 'vpa_updater_failed_in_place_update_attempts_total{vpa_name="doma",vpa_namespace="doma",vpa_size_log2="0",reason="PatchFailed"}', values: '3x24 4x15'}
+    alert_rule_test:
+      - {eval_time: 15m, alertname: VPAResizeFailed}
+      - eval_time: 21m
+        alertname: VPAResizeFailed
+        exp_alerts:
+          - exp_labels: {severity: warning, how: in place, reason: Infeasible, namespace: monitoring, vpa_name: grafana, vpa_namespace: monitoring}
+            exp_annotations:
+              summary: "VPA could not resize grafana in monitoring (in place: Infeasible)."
+              description: >-
+                Infeasible means no node has room for the new request in place;
+                VPA then evicts the pod, and the scheduler must find it a node.
+                A failed eviction is usually a PodDisruptionBudget. See kubectl
+                -n monitoring get events --field-selector
+                involvedObject.kind=Pod and the free memory of the nodes.
+      - eval_time: 26m
+        alertname: VPAResizeFailed
+        exp_alerts:
+          - exp_labels: {severity: warning, how: in place, reason: Infeasible, namespace: monitoring, vpa_name: grafana, vpa_namespace: monitoring}
+            exp_annotations:
+              summary: "VPA could not resize grafana in monitoring (in place: Infeasible)."
+              description: >-
+                Infeasible means no node has room for the new request in place;
+                VPA then evicts the pod, and the scheduler must find it a node.
+                A failed eviction is usually a PodDisruptionBudget. See kubectl
+                -n monitoring get events --field-selector
+                involvedObject.kind=Pod and the free memory of the nodes.
+          - exp_labels: {severity: warning, how: in place, reason: PatchFailed, namespace: doma, vpa_name: doma, vpa_namespace: doma}
+            exp_annotations:
+              summary: "VPA could not resize doma in doma (in place: PatchFailed)."
+              description: >-
+                Infeasible means no node has room for the new request in place;
+                VPA then evicts the pod, and the scheduler must find it a node.
+                A failed eviction is usually a PodDisruptionBudget. See kubectl
+                -n doma get events --field-selector
+                involvedObject.kind=Pod and the free memory of the nodes.
+
+  # k8swk1 at 10 % available: the warning after 5 minutes. k8swk2 at 5 %:
+  # the critical alert after 2 minutes, the warning after 5. k8swk3 at 50 %:
+  # nothing.
+  - interval: 1m
+    input_series:
+      - {series: 'node_memory_MemTotal_bytes{instance="10.0.0.3:9100"}', values: '8000000000x20'}
+      - {series: 'node_memory_MemAvailable_bytes{instance="10.0.0.3:9100"}', values: '800000000x20'}
+      - {series: 'node_uname_info{instance="10.0.0.3:9100",nodename="k8swk1"}', values: '1x20'}
+      - {series: 'node_memory_MemTotal_bytes{instance="10.0.0.4:9100"}', values: '8000000000x20'}
+      - {series: 'node_memory_MemAvailable_bytes{instance="10.0.0.4:9100"}', values: '400000000x20'}
+      - {series: 'node_uname_info{instance="10.0.0.4:9100",nodename="k8swk2"}', values: '1x20'}
+      - {series: 'node_memory_MemTotal_bytes{instance="10.0.0.5:9100"}', values: '8000000000x20'}
+      - {series: 'node_memory_MemAvailable_bytes{instance="10.0.0.5:9100"}', values: '4000000000x20'}
+      - {series: 'node_uname_info{instance="10.0.0.5:9100",nodename="k8swk3"}', values: '1x20'}
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: NodeMemoryAvailableLow
+        exp_alerts:
+          - exp_labels: {severity: critical, node: k8swk2}
+            exp_annotations:
+              summary: "k8swk2 has 5% of its memory available."
+              description: >-
+                Containers without a memory limit grow into the node's free
+                memory (ADR 0014). Find what grew (Grafana, Kubernetes / Compute
+                Resources / Node); below the kubelet's eviction threshold it
+                evicts pods.
+      - eval_time: 7m
+        alertname: NodeMemoryAvailableLow
+        exp_alerts:
+          - exp_labels: {severity: warning, node: k8swk1}
+            exp_annotations:
+              summary: "k8swk1 has 10% of its memory available."
+              description: >-
+                Containers without a memory limit grow into the node's free
+                memory (ADR 0014). Find what grew (Grafana, Kubernetes / Compute
+                Resources / Node); below the kubelet's eviction threshold it
+                evicts pods.
+          - exp_labels: {severity: warning, node: k8swk2}
+            exp_annotations:
+              summary: "k8swk2 has 5% of its memory available."
+              description: >-
+                Containers without a memory limit grow into the node's free
+                memory (ADR 0014). Find what grew (Grafana, Kubernetes / Compute
+                Resources / Node); below the kubelet's eviction threshold it
+                evicts pods.
+          - exp_labels: {severity: critical, node: k8swk2}
+            exp_annotations:
+              summary: "k8swk2 has 5% of its memory available."
+              description: >-
+                Containers without a memory limit grow into the node's free
+                memory (ADR 0014). Find what grew (Grafana, Kubernetes / Compute
+                Resources / Node); below the kubelet's eviction threshold it
+                evicts pods.
+
+  # MemoryPressure from 10 m fires at once; the condition's other statuses
+  # do not.
+  - interval: 1m
+    input_series:
+      - {series: 'kube_node_status_condition{node="k8swk1",condition="MemoryPressure",status="true"}', values: '0x9 1x10'}
+      - {series: 'kube_node_status_condition{node="k8swk1",condition="MemoryPressure",status="false"}', values: '1x9 0x10'}
+      - {series: 'kube_node_status_condition{node="k8swk2",condition="MemoryPressure",status="false"}', values: '1x20'}
+    alert_rule_test:
+      - {eval_time: 5m, alertname: NodeMemoryPressure}
+      - eval_time: 10m
+        alertname: NodeMemoryPressure
+        exp_alerts:
+          - exp_labels: {severity: critical, node: k8swk1}
+            exp_annotations:
+              summary: "k8swk1 reports MemoryPressure."
+              description: >-
+                The kubelet is past its eviction threshold and evicts pods, the
+                ones furthest above their request first. Find what grew on the
+                node, and move or shrink it.
+
+  # On k8swk1 a Running pod requests 900 Mi and a native sidecar 50 Mi of
+  # 1000 Mi allocatable (95 %); a Succeeded pod's 500 Mi does not count.
+  # The warning fires after 30 minutes. k8swk2 at 50 % does not.
+  - interval: 1m
+    input_series:
+      - {series: 'kube_node_status_allocatable{node="k8swk1",resource="memory"}', values: '1048576000x40'}
+      - {series: 'kube_pod_container_resource_requests{namespace="doma",pod="doma-1",container="doma",node="k8swk1",resource="memory"}', values: '943718400x40'}
+      - {series: 'kube_pod_init_container_resource_requests{namespace="doma",pod="doma-1",container="proxy",node="k8swk1",resource="memory"}', values: '52428800x40'}
+      - {series: 'kube_pod_init_container_info{namespace="doma",pod="doma-1",container="proxy",restart_policy="Always"}', values: '1x40'}
+      - {series: 'kube_pod_status_phase{namespace="doma",pod="doma-1",phase="Running"}', values: '1x40'}
+      - {series: 'kube_pod_status_phase{namespace="doma",pod="doma-1",phase="Pending"}', values: '0x40'}
+      - {series: 'kube_pod_container_resource_requests{namespace="pg-drill",pod="restore-drill-1",container="drill",node="k8swk1",resource="memory"}', values: '524288000x40'}
+      - {series: 'kube_pod_status_phase{namespace="pg-drill",pod="restore-drill-1",phase="Running"}', values: '0x40'}
+      - {series: 'kube_pod_status_phase{namespace="pg-drill",pod="restore-drill-1",phase="Succeeded"}', values: '1x40'}
+      - {series: 'kube_node_status_allocatable{node="k8swk2",resource="memory"}', values: '1048576000x40'}
+      - {series: 'kube_pod_container_resource_requests{namespace="redis",pod="redis-master-0",container="redis",node="k8swk2",resource="memory"}', values: '524288000x40'}
+      - {series: 'kube_pod_status_phase{namespace="redis",pod="redis-master-0",phase="Running"}', values: '1x40'}
+    alert_rule_test:
+      - {eval_time: 20m, alertname: NodeMemoryRequestsHigh}
+      - eval_time: 35m
+        alertname: NodeMemoryRequestsHigh
+        exp_alerts:
+          - exp_labels: {severity: warning, node: k8swk1}
+            exp_annotations:
+              summary: "The pods on k8swk1 request 95% of its allocatable memory."
+              description: >-
+                VPA can raise a request only while the node has room; past it a
+                resize is Infeasible and the pod is evicted. Lower a request that
+                is above its use, spread the pods, or add a worker (Capacity
+                Plan, order of purchase).
+
+  # A pod unschedulable from 5 m fires after 1 minute.
+  - interval: 1m
+    input_series:
+      - {series: 'kube_pod_status_unschedulable{namespace="doma",pod="doma-2"}', values: '_x5 1x10'}
+    alert_rule_test:
+      - {eval_time: 5m, alertname: PodUnschedulable}
+      - eval_time: 7m
+        alertname: PodUnschedulable
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: doma, pod: doma-2}
+            exp_annotations:
+              summary: "doma/doma-2 cannot be scheduled."
+              description: >-
+                No node can take the pod: kubectl -n doma
+                describe pod doma-2 shows why (usually memory
+                requests).
+
+  # A pod evicted at 20 m fires for 15 minutes. A pod evicted before
+  # kube-state-metrics had 15 minutes of data (a Prometheus restart) does not.
+  - interval: 1m
+    input_series:
+      - {series: 'up{job="kube-state-metrics"}', values: '1x50'}
+      - {series: 'kube_pod_status_reason{namespace="doma",pod="doma-1",reason="Evicted"}', values: '0x19 1x30'}
+      - {series: 'kube_pod_status_reason{namespace="doma",pod="doma-1",reason="NodeLost"}', values: '0x50'}
+      - {series: 'kube_pod_status_reason{namespace="redis",pod="redis-old",reason="Evicted"}', values: '1x50'}
+    alert_rule_test:
+      - {eval_time: 5m, alertname: NodePressureEviction}
+      - {eval_time: 15m, alertname: NodePressureEviction}
+      - eval_time: 25m
+        alertname: NodePressureEviction
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: doma, pod: doma-1}
+            exp_annotations:
+              summary: "The kubelet evicted doma/doma-1."
+              description: >-
+                Its node ran short of memory or disk: kubectl -n
+                doma describe pod doma-1 names the
+                resource. Its controller has started a new pod.
+      - {eval_time: 40m, alertname: NodePressureEviction}
