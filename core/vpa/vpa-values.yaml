@@ -4,8 +4,9 @@
 # minAvailable 1 on a single pod would block every drain of its node, so the
 # chart's PDBs are off.
 #
-# Resources: a new component starts from the ADR 0013 guess (50m / 256Mi,
-# limit 512Mi) and is resized once three days of data exist. No CPU limit.
+# Resources: sized by ADR 0013 from the 2026-11-12..15 peaks (22, 35 and
+# 25 MiB, under 4m CPU), never under the VPA targets; one value for all
+# three. No CPU limit.
 #
 # Images are pinned by digest (the multi-arch index). The chart writes
 # repository:tag, so the digest rides in the tag.
@@ -32,10 +33,10 @@ admissionController:
     enabled: false
   resources:
     requests:
-      cpu: 50m
-      memory: 256Mi
+      cpu: 10m
+      memory: 48Mi
     limits:
-      memory: 512Mi
+      memory: 96Mi
 
 recommender:
   replicas: 1
@@ -51,10 +52,10 @@ recommender:
     - --pod-recommendation-min-cpu-millicores=10
   resources:
     requests:
-      cpu: 50m
-      memory: 256Mi
+      cpu: 10m
+      memory: 48Mi
     limits:
-      memory: 512Mi
+      memory: 96Mi
 
 updater:
   replicas: 1
@@ -64,7 +65,7 @@ updater:
     enabled: false
   resources:
     requests:
-      cpu: 50m
-      memory: 256Mi
+      cpu: 10m
+      memory: 48Mi
     limits:
-      memory: 512Mi
+      memory: 96Mi

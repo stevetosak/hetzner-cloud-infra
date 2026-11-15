@@ -46,11 +46,11 @@ reloader:
       readOnlyRootFilesystem: true
       capabilities:
         drop: ["ALL"]
-    # Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan
-    # Snapshots 0 and 1). No CPU limit.
+    # Sized by ADR 0013 from the 2026-11-12..15 peak of 49 MiB (VPA target 61),
+    # above its first request of 32Mi. No CPU limit.
     resources:
       requests:
         cpu: 10m
-        memory: 32Mi
-      limits:
         memory: 64Mi
+      limits:
+        memory: 128Mi

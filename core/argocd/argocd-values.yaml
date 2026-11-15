@@ -106,14 +106,15 @@ controller:
 
 repoServer:
   # Clones the infra repository and runs `kustomize build` on each overlay.
-  # Bursty rather than steady. Memory raised from 128Mi: the new pod held
-  # 143 MiB from its start (ADR 0013 first-hour check, 2026-11-05).
+  # Bursty rather than steady. Memory from the 2026-11-12..15 peak of 92 MiB (VPA
+  # target 121); a new pod held 143 MiB from its start (2026-11-05), under
+  # the limit.
   resources:
     requests:
       cpu: 16m
-      memory: 192Mi
+      memory: 128Mi
     limits:
-      memory: 384Mi
+      memory: 256Mi
   # The init container that copies the argocd binary. The chart gives it the
   # repo-server's values when this is empty, and an init container's request
   # counts for the pod, so it gets its own small one.
@@ -126,15 +127,15 @@ repoServer:
         memory: 64Mi
 
 applicationSet:
-  # Memory raised from 64Mi: the new pod held 74 MiB from its start (ADR 0013
-  # first-hour check, 2026-11-05). Raised again from 96Mi after the k8swk2
-  # drain of 2026-11-07: the new pod held 108 MiB from its first minute.
+  # Memory from the 2026-11-12..15 peak of 53 MiB (VPA target 61). A new pod held
+  # 108 MiB in its first minute (k8swk2 drain, 2026-11-07): the limit covers
+  # that start.
   resources:
     requests:
       cpu: 15m
-      memory: 144Mi
+      memory: 80Mi
     limits:
-      memory: 288Mi
+      memory: 160Mi
 
 redis:
   # ArgoCD keeps its OWN Redis, and does not use the shared one in namespace
@@ -258,11 +259,11 @@ notifications:
       triggers:
         - on-deployed
 
-  # Memory raised from 48Mi: the new pod held 62 MiB from its start (ADR 0013
-  # first-hour check, 2026-11-05).
+  # Memory from the 2026-11-12..15 peak of 34 MiB (VPA target 47); a new pod held
+  # 62 MiB from its start (2026-11-05), under the limit.
   resources:
     requests:
       cpu: 10m
-      memory: 96Mi
+      memory: 48Mi
     limits:
-      memory: 192Mi
+      memory: 96Mi

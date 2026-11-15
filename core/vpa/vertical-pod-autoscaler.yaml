@@ -835,10 +835,10 @@ spec:
               readOnly: true
           resources:
             limits:
-              memory: 512Mi
+              memory: 96Mi
             requests:
-              cpu: 50m
-              memory: 256Mi
+              cpu: 10m
+              memory: 48Mi
       volumes:
         - name: tls-certs
           secret:
@@ -920,10 +920,10 @@ spec:
             failureThreshold: 3
           resources:
             limits:
-              memory: 512Mi
+              memory: 96Mi
             requests:
-              cpu: 50m
-              memory: 256Mi
+              cpu: 10m
+              memory: 48Mi
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -1000,10 +1000,10 @@ spec:
               containerPort: 8943
           resources:
             limits:
-              memory: 512Mi
+              memory: 96Mi
             requests:
-              cpu: 50m
-              memory: 256Mi
+              cpu: 10m
+              memory: 48Mi
           livenessProbe:
             httpGet:
               path: /health-check
