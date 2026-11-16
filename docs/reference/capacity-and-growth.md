@@ -21,7 +21,7 @@ The alerts are in [`rules/capacity.yaml`](../../core/monitoring/rules/capacity.y
 | Peak window | At least 3 days of Prometheus data (`python3 -I core/monitoring/capacity-snapshot.py 3d`) |
 | New component | `50m` / `256Mi`, limit `512Mi`, resized once 3 days of data exist |
 | Own memory cap (Redis `maxmemory`, a JVM heap) | The limit follows the cap; the request follows the rule |
-| Floors | PostgreSQL 384 Mi, Envoy 128 Mi |
+| Floors | PostgreSQL 256 Mi, Envoy 128 Mi |
 
 A fresh start can use much more memory than the steady peak: after the drain
 on 2026-11-07 Grafana started at 627 MiB against a 318 MiB steady peak, and

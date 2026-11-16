@@ -111,3 +111,17 @@ there, with the floors above as its `minAllowed`. When those workloads move to
 `InPlaceOrRecreate`, they also lose the memory limit of twice the request; the
 node's memory, with a kubelet reserve, becomes their ceiling. PostgreSQL,
 Redis, the JVMs and client namespaces keep this rule as written.
+
+**2026-11-16.** PostgreSQL's floor is 256 Mi, with a limit of 512 Mi, not
+384 Mi. The floor's own reason, 128 MB of `shared_buffers` plus working
+memory, fits in 256 Mi, and the buffers fill only as far as the data: all
+databases together held 54 MB that day (`pg_database_size` on both
+instances). An instance's peak working set was 153 MiB (2026-11-01..07), and
+the Vertical Pod Autoscaler's uncapped target 175 MiB. On two instances the
+384 Mi floor reserved about 256 MiB of worker memory that nothing used
+([the second Capacity Plan](../plans/capacity-reclaim-requests-then-grow.md)).
+The rest of the rule stays as written. A margin of 1.1 instead of 1.3 with a
+16 Mi floor per container was weighed the same day and declined: the Vertical
+Pod Autoscaler already sizes 31 containers at about 1.15 times the 90th
+percentile of their daily peaks over 8 days, so the lower margin would have
+returned only about 150 MiB more.
