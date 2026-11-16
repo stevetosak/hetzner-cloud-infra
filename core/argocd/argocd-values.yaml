@@ -86,13 +86,12 @@ server:
   # (Capacity Plan Snapshots 0 and 1): a request on each, because a pod with
   # no requests is BestEffort and so is evicted first, and no CPU limit.
   # The server's memory follows the 2026-11-11..14 peak of 109 MiB, above
-  # its first request of 80Mi.
+  # its first request of 80Mi. No limits on the components below except
+  # Redis: VPA sets the requests in place (Autoscaling Plan).
   resources:
     requests:
       cpu: 10m
       memory: 144Mi
-    limits:
-      memory: 288Mi
 
 controller:
   # The application-controller is the heavy component: it holds the state of
@@ -101,20 +100,15 @@ controller:
     requests:
       cpu: 184m
       memory: 624Mi
-    limits:
-      memory: 1248Mi
 
 repoServer:
   # Clones the infra repository and runs `kustomize build` on each overlay.
   # Bursty rather than steady. Memory from the 2026-11-12..15 peak of 92 MiB (VPA
-  # target 121); a new pod held 143 MiB from its start (2026-11-05), under
-  # the limit.
+  # target 121); a new pod held 143 MiB from its start (2026-11-05).
   resources:
     requests:
       cpu: 16m
       memory: 128Mi
-    limits:
-      memory: 256Mi
   # The init container that copies the argocd binary. The chart gives it the
   # repo-server's values when this is empty, and an init container's request
   # counts for the pod, so it gets its own small one.
@@ -123,19 +117,15 @@ repoServer:
       requests:
         cpu: 10m
         memory: 32Mi
-      limits:
-        memory: 64Mi
 
 applicationSet:
   # Memory from the 2026-11-12..15 peak of 53 MiB (VPA target 61). A new pod held
-  # 108 MiB in its first minute (k8swk2 drain, 2026-11-07): the limit covers
-  # that start.
+  # 108 MiB in its first minute (k8swk2 drain, 2026-11-07), above the request
+  # for seconds.
   resources:
     requests:
       cpu: 15m
       memory: 80Mi
-    limits:
-      memory: 160Mi
 
 redis:
   # ArgoCD keeps its OWN Redis, and does not use the shared one in namespace
@@ -260,10 +250,8 @@ notifications:
         - on-deployed
 
   # Memory from the 2026-11-12..15 peak of 34 MiB (VPA target 47); a new pod held
-  # 62 MiB from its start (2026-11-05), under the limit.
+  # 62 MiB from its start (2026-11-05).
   resources:
     requests:
       cpu: 10m
       memory: 48Mi
-    limits:
-      memory: 96Mi
