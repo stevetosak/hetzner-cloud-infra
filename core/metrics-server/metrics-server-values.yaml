@@ -23,10 +23,8 @@ args:
   - --kubelet-insecure-tls
 
 # Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots 0
-# and 1). No CPU limit.
+# and 1). No limits: VPA sets the request in place (Autoscaling Plan).
 resources:
   requests:
     cpu: 10m
     memory: 32Mi
-  limits:
-    memory: 64Mi

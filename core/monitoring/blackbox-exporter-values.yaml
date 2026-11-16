@@ -19,8 +19,6 @@ resources:
   requests:
     cpu: 10m
     memory: 32Mi
-  limits:
-    memory: 64Mi
 
 # One module per expected status. No module follows a redirect: a host that
 # starts to redirect (to a login, to another host) has changed, and its probe

@@ -660,8 +660,6 @@ spec:
           - "--namespaces=authos,doma,mail,redis,reloader"
           - "--reload-strategy=annotations"
         resources:
-          limits:
-            memory: 128Mi
           requests:
             cpu: 10m
             memory: 64Mi

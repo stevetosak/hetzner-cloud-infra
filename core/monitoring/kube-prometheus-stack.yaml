@@ -1554,8 +1554,6 @@ spec:
             successThreshold: 1
             timeoutSeconds: 1
           resources:
-            limits:
-              memory: 64Mi
             requests:
               cpu: 10m
               memory: 32Mi
@@ -1679,8 +1677,6 @@ spec:
             - name: REQ_METHOD
               value: POST
           resources:
-            limits:
-              memory: 256Mi
             requests:
               cpu: 38m
               memory: 128Mi
@@ -1724,8 +1720,6 @@ spec:
             - name: REQ_METHOD
               value: POST
           resources:
-            limits:
-              memory: 256Mi
             requests:
               cpu: 38m
               memory: 128Mi
@@ -1807,8 +1801,6 @@ spec:
               value: /etc/grafana/provisioning
             - name: GF_UNIFIED_STORAGE_INDEX_PATH
               value: /var/lib/grafana-search/bleve
-            - name: GOMEMLIMIT
-              value: "950MiB"
           livenessProbe:
             failureThreshold: 10
             httpGet:
@@ -1821,8 +1813,6 @@ spec:
               path: /api/health
               port: grafana
           resources:
-            limits:
-              memory: 1056Mi
             requests:
               cpu: 67m
               memory: 528Mi
@@ -1923,8 +1913,6 @@ spec:
           successThreshold: 1
           timeoutSeconds: 5
         resources:
-          limits:
-            memory: 96Mi
           requests:
             cpu: 10m
             memory: 48Mi
@@ -1988,7 +1976,7 @@ spec:
             - --config-reloader-cpu-request=10m
             - --config-reloader-cpu-limit=0
             - --config-reloader-memory-request=32Mi
-            - --config-reloader-memory-limit=64Mi
+            - --config-reloader-memory-limit=0
             - --thanos-default-base-image=quay.io/thanos/thanos:v0.42.5
             - --secret-field-selector=type!=kubernetes.io/dockercfg,type!=helm.sh/release.v1
             - --web.enable-tls=false
@@ -2000,8 +1988,6 @@ spec:
           - name: GOGC
             value: "30"
           resources:
-            limits:
-              memory: 96Mi
             requests:
               cpu: 11m
               memory: 48Mi
@@ -2084,8 +2070,6 @@ spec:
   alertmanagerConfigNamespaceSelector:
     {}
   resources:
-    limits:
-      memory: 64Mi
     requests:
       cpu: 10m
       memory: 32Mi
@@ -2148,8 +2132,6 @@ spec:
   enableOTLPReceiver: false
   enableAdminAPI: false
   resources:
-    limits:
-      memory: 2208Mi
     requests:
       cpu: 106m
       memory: 1104Mi

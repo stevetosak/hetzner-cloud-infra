@@ -1004,8 +1004,6 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           resources:
-            limits:
-              memory: 160Mi
             requests:
               cpu: 10m
               memory: 80Mi
@@ -1092,8 +1090,6 @@ spec:
               fieldRef:
                 fieldPath: metadata.namespace
           resources:
-            limits:
-              memory: 128Mi
             requests:
               cpu: 10m
               memory: 64Mi
@@ -1209,8 +1205,6 @@ spec:
               fieldRef:
                 fieldPath: metadata.namespace
           resources:
-            limits:
-              memory: 64Mi
             requests:
               cpu: 10m
               memory: 32Mi
