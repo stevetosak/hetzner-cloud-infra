@@ -98,11 +98,24 @@ live by driving one container past its request.
       (`configz`, `kubectl get node`). k8swk3 needed room first; the cordon
       for it switched the PostgreSQL primary over
       ([workers runbook](../runbook/workers.md#set-the-kubelet-reserve)).
-- [ ] Move the cluster services and applications to `InPlaceOrRecreate` and
+- [x] Move the cluster services and applications to `InPlaceOrRecreate` and
       remove their memory limits, once every worker has its reserve.
       PostgreSQL, Redis (`maxmemory` below its limit) and the JVMs
       (`authos-api` at `-Xmx256m`, `duster` at `-XX:MaxRAMPercentage=75`)
       stay in `Off` and keep their limits.
+      Done 2026-11-16 in three PRs: the applications and their LimitRanges
+      (#143), the cluster services (#144), Argo CD and Envoy (#146). Live, no
+      container carries a memory limit except PostgreSQL with its barman
+      sidecar, Redis, argocd-redis, Stalwart, the JVMs and the `kube-system`
+      and `kube-flannel` components (`Off`); every other VPA is
+      `InPlaceOrRecreate` with `RecommendationProvided` and no
+      `ConfigUnsupported` (`kubectl get pods,vpa -o json`). The updater has
+      resized Grafana, the cert-manager webhook, metrics-server and the Argo CD
+      repo-server among others in place, without a restart (events
+      `InPlaceResizedByVPA`, `ResizeCompleted`). Envoy rolled with no failed
+      probe of a public host. The chart of `envoy-gateway` merges its 1024Mi
+      default limit back when the values leave `limits` out; `limits: null`
+      removes it.
 - [ ] Prove it on live: one container driven past its request, the resize
       seen in the Alert Chat, and Git brought back in line.
 
