@@ -64,7 +64,8 @@ request does not give the process more room, and a CloudNativePG restart takes
 the primary off writes for about 3.5 minutes.
 
 Each object sets `minAllowed` at the ADR 0013 floors: 32 Mi and `10m` for any
-container, 384 Mi for PostgreSQL and 128 Mi for Envoy. The recommender's own
+container, 384 Mi for PostgreSQL (256 Mi since ADR 0013's Amendment of
+2026-11-16) and 128 Mi for Envoy. The recommender's own
 floors are lowered to match (`--pod-recommendation-min-memory-mb` defaults to
 250, which would grow every small pod). No CPU limit is added; ADR 0013 already
 removed them.

@@ -100,7 +100,7 @@ Requests follow measured peaks, not a house default (cloud-infra ADR 0013):
 - After a resize, check the new pod's peak over its first hour against the new request; raise the request if the peak is higher.
 - A process that sizes itself from a cap keeps the limit its cap needs: Redis `maxmemory` stays below the limit, and a JVM takes its heap from the limit. Only its request follows the rule.
 - A periodic workload (a CronJob) keeps its values until a measured window holds one of its runs.
-- Floors: PostgreSQL at least 384 Mi, Envoy at least 128 Mi.
+- Floors: PostgreSQL at least 256 Mi, Envoy at least 128 Mi.
 
 ## `manifests/base/kustomization.yaml`
 
