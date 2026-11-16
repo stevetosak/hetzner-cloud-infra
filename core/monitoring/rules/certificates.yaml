@@ -3,7 +3,10 @@
 #
 # cert-manager renews a certificate at its renewal time (a third of its life
 # before expiry: 30 days for a 90-day certificate). A renewal that fails shows
-# first as an overdue renewal, long before the expiry.
+# first as an overdue renewal, long before the expiry. A short-lived
+# certificate (the VPA webhook's: 7 days, renewed 24 hours before expiry)
+# always has less than 7 days left, so the expiry alert also needs an overdue
+# renewal.
 #
 # Metrics from the ServiceMonitor monitors/cert-manager.yaml. Unit tests:
 # rules/tests/certificates.test.yaml, run by core/monitoring/check-rules.sh.
@@ -32,13 +35,15 @@ spec:
         - alert: CertificateExpiresSoon
           expr: |
             certmanager_certificate_expiration_timestamp_seconds - time() < 7 * 86400
+              and on (namespace, name)
+            time() - certmanager_certificate_renewal_timestamp_seconds > 3600
           labels:
             severity: critical
           annotations:
             summary: The certificate {{ $labels.namespace }}/{{ $labels.name }} expires in {{ $value | humanizeDuration }}.
             description: >-
-              Renewal failed for more than 3 weeks. When the wildcard expires,
-              every public host fails TLS at the origin.
+              Its renewal time passed and it was not renewed. When the
+              wildcard expires, every public host fails TLS at the origin.
 
         - alert: CertificateNotReady
           expr: |
