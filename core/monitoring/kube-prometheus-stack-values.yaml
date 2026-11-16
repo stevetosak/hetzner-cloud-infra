@@ -102,16 +102,12 @@ prometheusOperator:
       requests:
         cpu: 10m
         memory: 32Mi
-      limits:
-        memory: 64Mi
 
   # Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots 0 and 1): 32 MiB, 8m.
   resources:
     requests:
       cpu: 11m
       memory: 48Mi
-    limits:
-      memory: 96Mi
 
 # ---------------------------------------------------------------------------
 # Prometheus
@@ -159,8 +155,6 @@ prometheus:
       requests:
         cpu: 106m
         memory: 1104Mi
-      limits:
-        memory: 2208Mi
 
 # ---------------------------------------------------------------------------
 # Alertmanager
@@ -260,8 +254,6 @@ alertmanager:
       requests:
         cpu: 10m
         memory: 32Mi
-      limits:
-        memory: 64Mi
 
 # ---------------------------------------------------------------------------
 # Grafana
@@ -321,8 +313,6 @@ grafana:
       requests:
         cpu: 38m
         memory: 128Mi
-      limits:
-        memory: 256Mi
 
   # 256Mi and 500m were too little for Grafana 13 at start (rehearsal of
   # 2026-11-01): at 255 MiB of 256 and CPU-throttled, its API handlers timed
@@ -334,14 +324,13 @@ grafana:
   # after the k8swk2 drain of 2026-11-07: the new pod held 627 MiB from its
   # start and 650 MiB two hours later. Lowered from 848Mi before the kubelet
   # reserve (Autoscaling Plan): the 2026-11-12..15 peak was 399 MiB (VPA
-  # target 488), so the request follows the running pod and the limit covers
-  # the start.
+  # target 488), so the request follows the running pod. No limits: VPA sets
+  # the requests in place (Autoscaling Plan), and a start above the request is
+  # not killed.
   resources:
     requests:
       cpu: 67m
       memory: 528Mi
-    limits:
-      memory: 1056Mi
 
 # ---------------------------------------------------------------------------
 # Exporters
@@ -357,8 +346,6 @@ kube-state-metrics:
     requests:
       cpu: 10m
       memory: 48Mi
-    limits:
-      memory: 96Mi
 
 # On every node, the Control Plane too (the chart tolerates every taint), so a
 # dead Control Plane node shows.
@@ -372,5 +359,3 @@ prometheus-node-exporter:
     requests:
       cpu: 10m
       memory: 32Mi
-    limits:
-      memory: 64Mi

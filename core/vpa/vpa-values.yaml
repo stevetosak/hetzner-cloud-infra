@@ -6,7 +6,7 @@
 #
 # Resources: sized by ADR 0013 from the 2026-11-12..15 peaks (22, 35 and
 # 25 MiB, under 4m CPU), never under the VPA targets; one value for all
-# three. No CPU limit.
+# three. No limits: VPA sets these requests in place (Autoscaling Plan).
 #
 # Images are pinned by digest (the multi-arch index). The chart writes
 # repository:tag, so the digest rides in the tag.
@@ -35,8 +35,6 @@ admissionController:
     requests:
       cpu: 10m
       memory: 48Mi
-    limits:
-      memory: 96Mi
 
 recommender:
   replicas: 1
@@ -54,8 +52,6 @@ recommender:
     requests:
       cpu: 10m
       memory: 48Mi
-    limits:
-      memory: 96Mi
 
 updater:
   replicas: 1
@@ -67,5 +63,3 @@ updater:
     requests:
       cpu: 10m
       memory: 48Mi
-    limits:
-      memory: 96Mi

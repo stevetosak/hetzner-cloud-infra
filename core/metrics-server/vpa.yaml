@@ -1,5 +1,6 @@
 # The VerticalPodAutoscaler objects of the workloads in metrics-server (ADR 0014).
-# updateMode Off: the recommender writes a recommendation and nothing changes.
+# updateMode InPlaceOrRecreate: the updater resizes the running pod in place, and
+# evicts it only when the node cannot fit the new request.
 # RequestsOnly: VPA sets requests, never limits. minAllowed is the ADR 0013
 # floor (10m, 32Mi), higher where ADR 0014 names one (PostgreSQL, Envoy).
 ---
@@ -14,7 +15,7 @@ spec:
     kind: Deployment
     name: metrics-server
   updatePolicy:
-    updateMode: "Off"
+    updateMode: InPlaceOrRecreate
   resourcePolicy:
     containerPolicies:
       - containerName: "*"

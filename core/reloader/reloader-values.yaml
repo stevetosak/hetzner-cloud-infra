@@ -47,10 +47,9 @@ reloader:
       capabilities:
         drop: ["ALL"]
     # Sized by ADR 0013 from the 2026-11-12..15 peak of 49 MiB (VPA target 61),
-    # above its first request of 32Mi. No CPU limit.
+    # above its first request of 32Mi. No limits: VPA sets the request in place
+    # (Autoscaling Plan).
     resources:
       requests:
         cpu: 10m
         memory: 64Mi
-      limits:
-        memory: 128Mi

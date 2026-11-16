@@ -32,15 +32,14 @@ patches:
         path: /spec/template/spec/containers/0/name
         value: manager
       # Memory from the 2026-11-12..15 peak of 46 MiB (VPA target 61); a new pod held
-      # 81 MiB from its start (2026-11-05), under the limit.
+      # 81 MiB from its start (2026-11-05). No limits: VPA sets the requests in
+      # place (Autoscaling Plan).
       - op: replace
         path: /spec/template/spec/containers/0/resources
         value:
           requests:
             cpu: 10m
             memory: 64Mi
-          limits:
-            memory: 128Mi
   - target:
       group: apps
       kind: Deployment
@@ -55,5 +54,3 @@ patches:
           requests:
             cpu: 10m
             memory: 32Mi
-          limits:
-            memory: 64Mi
