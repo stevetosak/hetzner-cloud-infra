@@ -50,8 +50,8 @@ tests:
             exp_annotations:
               summary: The certificate gateway/tosak-net-wildcard expires in 5d 16h 0m 0s.
               description: >-
-                Renewal failed for more than 3 weeks. When the wildcard expires,
-                every public host fails TLS at the origin.
+                Its renewal time passed and it was not renewed. When the
+                wildcard expires, every public host fails TLS at the origin.
       - eval_time: 8h
         alertname: CertificateNotReady
         exp_alerts:
@@ -61,3 +61,24 @@ tests:
               description: >-
                 The Certificate's Ready condition is False. Read
                 its events (kubectl describe certificate -n gateway tosak-net-wildcard).
+
+  # A short-lived certificate (the VPA webhook's: 7 days, renewed 24 hours
+  # before expiry) always has less than 7 days left. Renewal at 1 d, expiry
+  # at 2 d: no alert before the renewal time, none in its first hour, and the
+  # expiry alert after an hour without a renewal.
+  - interval: 5m
+    input_series:
+      - {series: 'certmanager_certificate_renewal_timestamp_seconds{namespace="vpa",name="vpa-vertical-pod-autoscaler-webhook-cert"}', values: '86400x320'}
+      - {series: 'certmanager_certificate_expiration_timestamp_seconds{namespace="vpa",name="vpa-vertical-pod-autoscaler-webhook-cert"}', values: '172800x320'}
+    alert_rule_test:
+      - {eval_time: 30m, alertname: CertificateExpiresSoon}
+      - {eval_time: 1470m, alertname: CertificateExpiresSoon}
+      - eval_time: 26h
+        alertname: CertificateExpiresSoon
+        exp_alerts:
+          - exp_labels: {severity: critical, namespace: vpa, name: vpa-vertical-pod-autoscaler-webhook-cert}
+            exp_annotations:
+              summary: The certificate vpa/vpa-vertical-pod-autoscaler-webhook-cert expires in 22h 0m 0s.
+              description: >-
+                Its renewal time passed and it was not renewed. When the
+                wildcard expires, every public host fails TLS at the origin.
