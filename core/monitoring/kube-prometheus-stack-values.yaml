@@ -170,6 +170,9 @@ alertmanager:
       resolve_timeout: 5m
     # The chart's defaults: a critical alert silences the warning and info
     # alerts of the same name and namespace; InfoInhibitor silences info.
+    # VPAResized is info but goes to the Alert Chat (ADR 0014), so
+    # InfoInhibitor leaves it alone: it fires in every namespace that has
+    # no warning, which would hold back every resize notice.
     inhibit_rules:
       - source_matchers: ['severity = critical']
         target_matchers: ['severity =~ warning|info']
@@ -178,7 +181,7 @@ alertmanager:
         target_matchers: ['severity = info']
         equal: [namespace, alertname]
       - source_matchers: ['alertname = InfoInhibitor']
-        target_matchers: ['severity = info']
+        target_matchers: ['severity = info', 'alertname != VPAResized']
         equal: [namespace]
       - target_matchers: ['alertname = InfoInhibitor']
     route:
