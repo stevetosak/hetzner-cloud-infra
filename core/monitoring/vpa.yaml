@@ -73,6 +73,14 @@ spec:
     updateMode: InPlaceOrRecreate
   resourcePolicy:
     containerPolicies:
+      # Capped (Capacity Plan "reclaim requests", 2026-11-16): the recommendation
+      # followed Grafana's start spike to 933 Mi while it uses about 420 MiB.
+      # Grafana has no memory limit, so a start above the request is not killed
+      # while the node has room.
+      - containerName: grafana
+        controlledValues: RequestsOnly
+        minAllowed: {cpu: 10m, memory: 32Mi}
+        maxAllowed: {memory: 512Mi}
       - containerName: "*"
         controlledValues: RequestsOnly
         minAllowed: {cpu: 10m, memory: 32Mi}
