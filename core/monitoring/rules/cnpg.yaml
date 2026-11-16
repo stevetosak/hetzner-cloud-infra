@@ -62,8 +62,9 @@ spec:
               minutes, with no failure reported. Read the plugin's log in the
               instance pod.
 
-    # tosak-pg-cluster has 3 instances (core/cnpg/cluster/fresh/pg-cluster.yaml),
-    # so the primary streams to 2 standbys. Change the numbers with the Cluster.
+    # tosak-pg-cluster has 2 instances (core/cnpg/cluster/fresh/pg-cluster.yaml),
+    # so the primary streams to 1 standby, and one that stops is critical at
+    # once. Change the numbers with the Cluster.
     - name: cnpg-health
       rules:
         - alert: CNPGClusterOffline
@@ -95,23 +96,6 @@ spec:
               Instances are up but none is the primary for 5 minutes: a
               failover did not finish. Writes fail. Read the Cluster's status
               (kubectl cnpg status).
-
-        - alert: CNPGReplicasNotStreaming
-          expr: |
-            max by (namespace) (
-              cnpg_pg_replication_streaming_replicas
-                and on (namespace, pod)
-              cnpg_pg_replication_in_recovery == 0
-            ) < 2
-          for: 10m
-          labels:
-            severity: warning
-          annotations:
-            summary: The primary streams to {{ $value }} of 2 standbys.
-            description: >-
-              A standby of tosak-pg-cluster does not stream from the primary.
-              A failover has one candidate fewer, and the daily base backup is
-              taken from a standby.
 
         - alert: CNPGReplicasNotStreaming
           expr: |

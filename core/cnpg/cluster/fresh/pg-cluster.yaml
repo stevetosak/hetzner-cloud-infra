@@ -4,7 +4,13 @@ metadata:
   name: tosak-pg-cluster
   namespace: pg-cluster
 spec:
-  instances: 3
+  # One primary and one asynchronous standby (Capacity Plan "reclaim requests",
+  # operator 2026-11-16). Failover still works; a second fault while the
+  # standby rebuilds stops the database, and the R2 backups with the monthly
+  # Restore Drill stay the recovery path. A scale-down deletes the removed
+  # instance's PVC, but its PV is Retain: the Hetzner Volume stays until it is
+  # deleted by hand.
+  instances: 2
 
   # PostgreSQL 18.6. Pinned, like every other version in this repository.
   #
@@ -31,8 +37,8 @@ spec:
     # to Hetzner Volumes: a Volume outlives the server that mounts it, so
     # destroying every Worker no longer destroys the data.
     #
-    # 10Gi per instance, three instances — the figure ADR 0005 costed at about
-    # EUR 1.32/month. It was 5Gi here, which did not match the decision.
+    # 10Gi per instance. ADR 0005 costed three instances at about EUR 1.32/month;
+    # two now. It was 5Gi here, which did not match the decision.
     size: 10Gi
     # Retain, not the default class's Delete (ADR 0003, Amendments 2026-10-01).
     # The three PVCs created before this line still name `hcloud-volumes` —

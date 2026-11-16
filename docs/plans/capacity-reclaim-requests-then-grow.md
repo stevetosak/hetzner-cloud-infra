@@ -2,7 +2,7 @@
 title: "Capacity: reclaim requests, then grow"
 description: "How the workers get room for more applications: first the memory that requests reserve and nothing uses, then a purchase that is ready before its trigger fires."
 type: plan
-status: proposed
+status: active
 topics: [kubernetes, provisioning, monitoring]
 ---
 
