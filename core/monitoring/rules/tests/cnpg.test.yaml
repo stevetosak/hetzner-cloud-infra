@@ -1,7 +1,7 @@
 # Unit tests of rules/cnpg.yaml. Run by core/monitoring/check-rules.sh, which
 # writes the rule file next to this one as cnpg.rules.yaml.
 #
-# pod 1 is the primary, pods 2 and 3 the standbys, as on the live cluster.
+# pod 1 is the primary, pod 2 the standby; pod 3 appears only after a failover.
 # Times are seconds since the start of the test.
 rule_files: [cnpg.rules.yaml]
 evaluation_interval: 1m
@@ -14,7 +14,7 @@ tests:
       - {series: 'cnpg_collector_up{cluster="tosak-pg-cluster",namespace="pg-cluster",pod="tosak-pg-cluster-2"}', values: '1x60'}
       - {series: 'cnpg_pg_replication_in_recovery{namespace="pg-cluster",pod="tosak-pg-cluster-1"}', values: '0x60'}
       - {series: 'cnpg_pg_replication_in_recovery{namespace="pg-cluster",pod="tosak-pg-cluster-2"}', values: '1x60'}
-      - {series: 'cnpg_pg_replication_streaming_replicas{namespace="pg-cluster",pod="tosak-pg-cluster-1"}', values: '2x60'}
+      - {series: 'cnpg_pg_replication_streaming_replicas{namespace="pg-cluster",pod="tosak-pg-cluster-1"}', values: '1x60'}
       - {series: 'cnpg_pg_replication_streaming_replicas{namespace="pg-cluster",pod="tosak-pg-cluster-2"}', values: '0x60'}
       - {series: 'cnpg_pg_replication_lag{namespace="pg-cluster",pod="tosak-pg-cluster-2"}', values: '0x60'}
       # Nine failures before the start (as live), every segment archived since.
@@ -119,8 +119,8 @@ tests:
                 (kubectl cnpg status).
       - {eval_time: 12m, alertname: CNPGClusterOffline}
 
-  # One standby stops streaming at minute 0, the second at minute 20. A
-  # standby's own count (0) never fires.
+  # The standby stops streaming at minute 20. A standby's own count (0) never
+  # fires.
   - interval: 1m
     input_series:
       - {series: 'cnpg_pg_replication_in_recovery{namespace="pg-cluster",pod="tosak-pg-cluster-1"}', values: '0x40'}
@@ -129,26 +129,10 @@ tests:
       - {series: 'cnpg_pg_replication_streaming_replicas{namespace="pg-cluster",pod="tosak-pg-cluster-2"}', values: '0x40'}
       - {series: 'cnpg_pg_replication_lag{namespace="pg-cluster",pod="tosak-pg-cluster-2"}', values: '0x9 600x30'}
     alert_rule_test:
-      - eval_time: 15m
-        alertname: CNPGReplicasNotStreaming
-        exp_alerts:
-          - exp_labels: {severity: warning, namespace: pg-cluster}
-            exp_annotations:
-              summary: The primary streams to 1 of 2 standbys.
-              description: >-
-                A standby of tosak-pg-cluster does not stream from the primary.
-                A failover has one candidate fewer, and the daily base backup is
-                taken from a standby.
+      - {eval_time: 15m, alertname: CNPGReplicasNotStreaming}
       - eval_time: 35m
         alertname: CNPGReplicasNotStreaming
         exp_alerts:
-          - exp_labels: {severity: warning, namespace: pg-cluster}
-            exp_annotations:
-              summary: The primary streams to 0 of 2 standbys.
-              description: >-
-                A standby of tosak-pg-cluster does not stream from the primary.
-                A failover has one candidate fewer, and the daily base backup is
-                taken from a standby.
           - exp_labels: {severity: critical, namespace: pg-cluster}
             exp_annotations:
               summary: The primary streams to no standby.

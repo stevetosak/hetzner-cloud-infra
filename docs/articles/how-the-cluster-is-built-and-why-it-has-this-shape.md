@@ -144,7 +144,7 @@ because its key lives inside the cluster, which would make a total loss destroy
 the means to decrypt its own backups ([secrets runbook](../runbook/secrets.md)).
 The rest is data, and the only data git cannot rebuild is PostgreSQL.
 
-PostgreSQL runs on CloudNativePG with its three instances on Hetzner Cloud
+PostgreSQL runs on CloudNativePG with two instances, a primary and a standby, on Hetzner Cloud
 Volumes, which outlive any server and are now kept even when Kubernetes lets
 go of them. Its write-ahead log is archived continuously to Cloudflare R2, and a
 full base backup is taken every day. The bucket's lock covers the write-ahead

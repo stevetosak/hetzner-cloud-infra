@@ -11,7 +11,7 @@ PostgreSQL runs under **CloudNativePG**. One shared cluster,
 | `operator.yaml` | The operator, upstream `cnpg-1.30.0.yaml` without its CRDs and its Namespace |
 | `namespace.yaml` | `cnpg-system` (the operator) and `pg-cluster` (the cluster) |
 | `db-credentials.enc.yaml` | The `db-credentials` Secret, SOPS-encrypted. `secrets.yaml` at the top describes it |
-| `cluster/` | The `Cluster`, built by `kluster db create` and never synced: `fresh/pg-cluster.yaml` (3 instances, 10Gi each on `hcloud-volumes-retain`, archiving through the plugin) and `recover/` (the same Cluster reading the previous generation). See `cluster/README.md` |
+| `cluster/` | The `Cluster`, built by `kluster db create` and never synced: `fresh/pg-cluster.yaml` (2 instances, 10Gi each on `hcloud-volumes-retain`, archiving through the plugin) and `recover/` (the same Cluster reading the previous generation). See `cluster/README.md` |
 | `databases/<project>.yaml` | One `Database` per project database |
 | `plugin-barman-cloud.yaml` | The barman-cloud CNPG-I plugin, upstream `v0.15.1` `manifest.yaml` without its CRD |
 | `objectstore.yaml` | Where backups go: R2 bucket `tosak-pg-backups`, zstd WAL, 30-day retention. The only store a Cluster archives to |
