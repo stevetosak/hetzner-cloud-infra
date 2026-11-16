@@ -28,10 +28,11 @@ crds:
 deployment:
   envoyGateway:
     # Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots
-    # 0 and 1), against the chart's 100m / 256Mi, limit 1024Mi. No CPU limit.
+    # 0 and 1), against the chart's 100m / 256Mi, limit 1024Mi. No limits:
+    # VPA sets the request in place (Autoscaling Plan). The null removes the
+    # chart's default limit, which helm otherwise merges back in.
     resources:
       requests:
         cpu: 10m
         memory: 112Mi
-      limits:
-        memory: 224Mi
+      limits: null

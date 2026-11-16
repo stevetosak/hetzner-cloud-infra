@@ -1525,8 +1525,6 @@ spec:
               containerPort: 7000
               protocol: TCP
           resources:
-            limits:
-              memory: 160Mi
             requests:
               cpu: 15m
               memory: 80Mi
@@ -1691,8 +1689,6 @@ spec:
             containerPort: 9001
             protocol: TCP
           resources:
-            limits:
-              memory: 96Mi
             requests:
               cpu: 10m
               memory: 48Mi
@@ -2096,8 +2092,6 @@ spec:
           successThreshold: 1
           failureThreshold: 3
         resources:
-          limits:
-            memory: 256Mi
           requests:
             cpu: 16m
             memory: 128Mi
@@ -2120,8 +2114,6 @@ spec:
         imagePullPolicy: IfNotPresent
         name: copyutil
         resources:
-          limits:
-            memory: 64Mi
           requests:
             cpu: 10m
             memory: 32Mi
@@ -2586,8 +2578,6 @@ spec:
           successThreshold: 1
           failureThreshold: 3
         resources:
-          limits:
-            memory: 288Mi
           requests:
             cpu: 10m
             memory: 144Mi
@@ -3101,8 +3091,6 @@ spec:
           successThreshold: 1
           failureThreshold: 3
         resources:
-          limits:
-            memory: 1248Mi
           requests:
             cpu: 184m
             memory: 624Mi
