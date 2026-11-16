@@ -58,12 +58,12 @@ spec:
           # then raised after the roll: a fresh pod holds about 92 MiB, the long-running
           # one held 60 MiB (2026-11-05). The 2026-11-12..15 peak was 69 MiB (VPA
           # target 89): 96Mi covers both.
+          # The VPA sets the request in place from here (InPlaceOrRecreate); no memory
+          # limit, so a peak above the request is not killed (Autoscaling Plan).
           resources:
             requests:
               cpu: 10m
               memory: 96Mi
-            limits:
-              memory: 192Mi
       volumes:
         - name: tmp
           emptyDir: {}

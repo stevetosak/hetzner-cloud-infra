@@ -40,11 +40,11 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 30
           # Sized by ADR 0013 from the 2026-11-01..05 peaks (Capacity Plan Snapshots 0 and 1).
+          # The VPA sets the request in place from here (InPlaceOrRecreate); no memory
+          # limit, so a peak above the request is not killed (Autoscaling Plan).
           resources:
             requests:
               cpu: 10m
               memory: 32Mi
-            limits:
-              memory: 64Mi
   strategy:
     type: Recreate

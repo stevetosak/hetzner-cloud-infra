@@ -8,8 +8,8 @@
 # own overlay.
 #
 # 🔴 A container that sets a memory request over 128Mi but no limit is refused
-# at admission (the default limit would be under its request). Set both, as
-# every manifest here does.
+# at admission (the default limit would be under its request). Set both. The
+# platform's own namespaces remove the default limit (../own-workloads).
 apiVersion: v1
 kind: LimitRange
 metadata:

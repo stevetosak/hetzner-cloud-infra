@@ -1,0 +1,18 @@
+# The namespaces of the platform's own applications (authos, doma, mail,
+# tosak-net). The Vertical Pod Autoscaler sizes their requests in place
+# (InPlaceOrRecreate), and their containers carry no memory limit, so the
+# LimitRange sets no default memory limit there: a default limit would be
+# added at admission and refuse a request above it. The default request
+# stays for a container without resources.
+#
+# A client namespace does not use this component: it keeps the base and its
+# default limit.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+  - target:
+      kind: LimitRange
+      name: container-defaults
+    patch: |-
+      - op: remove
+        path: /spec/limits/0/default
