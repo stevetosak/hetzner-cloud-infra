@@ -45,19 +45,22 @@ The parts bound to Hetzner today, read from the repository on 2026-11-08:
 
 The design treats the nodes of every provider as equal members of the cluster
 and describes each site by what it can do. A site's profile names its provider,
-its reliability (a data centre or a home), its reach (a public address or
-behind NAT), its block volumes and its load balancer. A Hetzner site has
-volumes and a load balancer; a home PC has neither and sits behind NAT, but it
-can still carry workload. The profiles live per site in the Node set file of
-each environment and in the Hetzner Worker set, and kluster writes every
+its reliability (`high`, or `best-effort` without a data centre's power,
+cooling and link), its reach (a public address or behind NAT), its block
+volumes and its load balancer. A Hetzner site has volumes and a load balancer;
+a self-hosted machine has neither and sits behind NAT, but it can still carry
+workload. The profiles of every site live in the Node set file of each
+environment, the Hetzner servers belong to the site whose provider is
+`hcloud`, and kluster writes every
 capability as an admin label under `tosak.net.node-restriction.kubernetes.io/`.
 A kubelet cannot set a key under that prefix (NodeRestriction, read in the
 kubernetes v1.37.0 source), so no node can claim a capability it lacks.
 
-Placement follows the profile. Data-centre nodes of every provider carry no
-taint, so any workload may run there, and a new client app goes to any of
-them. Home nodes register with the taint `tosak.net/reliability=home:NoSchedule`
-and take only workloads that tolerate it; Grafana and cert-manager are the
+Placement follows the profile. Nodes of high reliability, on every provider,
+carry no taint, so any workload may run there, and a new client app goes to any
+of them. Best-effort nodes register with the taint
+`tosak.net/reliability=best-effort:NoSchedule` and take only workloads that
+tolerate it; Grafana and cert-manager are the
 first, because neither holds state. A workload that needs a capability has a
 required affinity on it: PostgreSQL on the Hetzner volumes, Envoy and Stalwart
 on the Hetzner load balancer, until part C removes those bindings. An app that
@@ -106,7 +109,7 @@ provider-specific, and the order of the work.
       point, the storage and the private network become provider-neutral in
       part C.
 - [x] Decide which second provider proves the design, and how a rehearsal
-      runs against it: OVHcloud, with the home PC as the first node outside
+      runs against it: OVHcloud, with a self-hosted machine as the first node outside
       Hetzner, proven in a rehearsal and then on live.
 - [x] Write the Decision page: the capability model, the mesh, the providerID
       and CCM and CSI scope, placement and dead-node removal
@@ -115,17 +118,18 @@ provider-specific, and the order of the work.
 
 ## Part B: nodes of any provider join as equals
 
-**Done when:** on live, the home PC joined through `kluster node add` from
-behind NAT, with its profile labels and the home taint, and a pod that
+**Done when:** on live, the self-hosted machine joined through `kluster node add`
+from behind NAT, with its profile labels and the best-effort taint, and a pod that
 tolerates the taint reaches a Service and DNS on other nodes with full-size
 packets; the hcloud CCM neither deletes the node nor sends load-balancer
-traffic to it, and no hcloud CSI node pod runs on it; and the home node,
+traffic to it, and no hcloud CSI node pod runs on it; and the self-hosted node,
 powered off, was removed after 20 minutes with its pods restarted elsewhere,
 then brought back by `kluster node add`.
 
 - [ ] Capability profiles: the Node set file per environment holds the sites
       and their profiles (provider, reliability, reach, block volumes, load
-      balancer), the Hetzner Worker set gets a profile, and kluster writes the
+      balancer), the Hetzner servers belong to the `hcloud` site, and kluster
+      writes the
       admin labels and checks them after each join.
 - [ ] The mesh in kluster: `wg-mesh` on every node, the relay, both Hetzner
       firewalls open for UDP 51821, and the join checks for an overlapping LAN
@@ -138,19 +142,19 @@ then brought back by `kluster node add`.
       `allowedTopologies: csi.hetzner.cloud/location In [hel1]`. The live
       StorageClasses are deleted and made again only with the operator's yes.
 - [ ] Bring-your-own nodes in kluster: the `byo` provisioner, the kubelet
-      settings above, the home taint at registration, the bootstrap with a
+      settings above, the best-effort taint at registration, the bootstrap with a
       console-checked host key, and a ready check that no longer waits for an
       `hcloud://` providerID.
 - [ ] Placement: the required affinities on capabilities (PostgreSQL, Envoy,
       Stalwart), the preferred zone of the data for apps with PostgreSQL, and
-      the home toleration for Grafana and cert-manager.
+      the best-effort toleration for Grafana and cert-manager.
 - [ ] The dead-node remover: a small Go controller in the cluster that taints
       and deletes a node NotReady for 20 minutes, never the control plane.
-- [ ] The home PC (Ryzen 5 3600X, 16 GB) as a clean Ubuntu Server machine.
+- [ ] The self-hosted machine, reinstalled as a clean Ubuntu Server.
 - [ ] Rehearsal: `rehearsal.tfvars` moves off `cx23` to a type in stock, the
-      home PC joins the rehearsal, and the three checks of the finish line
+      self-hosted machine joins the rehearsal, and the three checks of the finish line
       pass there. The rehearsal's cost needs the operator's yes.
-- [ ] Live: the home PC is reset, joins live, and the three checks pass again.
+- [ ] Live: the self-hosted machine is reset, joins live, and the three checks pass again.
 
 ## Part C: the platform runs with no Hetzner node
 
@@ -161,7 +165,7 @@ storage and the node network each run on other providers.
 - [ ] The OVHcloud trial node: one VPS-1 (4 vCores, 8 GB, about 6.99 EUR a
       month before VAT with the backup option) in DE, else SBG, for one month.
       It is ordered only when the stock API shows it and the operator says yes
-      at order time, and it joins as an equal data-centre node with no taint.
+      at order time, and it joins as an equal node of high reliability with no taint.
       At the month's end a report gives its Ready time outside planned work,
       its mesh and pod-network faults, its PostgreSQL latency and its price per
       8 GB against Hetzner's next option; the operator decides keep or cancel.
@@ -183,8 +187,8 @@ storage and the node network each run on other providers.
   a VPS) are read from OVHcloud when its profile is written; none is assumed.
 - Two mesh details are not yet proven and go into the rehearsal: that Flannel
   VXLAN bound to one interface sends to a VTEP the kernel routes through
-  `wg-mesh`, and that a mesh address reached over a home LAN host route passes
-  `rp_filter`.
+  `wg-mesh`, and that a mesh address reached over a host route on a
+  self-hosted site's LAN passes `rp_filter`.
 - How the dead-node remover guards a Worker that is cut off but still
   running: Kubernetes documents the `out-of-service` taint for a node that is
   already powered off, and the remover cannot see that

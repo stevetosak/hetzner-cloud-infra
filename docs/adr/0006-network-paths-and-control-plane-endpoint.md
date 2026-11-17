@@ -162,7 +162,7 @@ nothing in it is secret.
 
 **2026-11-17 — a fourth interface for machines outside Hetzner.**
 [ADR 0016](./0016-every-provider-is-a-set-of-capabilities-and-workers-of-any-provider-join-as-equals.md)
-lets Workers of any provider, a home PC included, join the cluster over
+lets Workers of any provider, a self-hosted machine included, join the cluster over
 `wg-mesh`, a WireGuard mesh that kluster builds (`10.101.0.0/16`, UDP 51821).
 It takes effect when part B of the
 [Providers Plan](../plans/providers-the-platform-adapts-to-more-than-one.md)
