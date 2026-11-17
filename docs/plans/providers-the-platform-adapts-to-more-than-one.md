@@ -126,11 +126,12 @@ traffic to it, and no hcloud CSI node pod runs on it; and the self-hosted node,
 powered off, was removed after 20 minutes with its pods restarted elsewhere,
 then brought back by `kluster node add`.
 
-- [ ] Capability profiles: the Node set file per environment holds the sites
+- [x] Capability profiles: the Node set file per environment holds the sites
       and their profiles (provider, reliability, reach, block volumes, load
       balancer), the Hetzner servers belong to the `hcloud` site, and kluster
-      writes the
-      admin labels and checks them after each join.
+      writes the admin labels and checks them after each join
+      ([Set the node profile](../runbook/workers.md#set-the-node-profile)).
+      Every live Node carries the `hel1` profile since 2026-11-17.
 - [ ] The mesh in kluster: `wg-mesh` on every node, the relay, both Hetzner
       firewalls open for UDP 51821, and the join checks for an overlapping LAN
       and the link MTU.
