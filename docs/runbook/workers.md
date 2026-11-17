@@ -319,7 +319,14 @@ kluster node list                    # PROFILE hel1, no drift
 
 On live kluster reaches the Control Plane through WireGuard and opens nothing.
 A rehearsal opens bootstrap SSH on the Control Plane firewall under `--apply`
-and closes it at the end; there Plan Mode reads no Node. Not yet run on live.
+and closes it at the end; there Plan Mode reads no Node.
+
+Run on live on 2026-11-17. The run labelled `k8s-cp`, `k8swk1`, `k8swk2` and
+`k8swk3` with `provider=hcloud`, `site=hel1`, `reliability=high`,
+`reach=public`, `block-volumes=hcloud` and `load-balancer=hcloud`, and
+`kubectl get nodes -L` with the six keys read them back on all four. `node list`
+then showed PROFILE `hel1` and no drift, and a second Plan Mode run found every
+Stage done.
 
 ## Why this was done by hand
 
