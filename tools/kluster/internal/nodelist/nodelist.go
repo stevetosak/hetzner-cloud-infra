@@ -1,6 +1,7 @@
 // Package nodelist puts the three records of a Worker side by side — the
 // Worker set, the Hetzner servers and the Kubernetes Nodes — and marks where
-// they disagree (`kluster node list`).
+// they disagree with each other or with the profile of their site
+// (`kluster node list`).
 package nodelist
 
 import (
@@ -13,6 +14,7 @@ import (
 
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/cloud"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/kube"
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/nodeset"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/workerset"
 )
 
@@ -33,7 +35,8 @@ type Input struct {
 	Servers      []*cloud.Server
 	Nodes        []kube.Node
 	NodesRead    bool
-	ControlPlane string // left out of every record
+	ControlPlane string       // left out of every record
+	Site         nodeset.Site // the site every Hetzner Worker belongs to
 }
 
 // Compare returns one Row per Worker name, sorted.
@@ -61,13 +64,13 @@ func Compare(in Input) []Row {
 	out := make([]Row, 0, len(rows))
 	for _, name := range slices.Sorted(maps.Keys(rows)) {
 		r := rows[name]
-		r.Drift = drift(r, in.NodesRead)
+		r.Drift = drift(r, in.Site, in.NodesRead)
 		out = append(out, *r)
 	}
 	return out
 }
 
-func drift(r *Row, nodesRead bool) []string {
+func drift(r *Row, site nodeset.Site, nodesRead bool) []string {
 	var d []string
 	switch {
 	case r.Set != nil && r.Server == nil:
@@ -81,6 +84,9 @@ func drift(r *Row, nodesRead bool) []string {
 		if !r.Server.Running() {
 			d = append(d, "server "+r.Server.Status)
 		}
+	}
+	if r.Server != nil && r.Server.Location != site.Name {
+		d = append(d, fmt.Sprintf("server in %s, site %s", r.Server.Location, site.Name))
 	}
 	if !nodesRead {
 		return d
@@ -98,6 +104,11 @@ func drift(r *Row, nodesRead bool) []string {
 		if r.Set != nil && r.Node.InternalIP != r.Set.PrivateIP {
 			d = append(d, fmt.Sprintf("Node InternalIP %s, set %s", r.Node.InternalIP, r.Set.PrivateIP))
 		}
+		if r.Set != nil {
+			if c := nodeset.Diff(r.Node.Labels, site.Labels()); !c.Empty() {
+				d = append(d, "profile: "+c.String())
+			}
+		}
 	}
 	return d
 }
@@ -111,9 +122,9 @@ func HasDrift(rows []Row) bool {
 // unknown.
 func Print(w io.Writer, rows []Row, nodesRead bool) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "WORKER\tSET (private, vpn)\tSERVER (status, private)\tNODE\tDRIFT")
+	fmt.Fprintln(tw, "WORKER\tSET (private, vpn)\tSERVER (status, private)\tNODE\tPROFILE\tDRIFT")
 	for _, r := range rows {
-		set, srv, node := "-", "-", "-"
+		set, srv, node, profile := "-", "-", "-", "-"
 		if r.Set != nil {
 			set = r.Set.PrivateIP + ", " + r.Set.VpnIP
 		}
@@ -128,14 +139,20 @@ func Print(w io.Writer, rows []Row, nodesRead bool) error {
 		case r.Node != nil:
 			node = "NotReady " + r.Node.Kubelet
 		}
+		switch {
+		case !nodesRead:
+			profile = "?"
+		case r.Node != nil && r.Node.Labels[nodeset.Prefix+nodeset.KeySite] != "":
+			profile = r.Node.Labels[nodeset.Prefix+nodeset.KeySite]
+		}
 		d := "-"
 		if len(r.Drift) > 0 {
 			d = "⚠ " + strings.Join(r.Drift, "; ")
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", r.Name, set, srv, node, d)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", r.Name, set, srv, node, profile, d)
 	}
 	if len(rows) == 0 {
-		fmt.Fprintln(tw, "(no Workers in any record)\t\t\t\t")
+		fmt.Fprintln(tw, "(no Workers in any record)\t\t\t\t\t")
 	}
 	return tw.Flush()
 }
