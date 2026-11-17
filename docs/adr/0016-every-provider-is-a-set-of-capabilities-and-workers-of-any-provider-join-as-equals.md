@@ -1,6 +1,6 @@
 ---
 title: "Every provider is a set of capabilities, and Workers of any provider join as equals"
-description: "Why the cluster stops treating any provider as its core, how a site's capabilities decide where workloads run, and the mesh, registration and lifecycle rules that let a machine of any provider, a home PC included, join as an equal Worker."
+description: "Why the cluster stops treating any provider as its core, how a site's capabilities decide where workloads run, and the mesh, registration and lifecycle rules that let a machine of any provider, a self-hosted one included, join as an equal Worker."
 type: decision
 status: accepted
 date: 2026-11-17
@@ -26,11 +26,11 @@ The operator set the goal on 2026-11-17: no provider is core. The platform
 keeps running with any provider gone, Hetzner included, and what matters is
 room and options for the current workload wherever it runs, with the same
 behaviour everywhere. The same week brought a second kind of machine: any
-Ubuntu machine may join, self-hosted ones included, starting with a home PC
-(Ryzen 5 3600X, 16 GB) behind a home router's NAT. Providers are not equal,
-though. A data centre has power, cooling and a link that a home does not;
-Hetzner offers volumes and a load balancer that a home PC lacks; and distance
-costs: a ping from `k8s-cp` to OVHcloud's Strasbourg site took 40.5 ms
+Ubuntu machine may join, self-hosted ones included, starting with one
+self-hosted machine behind a router's NAT. Providers are not equal, though. A
+data centre has power, cooling and a link that a self-hosted site may lack;
+Hetzner offers volumes and a load balancer that the self-hosted machine lacks;
+and distance costs: a ping from `k8s-cp` to OVHcloud's Strasbourg site took 40.5 ms
 (10 pings, 2026-11-16).
 
 The choice is hard to reverse because it reaches every layer at once: how a
@@ -49,24 +49,29 @@ Hetzner offers, the volumes, the load balancers and the controllers that serve
 them, stays as Hetzner capabilities. In part C, the control plane, the entry
 point, the storage and the node network become provider-neutral, and the
 platform is proven with no Hetzner server at all. OVHcloud is the second
-provider, in Limburg (DE) first and Strasbourg second; the home PC is the first
-machine outside Hetzner.
+provider, in Limburg (DE) first and Strasbourg second; the self-hosted machine is the
+first machine outside Hetzner.
 
 ### A site's capabilities are labels no kubelet can set
 
 A site is a place where machines run: a Hetzner location, an OVHcloud site, a
-home. Its profile names the provider, the reliability (`datacenter` or `home`),
-the reach (`public`, or `nat` for a site no peer can send to), whether it has
-block volumes, and whether it has a load balancer. Hetzner's `hel1` is public
-and has both volumes and a load balancer; the home PC has neither and sits
-behind NAT. Profiles are written per site, in the Node set file of each
-environment and in the Hetzner Worker set, so a new provider or site is a new
-profile with no code change, and a home site that gets a port forward changes
-only its reach.
+self-hosted site. Its profile names the provider, the reliability (`high` for a
+site with a data centre's power, cooling and link, `best-effort` for one
+without), the reach (`public`, or `nat` for a site no peer can send to), and the
+kind of block volumes and of load balancer it has, if any. Hetzner's `hel1` has
+high reliability, is public, and has Hetzner's volumes and load balancer; the
+self-hosted machine's site is best-effort, sits behind NAT and has neither. The
+profiles of every site of an environment are written in its Node set file, and
+the Hetzner servers belong to the site whose provider is `hcloud`, so a new
+provider or site is a new profile with no code change, and a self-hosted site
+that gets a port forward changes only its reach.
 
 kluster writes each capability onto every Node of the site as an admin label
 under `tosak.net.node-restriction.kubernetes.io/`, beside the provider and the
-site. A kubelet cannot set or change a key under a
+site. A capability's label names its kind, `block-volumes=hcloud` or
+`load-balancer=hcloud`, and a site without the capability has no label, so a
+workload that needs Hetzner's load balancer never lands behind another one. A
+kubelet cannot set or change a key under a
 `node-restriction.kubernetes.io/` prefix: the kubelet's own flag check refuses
 it at registration, and the NodeRestriction admission plugin refuses it on
 update (read in the kubernetes v1.37.0 source). A machine therefore cannot
@@ -76,21 +81,22 @@ site, which it is allowed to do.
 
 ### Placement follows the profile
 
-Data-centre nodes of every provider carry no taint, so any workload may run on
-them, and a new client application goes to any of them. Home nodes register
-with the taint `tosak.net/reliability=home:NoSchedule` and take only workloads
-that tolerate it. A kubelet cannot change its own taints after registration,
+Nodes of high reliability, on every provider, carry no taint, so any workload
+may run on them, and a new client application goes to any of them. Best-effort
+nodes register with the taint `tosak.net/reliability=best-effort:NoSchedule`
+and take only workloads that tolerate it. A kubelet cannot change its own taints after registration,
 but NodeRestriction checks taints only on update, so `--register-with-taints`
 sets it at registration; kluster checks it after the join and adds it as admin
 when it is missing. Grafana and cert-manager tolerate it first, because neither
-holds state. Argo CD stays on data-centre nodes.
+holds state. Argo CD stays on nodes of high reliability.
 
 A workload that needs a capability carries a required node affinity on its
 label: PostgreSQL on block volumes, Envoy and Stalwart on the Hetzner load
 balancer. These bindings last until part C makes the storage and the entry
 point provider-neutral. Distance is a preference, not a rule: an application
 that uses PostgreSQL prefers the zone of its data, because every query pays the
-round trip, and services that need availability prefer data-centre nodes.
+round trip, and services that need availability prefer nodes of high
+reliability.
 
 ### The mesh is kluster's own, and Flannel runs inside it
 
@@ -100,7 +106,8 @@ machine, on UDP port 51821. Each machine makes its own key, and only the public
 key leaves it. kluster writes `/etc/wireguard/wg-mesh.conf` and applies a
 change with `wg syncconf`, so live tunnels stay up, and `wg-quick@wg-mesh`
 brings the interface up at boot. Every private network the operator owns is
-trusted, the Hetzner private network and each home LAN alike, and a pair of
+trusted, the Hetzner private network and each self-hosted site's LAN alike,
+and a pair of
 machines inside one trusted network talks over it directly; every other pair
 uses the mesh. A site's reach decides how a pair connects. A machine behind NAT
 starts its tunnels to public peers and keeps them open with a keepalive every
@@ -126,10 +133,10 @@ planned for the smallest link: the tunnel MTU is 1400, Flannel's
 When a machine joins, kluster measures its site's link MTU and refuses a LAN
 that overlaps a cluster range: the private network `10.0.0.0/16`, the pods'
 `10.244.0.0/16`, the services' `10.96.0.0/16`, the VPN's `10.100.0.0/24` or the
-mesh. On a home site, the host firewall lets pods reach the internet and the
+mesh. On a self-hosted site, the host firewall lets pods reach the internet and the
 cluster's machines, and no other address on the LAN. Every public machine
 accepts UDP 51821: both Hetzner firewalls open it from any address, an
-OVHcloud machine's host firewall opens it, and a home site behind NAT opens
+OVHcloud machine's host firewall opens it, and a self-hosted site behind NAT opens
 nothing. This changes ADR 0006, as its
 [amendment of 2026-11-17](./0006-network-paths-and-control-plane-endpoint.md#amendments)
 records.
@@ -170,8 +177,9 @@ operator has set up. The host Stages are shared; the kubelet flags, the mesh
 peer and the Node check come from the provider. Machines that Terraform does
 not create are listed in a Node set file per environment, which the first
 `node add` run writes and the operator commits before the second, the same rule
-as the Worker set. The repository is public, so the file holds no home public
-address, and a home site's name does not tell where the home is.
+as the Worker set. The repository is public, so the file holds no public
+address of a self-hosted site, and such a site's name, `ts1` and on, tells
+nothing of where it is.
 
 A bring-your-own machine is reached once at its own address, with the
 cluster's key put in at install and its host key checked against the
@@ -218,17 +226,18 @@ mesh, trusted networks included, stays possible later as the same rule with no
 trusted network. Direct routing, with the pod ranges in the mesh's allowed
 addresses instead of VXLAN, stays possible too; it was set aside so that
 Flannel remains the only component that routes pods. Between two NAT sites, a
-relay works today, with nothing to configure at the home router; hole punching
-or a coordinator would add code or a service for a case one home site does not
-have.
+relay works today, with nothing to configure at the router; hole punching or a
+coordinator would add code or a service for a case one self-hosted site does
+not have.
 
 Placement could have been opt-in by provider, as the first draft had it: a
 taint per provider, and tolerations on whatever may leave Hetzner. That makes
-Hetzner the default home of everything, a core set by another name. A taint on
-home sites only keeps every data-centre node equal and leaves reliability, the
-one real difference, as the only thing a workload opts into. Profiles could
+Hetzner the default place of everything, a core set by another name. A taint
+on best-effort sites only keeps every node of high reliability equal and leaves
+reliability, the one real difference, as the only thing a workload opts into. Profiles could
 have been one per provider in kluster's code, or one per node; one per site
-lets a new provider arrive without code and lets two home sites differ.
+lets a new provider arrive without code and lets two self-hosted sites
+differ.
 
 Removing dead Workers could have stayed with the operator, but a node that dies
 at night would then hold its StatefulSet pods until someone looked, and kluster
@@ -250,16 +259,34 @@ had one port on one server; WireGuard sends nothing back to a packet without a
 valid handshake from a known key, which keeps that exposure small but not
 zero. Two mesh details are not proven yet and go into the rehearsal: that
 Flannel's VXLAN, bound to one interface, sends to an endpoint the kernel routes
-through `wg-mesh`, and that a mesh address reached over a home LAN host route
-passes `rp_filter`. Traffic between two NAT sites goes through one relay
+through `wg-mesh`, and that a mesh address reached over a host route on a
+self-hosted site's LAN passes `rp_filter`. Traffic between two NAT sites goes through one relay
 Worker, which adds its latency and bandwidth to those pairs and fails with it.
 
 🔴 Kubernetes documents the `out-of-service` taint for a node that is already
 shut down or powered off, and says to verify that before the taint is added
 ([non-graceful node shutdown](https://kubernetes.io/docs/concepts/cluster-administration/node-shutdown/),
 read 2026-11-17). The dead-node controller cannot verify it. A Worker cut off
-from the Control Plane while it still runs, a home site whose link drops for
+from the Control Plane while it still runs, a self-hosted site whose link drops for
 example, gets the taint after 20 minutes like a dead one: its pods are
 force-deleted and their volumes detached while the machine may still be
 writing, and a StatefulSet pod can run twice until the link returns. How the
 controller guards that case is decided when it is built in part B.
+
+## Amendments
+
+**2026-11-17 — the profile's values, and where the Hetzner profile lives.**
+Building the profiles, the first step of part B, settled three details, and the
+text above is corrected to match. The reliability values are `high` and
+`best-effort`: a value names the guarantee a site gives, not the kind of place
+it is, and a best-effort node registers with the taint
+`tosak.net/reliability=best-effort:NoSchedule`. A capability's label names its
+kind, `block-volumes=hcloud` and `load-balancer=hcloud`, and a site without the
+capability carries no label, because Envoy and Stalwart need Hetzner's load
+balancer and not any load balancer. The profile of every site, Hetzner's
+included, lives in the environment's Node set file, and the Hetzner Worker set
+stays as Terraform reads it: the Hetzner servers belong to the one site whose
+provider is `hcloud`, and kluster checks that each server's location, read from
+the Hetzner API, is that site's name. A Worker set entry names its own site only
+once a second Hetzner location is in use. Self-hosted sites are named `ts1`,
+`ts2` and on.
