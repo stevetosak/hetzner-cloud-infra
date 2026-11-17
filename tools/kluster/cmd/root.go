@@ -15,6 +15,7 @@ import (
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/config"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/env"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/hostkey"
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/nodeset"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/tf"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/workerset"
 )
@@ -138,6 +139,30 @@ func (a *app) module(ctx context.Context, name string) (*tf.Module, error) {
 // workerSetPath is the file that declares this environment's Workers.
 func (a *app) workerSetPath() (string, error) {
 	return a.cfg.Path(a.cfg.Envs[a.env.Name].WorkerSet)
+}
+
+// hcloudSite is the site of this environment's Hetzner servers, from its
+// Node set file.
+func (a *app) hcloudSite() (nodeset.Site, error) {
+	path, err := a.cfg.Path(a.cfg.Envs[a.env.Name].NodeSet)
+	if err != nil {
+		return nodeset.Site{}, err
+	}
+	set, err := nodeset.Load(path)
+	if err != nil {
+		return nodeset.Site{}, err
+	}
+	return set.Hcloud(), nil
+}
+
+// checkSite refuses a Hetzner server that does not stand in the location
+// its site names: its Node would carry a site it is not on.
+func checkSite(srv *cloud.Server, site nodeset.Site) error {
+	if srv.Location != site.Name {
+		return fmt.Errorf("%s stands in %q, but the Node set's %s site is %s: a Hetzner server belongs to that site, so its location must be its name",
+			srv.Name, srv.Location, nodeset.ProviderHcloud, site.Name)
+	}
+	return nil
 }
 
 // requireRehearsal refuses a command that exists only for the rehearsal

@@ -191,6 +191,15 @@ func (a *app) withBootstrapSSH(ctx context.Context, fn func() error) (err error)
 // createAndBuild creates a declared Worker's server if it has none, and
 // builds it.
 func (a *app) createAndBuild(ctx context.Context, workers *tf.Module, w workerset.Worker, srv, cpSrv *cloud.Server, cp *stage.Host) error {
+	// A Control Plane outside the hcloud site means the Node set does not
+	// describe this project: refused before a server is created.
+	site, err := a.hcloudSite()
+	if err != nil {
+		return err
+	}
+	if err := checkSite(cpSrv, site); err != nil {
+		return err
+	}
 	if srv == nil {
 		if err := a.checkNoNode(ctx, cp, w.Name); err != nil {
 			return err
@@ -488,7 +497,11 @@ func (a *app) planNewWorker(ctx context.Context, w workerset.Worker, cpSrv *clou
 	if err := stage.PlanNew(ctx, []stage.Stage{join}, w.Name, a.out); err != nil {
 		return err
 	}
-	return stage.PlanNew(ctx, []stage.Stage{a.nodeReady(h)}, cpName, a.out)
+	site, err := a.hcloudSite()
+	if err != nil {
+		return err
+	}
+	return stage.PlanNew(ctx, []stage.Stage{a.nodeReady(h), stages.NodeProfile{Node: w.Name, Site: site}}, cpName, a.out)
 }
 
 // buildWorker runs every Stage of a new Worker, on it and on the Control
@@ -496,6 +509,13 @@ func (a *app) planNewWorker(ctx context.Context, w workerset.Worker, cpSrv *clou
 // resumes.
 func (a *app) buildWorker(ctx context.Context, w workerset.Worker, srv, cpSrv *cloud.Server, cp *stage.Host) error {
 	opts := stage.Options{Apply: true, Out: a.out}
+	site, err := a.hcloudSite()
+	if err != nil {
+		return err
+	}
+	if err := checkSite(srv, site); err != nil {
+		return err
+	}
 	c, err := a.dialRoot(ctx, srv.PublicIP, 5*time.Minute)
 	if err != nil {
 		return fmt.Errorf("first login to %s: %w", w.Name, err)
@@ -546,5 +566,5 @@ func (a *app) buildWorker(ctx context.Context, w workerset.Worker, srv, cpSrv *c
 	if err := stage.Run(ctx, []stage.Stage{join}, wh, opts); err != nil {
 		return err
 	}
-	return stage.Run(ctx, []stage.Stage{a.nodeReady(h)}, cp, opts)
+	return stage.Run(ctx, []stage.Stage{a.nodeReady(h), stages.NodeProfile{Node: w.Name, Site: site}}, cp, opts)
 }

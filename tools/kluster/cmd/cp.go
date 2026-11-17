@@ -180,6 +180,13 @@ func (a *app) planNewControlPlane(ctx context.Context) error {
 func (a *app) buildControlPlane(ctx context.Context, srv *cloud.Server) error {
 	cp := a.cfg.ControlPlane
 	opts := stage.Options{Apply: true, Out: a.out}
+	site, err := a.hcloudSite()
+	if err != nil {
+		return err
+	}
+	if err := checkSite(srv, site); err != nil {
+		return err
+	}
 
 	auth, err := remote.Auth(a.cfg.SSH.IdentityFile)
 	if err != nil {
@@ -272,7 +279,8 @@ func (a *app) dialRoot(ctx context.Context, addr string, wait time.Duration) (*r
 	return remote.DialWait(wctx, addr, remote.Config{User: "root", Auth: auth, HostKeyCallback: cb}, 5*time.Second)
 }
 
-// cpStages are the Control Plane's runbook steps 2 to 8, in order.
+// cpStages are the Control Plane's runbook steps 2 to 8, in order, and its
+// Node profile.
 func (a *app) cpStages(srv *cloud.Server) ([]stage.Stage, error) {
 	c := a.cfg
 	cp := c.ControlPlane
@@ -306,6 +314,10 @@ func (a *app) cpStages(srv *cloud.Server) ([]stage.Stage, error) {
 	if err != nil {
 		return nil, err
 	}
+	site, err := a.hcloudSite()
+	if err != nil {
+		return nil, err
+	}
 	return []stage.Stage{
 		stages.PrivateNetwork{Interface: c.Node.NetworkInterface, MAC: srv.PrivateMAC, IP: cp.PrivateIP},
 		stages.BaseHost{User: cp.SSHUser, Containerd: c.Versions.Containerd, Runc: c.Versions.Runc, CNIPlugins: c.Versions.CNIPlugins},
@@ -317,6 +329,7 @@ func (a *app) cpStages(srv *cloud.Server) ([]stage.Stage, error) {
 		stages.CloudController{Token: token, Network: c.Cluster.HcloudNetwork, Manifest: ccm,
 			Node: cp.Name, ServerID: srv.ID, PrivateIP: cp.PrivateIP},
 		stages.CSI{Manifest: csi},
+		stages.NodeProfile{Node: cp.Name, Site: site},
 	}, nil
 }
 
