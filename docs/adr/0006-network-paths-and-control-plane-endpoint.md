@@ -157,3 +157,42 @@ nothing in it is secret.
   not read this. That is the price of holding the range.
 - Node-level filtering was not built, only kept reachable. Nothing filters the
   Private Network today.
+
+## Amendments
+
+**2026-11-17 — a fourth interface for machines outside Hetzner.**
+[ADR 0016](./0016-every-provider-is-a-set-of-capabilities-and-workers-of-any-provider-join-as-equals.md)
+lets Workers of any provider, a home PC included, join the cluster over
+`wg-mesh`, a WireGuard mesh that kluster builds (`10.101.0.0/16`, UDP 51821).
+It takes effect when part B of the
+[Providers Plan](../plans/providers-the-platform-adapts-to-more-than-one.md)
+lands; until then the decision above describes the live cluster. Four claims
+change with it.
+
+"Each interface has one job" gains a fourth interface. `wg-mesh` carries the
+node traffic, kubelet to API server and Flannel's VXLAN, of every pair of
+machines that are not inside one trusted private network. The Private Network
+still carries all traffic between Hetzner servers, and the VPN keeps its one
+job.
+
+The six settings change for a machine outside Hetzner, and they are no longer
+all there is. Setting 2, `kubelet --node-ip`, is the mesh address on such a
+machine. Setting 3 holds for Hetzner servers only: other machines register
+without a cloud provider. Setting 4 gains a second `--iface-regex=^10\.101\.`
+after `^10\.0\.`, and Flannel's `Backend.MTU` goes from 1450 to 1400, so pods
+get 1350. Setting 6 stays the same on every machine, `k8s-cp.tosak.internal`
+to `10.0.1.5`, and a machine outside Hetzner reaches that address over
+`wg-mesh`. The mesh configuration kluster writes is a seventh setting: its
+allowed addresses decide which interface that machine's node traffic takes, and
+a mistake there is as silent as in the other six.
+
+"Only the hub accepts an inbound WireGuard port" now holds for `wg0` only. On
+`wg-mesh` every public machine accepts UDP 51821: `tosak-cp-firewall` and
+`tosak-worker-firewall` both open it from any address, so the Worker firewall
+no longer opens nothing, and the Public Interface carries two inbound ports
+instead of one.
+
+The pages that describe the live network, the glossary entries for the
+Private Network, the Public Interface and the Control Plane Endpoint, the
+[article on how the cluster is built](../articles/how-the-cluster-is-built-and-why-it-has-this-shape.md),
+and the Control Plane and Worker runbooks, are corrected when part B lands.

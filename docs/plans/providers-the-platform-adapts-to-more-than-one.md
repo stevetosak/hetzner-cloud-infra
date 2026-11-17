@@ -108,9 +108,10 @@ provider-specific, and the order of the work.
 - [x] Decide which second provider proves the design, and how a rehearsal
       runs against it: OVHcloud, with the home PC as the first node outside
       Hetzner, proven in a rehearsal and then on live.
-- [ ] Write the Decision page: the capability model, the mesh, the providerID
-      and CCM and CSI scope, placement and dead-node removal. It amends
-      ADR 0006, because both Hetzner firewalls open UDP 51821.
+- [x] Write the Decision page: the capability model, the mesh, the providerID
+      and CCM and CSI scope, placement and dead-node removal
+      ([ADR 0016](../adr/0016-every-provider-is-a-set-of-capabilities-and-workers-of-any-provider-join-as-equals.md)).
+      It amends ADR 0006, because both Hetzner firewalls open UDP 51821.
 
 ## Part B: nodes of any provider join as equals
 
@@ -184,5 +185,9 @@ storage and the node network each run on other providers.
   VXLAN bound to one interface sends to a VTEP the kernel routes through
   `wg-mesh`, and that a mesh address reached over a home LAN host route passes
   `rp_filter`.
+- How the dead-node remover guards a Worker that is cut off but still
+  running: Kubernetes documents the `out-of-service` taint for a node that is
+  already powered off, and the remover cannot see that
+  ([ADR 0016](../adr/0016-every-provider-is-a-set-of-capabilities-and-workers-of-any-provider-join-as-equals.md#what-it-costs)).
 - The name of what tosak.net is. It runs on other providers' compute, so
   "cloud platform" may not fit; the operator has not chosen a name.
