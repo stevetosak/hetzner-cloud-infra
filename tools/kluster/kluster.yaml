@@ -139,6 +139,10 @@ envs:
     # The Worker set. kluster writes it for `node add` and `node remove`
     # and runs no Terraform until the edit is committed.
     workerSet: ../../infra/workers/terraform.tfvars
+    # Every site of this environment and its capability profile (ADR 0016,
+    # Amendments). kluster writes a site's profile on each of its Nodes as
+    # admin labels.
+    nodeSet: ../../infra/nodes/live.yaml
     # After a Control Plane build the hub has a new key: kluster edits the
     # operator's WireGuard config (with sudo) and merges the new kubeconfig.
     laptop:
@@ -163,6 +167,9 @@ envs:
     # Its own Worker set. terraform.tfvars loads in every environment, so
     # without this file a rehearsal `node add` would write the live set.
     workerSet: ../../infra/workers/rehearsal.tfvars
+    # Its own Node set, so a site changed for a test never changes the
+    # profile of a live Node.
+    nodeSet: ../../infra/nodes/rehearsal.yaml
     # A rehearsal hub has the live VPN addresses, so its configs go to files
     # of their own and the operator's live setup is never touched. kluster
     # proves the rehearsal VPN with its own peer instead.

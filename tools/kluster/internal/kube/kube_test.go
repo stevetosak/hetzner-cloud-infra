@@ -3,6 +3,7 @@ package kube
 import (
 	"context"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -24,14 +25,16 @@ func TestParseNodes(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []Node{
-		{Name: "k8s-cp", Ready: true, InternalIP: "10.0.1.5", Kubelet: "v1.37.1", ControlPlane: true},
-		{Name: "k8swk1", Ready: false, InternalIP: "10.0.2.6", Kubelet: "v1.37.1"},
+		{Name: "k8s-cp", Ready: true, InternalIP: "10.0.1.5", Kubelet: "v1.37.1", ControlPlane: true,
+			Labels: map[string]string{"node-role.kubernetes.io/control-plane": ""}},
+		{Name: "k8swk1", Ready: false, InternalIP: "10.0.2.6", Kubelet: "v1.37.1",
+			Labels: map[string]string{"role": "worker"}},
 	}
 	if len(nodes) != len(want) {
 		t.Fatalf("got %+v", nodes)
 	}
 	for i := range want {
-		if nodes[i] != want[i] {
+		if !reflect.DeepEqual(nodes[i], want[i]) {
 			t.Errorf("node %d = %+v, want %+v", i, nodes[i], want[i])
 		}
 	}
@@ -177,6 +180,19 @@ func TestPatchConfigMapDataSendsOneKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := `KUBECONFIG=/etc/kubernetes/admin.conf kubectl '-n' 'kube-system' 'patch' 'configmap' 'kubelet-config' '--type' 'merge' '-p' '{"data":{"kubelet":"a: '\''b'\''\n"}}'`
+	if r.cmd != want {
+		t.Errorf("ran\n%s\nwant\n%s", r.cmd, want)
+	}
+}
+
+func TestLabelSetsInOrderAndRemoves(t *testing.T) {
+	r := &recorder{}
+	set := map[string]string{"x/site": "hel1", "x/provider": "hcloud"}
+	if err := (Kubectl{Exec: r}).Label(context.Background(), "k8swk1", set, []string{"x/reach", "x/load-balancer"}); err != nil {
+		t.Fatal(err)
+	}
+	want := "KUBECONFIG=/etc/kubernetes/admin.conf kubectl 'label' 'node' 'k8swk1' '--overwrite' " +
+		"'x/provider=hcloud' 'x/site=hel1' 'x/load-balancer-' 'x/reach-'"
 	if r.cmd != want {
 		t.Errorf("ran\n%s\nwant\n%s", r.cmd, want)
 	}

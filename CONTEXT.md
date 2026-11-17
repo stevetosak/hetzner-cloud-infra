@@ -81,7 +81,8 @@ Historically "node" meant any server in the cluster. Every piece of automation
 in this repo that says "node" — `kluster node add`, `kluster node remove`,
 `kluster node list`, `kluster reset`, `kluster bootstrap`, and the deleted
 `infra/scripts/bootstrap/reset-nodes.sh` — operates on **Workers only**, and
-cannot act on the Control Plane at all.
+cannot act on the Control Plane at all. The one exception is `kluster node
+profile`, which labels the Kubernetes Node of the Control Plane too.
 
 That gap between the word and the behaviour hid the fact that nothing in the
 system could rebuild a Control Plane. Always write **Worker** or **Control
@@ -122,6 +123,33 @@ The Worker set is written down per environment: `infra/workers/terraform.tfvars`
 for live, `infra/workers/rehearsal.tfvars` for a rehearsal. `kluster node add`
 and `node remove` edit the file, and kluster plans nothing on it until it is
 committed.
+
+## Site
+
+A place where machines run: a Hetzner location such as `hel1`, an OVHcloud
+site, a self-hosted site. A self-hosted site is named `ts1`, `ts2` and on, a
+name that says nothing of where it is. Every Node stands at exactly one site,
+and the Control Plane and the Worker set stand at the one site whose provider
+is `hcloud`; its name must be their Hetzner location
+([ADR 0016](docs/adr/0016-every-provider-is-a-set-of-capabilities-and-workers-of-any-provider-join-as-equals.md)).
+
+## Capability Profile
+
+What a workload can count on at a site: the provider, the reliability (`high`
+or `best-effort`), the reach (`public` or `nat`), and the kind of block volume
+and load balancer the site has, if any. kluster writes the profile onto every
+Node of the site as admin labels under
+`tosak.net.node-restriction.kubernetes.io/`, which no kubelet can set, so a
+placement rule can trust them. One profile per site, never per provider or per
+Node.
+
+## Node Set
+
+The file that lists every site of one environment and its Capability
+Profile: `infra/nodes/live.yaml` for live, `infra/nodes/rehearsal.yaml` for a
+rehearsal (`nodeSet` in `kluster.yaml`). It says where Nodes may stand and
+what each place offers. The Worker set says which Hetzner Workers exist; the
+two are separate files.
 
 ## Private Network
 

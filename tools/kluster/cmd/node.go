@@ -29,7 +29,8 @@ var nodeCmd = &cobra.Command{
 var nodeListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "The Worker set, the Hetzner servers and the Nodes side by side, drift marked",
-	Long: "Read-only. The Nodes are read with kubectl on the Control Plane. In a rehearsal that needs " +
+	Long: "Read-only. The Nodes are read with kubectl on the Control Plane; PROFILE is the site label a " +
+		"Node carries, and drift marks a profile that differs from its site in the Node set file. In a rehearsal that needs " +
 		"bootstrap SSH on the Control Plane firewall; node list never opens it, so with it closed the " +
 		"Node column shows ?.",
 	Args: cobra.NoArgs,
@@ -47,6 +48,10 @@ func nodeList(ctx context.Context, a *app) error {
 	if err != nil {
 		return err
 	}
+	site, err := a.hcloudSite()
+	if err != nil {
+		return err
+	}
 	servers, err := a.api.Servers(ctx)
 	if err != nil {
 		return err
@@ -58,6 +63,7 @@ func nodeList(ctx context.Context, a *app) error {
 		Nodes:        nodes,
 		NodesRead:    nodesErr == nil,
 		ControlPlane: a.cfg.ControlPlane.Name,
+		Site:         site,
 	}
 	rows := nodelist.Compare(in)
 	fmt.Fprintf(a.out, "Worker set: %s\n", path)

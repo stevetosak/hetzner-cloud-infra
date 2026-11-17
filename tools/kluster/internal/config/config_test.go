@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/nodeset"
 )
 
 // The committed kluster.yaml is the file every run reads, so it is the one
@@ -55,6 +57,33 @@ func TestWorkerSetsPerEnv(t *testing.T) {
 	}
 }
 
+// Each environment names its own Node set, and both committed files are
+// valid: a broken one would stop every node add and cp init.
+func TestNodeSetsPerEnv(t *testing.T) {
+	cfg, err := Load("../../kluster.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{EnvLive: "live.yaml", EnvRehearsal: "rehearsal.yaml"}
+	for env, file := range want {
+		got, err := cfg.Path(cfg.Envs[env].NodeSet)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if filepath.Base(got) != file {
+			t.Errorf("%s node set = %s, want a file named %s", env, got, file)
+		}
+		set, err := nodeset.Load(got)
+		if err != nil {
+			t.Errorf("%s node set does not load: %v", env, err)
+			continue
+		}
+		if set.Hcloud().Name == "" {
+			t.Errorf("%s node set has no hcloud site", env)
+		}
+	}
+}
+
 // Each case changes one line of the committed file, so the refusal can only
 // come from that line.
 func TestValidateRefusesUnsafeConfig(t *testing.T) {
@@ -89,6 +118,14 @@ func TestValidateRefusesUnsafeConfig(t *testing.T) {
 		"no worker set": {
 			"workerSet: ../../infra/workers/rehearsal.tfvars", `workerSet: ""`,
 			"envs.rehearsal.workerSet is required",
+		},
+		"live node set": {
+			"nodeSet: ../../infra/nodes/rehearsal.yaml", "nodeSet: ../../infra/nodes/live.yaml",
+			"nodeSet must name its own file",
+		},
+		"no node set": {
+			"nodeSet: ../../infra/nodes/rehearsal.yaml", `nodeSet: ""`,
+			"envs.rehearsal.nodeSet is required",
 		},
 		"floating kubernetes patch": {
 			`kubernetes: "v1.37.0"`, `kubernetes: "v1.37"`, "exact release with its patch",

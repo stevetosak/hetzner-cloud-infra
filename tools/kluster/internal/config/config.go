@@ -165,7 +165,11 @@ type Env struct {
 	// Module with -var-file, so it wins over terraform.tfvars, which
 	// Terraform loads in every environment.
 	WorkerSet string `yaml:"workerSet"`
-	Laptop    Laptop `yaml:"laptop"`
+	// NodeSet is the YAML file that declares every site of this
+	// environment and its capability profile (ADR 0016, Amendments),
+	// relative to kluster.yaml.
+	NodeSet string `yaml:"nodeSet"`
+	Laptop  Laptop `yaml:"laptop"`
 }
 
 // Laptop is what kluster edits on the operator's own machine after a
@@ -325,6 +329,9 @@ func (c *Config) validate() error {
 		if e.WorkerSet == "" {
 			errs = append(errs, fmt.Errorf("envs.%s.workerSet is required", name))
 		}
+		if e.NodeSet == "" {
+			errs = append(errs, fmt.Errorf("envs.%s.nodeSet is required", name))
+		}
 		if e.Laptop.WireGuardConf == "" || e.Laptop.Kubeconfig == "" || e.Laptop.ClusterName == "" {
 			errs = append(errs, fmt.Errorf("envs.%s.laptop must name wireguardConf, kubeconfig and clusterName", name))
 		}
@@ -347,6 +354,11 @@ func (c *Config) validate() error {
 			// live Worker set.
 			if r.WorkerSet == l.WorkerSet {
 				errs = append(errs, errors.New("envs.rehearsal.workerSet must name its own file, not the live Worker set"))
+			}
+			// A rehearsal site edited for a test would change the profile
+			// kluster writes on the live Nodes.
+			if r.NodeSet != "" && r.NodeSet == l.NodeSet {
+				errs = append(errs, errors.New("envs.rehearsal.nodeSet must name its own file, not the live Node set"))
 			}
 			// A rehearsal Control Plane has the live VPN addresses. Writing
 			// it into the operator's live WireGuard config or kubeconfig

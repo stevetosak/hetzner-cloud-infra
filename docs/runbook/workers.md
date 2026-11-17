@@ -92,9 +92,12 @@ The commands differ from the by-hand ones below in these places:
 | 8 | Waits up to five minutes for the Node: `Ready`, InternalIP the private address, `providerID` `hcloud://<id>`, no `uninitialized` taint. |
 
 `kluster node list` shows the Worker set, the servers and the Nodes side by
-side and marks any disagreement. In a rehearsal it needs `kluster ssh open
---apply` first and `kluster ssh close --apply` after; with SSH closed the Node
-column shows `?`.
+side and marks any disagreement. Its PROFILE column is the site label each
+Node carries, and a Node whose profile labels differ from its site in the Node
+set, or a server outside that site's location, is marked as drift
+([Set the node profile](#set-the-node-profile)). In a rehearsal it needs
+`kluster ssh open --apply` first and `kluster ssh close --apply` after; with
+SSH closed the Node and PROFILE columns show `?`.
 
 Proven on the rehearsal on 2026-10-06: `node add k8swk1` and `k8swk2`, both
 runs under `--apply`, ended with both Nodes Ready and "no drift" in `node
@@ -276,6 +279,47 @@ running on unschedulable node k8swk3"), a short write outage, and restarted
 the old primary as a replica; the Cluster was healthy again with 3 of 3
 instances ready. Before a cordon, read `status.currentPrimary` of the Cluster
 and the node its pod runs on.
+
+## Set the node profile
+
+Every Node carries the Capability Profile of its site as admin labels under
+`tosak.net.node-restriction.kubernetes.io/`: `provider`, `site`,
+`reliability`, `reach`, and `block-volumes` and `load-balancer` when the site
+has them ([ADR 0016](../adr/0016-every-provider-is-a-set-of-capabilities-and-workers-of-any-provider-join-as-equals.md)).
+The profiles live in the environment's Node set file,
+[`infra/nodes/live.yaml`](../../infra/nodes/live.yaml) or
+[`infra/nodes/rehearsal.yaml`](../../infra/nodes/rehearsal.yaml). The Control
+Plane and each Worker of the Worker set belong to the site whose provider is
+`hcloud`, `hel1`, so all of them carry the same labels today. No workload is
+placed by them yet.
+
+`kluster node profile [<name>]` writes and checks the labels on every Node, or
+on the named one, in one **node-profile** Stage per Node run on the Control
+Plane. The Stage compares the Node's labels under the prefix with the site's
+profile. It is done when they match; otherwise it sets the missing or wrong
+values and removes any other key under the prefix with one `kubectl label node
+… --overwrite`, and reads them back. Labels outside the prefix are never
+touched. `node add`, `node replace`, `cp init` and `up` run the same Stage
+after the Node is Ready, so a new Node joins with its profile.
+
+kluster refuses, and does not label, a Node that is neither the Control Plane
+nor in the Worker set (it knows no site for it), a Node with no Hetzner server,
+and a Node whose server stands in a location other than the site's name. The
+other Nodes are still labelled, and the run fails at the end. The same location
+check runs before `node add` creates a server and in the preflight of `up`, so
+a Node set that does not describe the project stops a build before any money
+is spent.
+
+```sh
+cd tools/kluster
+kluster node profile                 # Plan Mode: each Node's change, or done
+kluster node profile --apply
+kluster node list                    # PROFILE hel1, no drift
+```
+
+On live kluster reaches the Control Plane through WireGuard and opens nothing.
+A rehearsal opens bootstrap SSH on the Control Plane firewall under `--apply`
+and closes it at the end; there Plan Mode reads no Node. Not yet run on live.
 
 ## Why this was done by hand
 

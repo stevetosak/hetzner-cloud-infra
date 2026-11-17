@@ -163,6 +163,13 @@ func (a *app) upPreflight(ctx context.Context, bw *bitwarden.Client, mode db.Mod
 	var serverErrs []error
 	r.cpSrv, r.servers, serverErrs = sortServers(servers, a.cfg.ControlPlane.Name, r.set)
 	add(serverErrs...)
+	if site, err := a.hcloudSite(); err != nil {
+		add(err)
+	} else {
+		for _, s := range servers {
+			add(checkSite(s, site))
+		}
+	}
 	if r.cpSrv != nil {
 		// kluster pins only servers it created.
 		ours, err := a.pins.Has(r.cpSrv.PublicIP)
