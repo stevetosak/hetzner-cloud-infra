@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -49,6 +51,8 @@ type Node struct {
 	// kubelet reports it, quantities such as 3911564Ki.
 	CapacityMemory    string
 	AllocatableMemory string
+	// Labels are the Node's labels, every key.
+	Labels map[string]string
 }
 
 // UninitializedTaint is set on a Node of a kubelet run with
@@ -95,7 +99,7 @@ func ParseNodes(b []byte) ([]Node, error) {
 	for _, it := range list.Items {
 		n := Node{Name: it.Metadata.Name, Kubelet: it.Status.NodeInfo.KubeletVersion, ProviderID: it.Spec.ProviderID,
 			Unschedulable: it.Spec.Unschedulable, CapacityMemory: it.Status.Capacity["memory"],
-			AllocatableMemory: it.Status.Allocatable["memory"]}
+			AllocatableMemory: it.Status.Allocatable["memory"], Labels: it.Metadata.Labels}
 		for _, t := range it.Spec.Taints {
 			n.Uninitialized = n.Uninitialized || t.Key == UninitializedTaint
 		}
@@ -113,6 +117,26 @@ func ParseNodes(b []byte) ([]Node, error) {
 		nodes = append(nodes, n)
 	}
 	return nodes, nil
+}
+
+// LabelArgs is the kubectl command that sets the labels of set on a Node,
+// changing a value it already has, and removes the keys of remove. Keys
+// come in sorted order, so the same change is always the same command.
+func LabelArgs(node string, set map[string]string, remove []string) []string {
+	args := []string{"label", "node", node, "--overwrite"}
+	for _, k := range slices.Sorted(maps.Keys(set)) {
+		args = append(args, k+"="+set[k])
+	}
+	for _, k := range slices.Sorted(slices.Values(remove)) {
+		args = append(args, k+"-")
+	}
+	return args
+}
+
+// Label sets and removes labels on a Node (LabelArgs).
+func (k Kubectl) Label(ctx context.Context, node string, set map[string]string, remove []string) error {
+	_, err := k.Run(ctx, LabelArgs(node, set, remove)...)
+	return err
 }
 
 // Pod is a Pod as a drain sees it.

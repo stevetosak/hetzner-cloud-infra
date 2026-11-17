@@ -1,0 +1,31 @@
+# The live Node set: every site the cluster's Nodes stand on, and the
+# capability profile of each (ADR 0016, Amendments).
+#
+# kluster writes a site's profile on each of its Nodes as admin labels under
+# tosak.net.node-restriction.kubernetes.io/ (provider, site, reliability,
+# reach, block-volumes, load-balancer). A kubelet cannot set or change them,
+# so a placement rule can trust them. `kluster node profile` writes and
+# checks them; `node add` and `cp init` do it after each join.
+#
+#   provider      what provisions the site's machines. Exactly one site has
+#                 hcloud: the Control Plane and the Worker set belong to it,
+#                 and its name must be their Hetzner location.
+#   reliability   high | best-effort. A best-effort Node can go away at any
+#                 time; it registers with the taint
+#                 tosak.net/reliability=best-effort:NoSchedule.
+#   reach         public (a public address) | nat (only outbound).
+#   blockVolumes  the kind of block volume the site attaches; empty: none.
+#   loadBalancer  the kind of load balancer that reaches the site; empty:
+#                 none.
+sites:
+  hel1:
+    provider: hcloud
+    reliability: high
+    reach: public
+    blockVolumes: hcloud
+    loadBalancer: hcloud
+  # The first self-hosted site.
+  ts1:
+    provider: self-hosted
+    reliability: best-effort
+    reach: nat

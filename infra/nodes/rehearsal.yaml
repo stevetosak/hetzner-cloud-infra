@@ -1,0 +1,14 @@
+# The rehearsal Node set, for the tosak-rehearsal project only (ADR 0009).
+# It declares the same sites as live; see live.yaml for the fields. A site
+# changed here for a test never changes the profile of a live Node.
+sites:
+  hel1:
+    provider: hcloud
+    reliability: high
+    reach: public
+    blockVolumes: hcloud
+    loadBalancer: hcloud
+  ts1:
+    provider: self-hosted
+    reliability: best-effort
+    reach: nat
