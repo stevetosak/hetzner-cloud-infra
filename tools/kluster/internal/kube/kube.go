@@ -302,6 +302,31 @@ func (k Kubectl) ConfigMapData(ctx context.Context, namespace, name, key string)
 	return v, nil
 }
 
+// ConfigMap reads a ConfigMap's whole data. found is false when the ConfigMap
+// does not exist.
+func (k Kubectl) ConfigMap(ctx context.Context, namespace, name string) (data map[string]string, found bool, err error) {
+	out, err := k.Run(ctx, "-n", namespace, "get", "configmap", name, "-o", "json", "--ignore-not-found")
+	if err != nil {
+		return nil, false, err
+	}
+	if strings.TrimSpace(out) == "" {
+		return nil, false, nil
+	}
+	var cm struct {
+		Data map[string]string `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(out), &cm); err != nil {
+		return nil, false, fmt.Errorf("reading configmap %s/%s: %w", namespace, name, err)
+	}
+	return cm.Data, true, nil
+}
+
+// CreateConfigMap creates an empty ConfigMap.
+func (k Kubectl) CreateConfigMap(ctx context.Context, namespace, name string) error {
+	_, err := k.Run(ctx, "-n", namespace, "create", "configmap", name)
+	return err
+}
+
 // PatchConfigMapData sets one key of a ConfigMap's data with a merge patch;
 // every other key stays.
 func (k Kubectl) PatchConfigMapData(ctx context.Context, namespace, name, key, value string) error {
