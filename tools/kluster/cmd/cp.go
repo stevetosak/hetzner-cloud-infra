@@ -172,6 +172,9 @@ func (a *app) planNewControlPlane(ctx context.Context) error {
 	l := a.laptop()
 	fmt.Fprintf(a.out, "then: prove the operator route with kluster's own peer — %s\n", routeproof.Runbook)
 	fmt.Fprintf(a.out, "then: set the hub peer in %s; write the kubeconfig to %s (merge: %v)\n", l.WireGuardConf, l.Kubeconfig, l.MergeKubeconfig)
+	if err := a.planMeshJoin(ctx, a.cfg.ControlPlane.Name); err != nil {
+		return err
+	}
 	return stage.PlanNew(ctx, []stage.Stage{stages.CompleteBuild{}}, a.cfg.ControlPlane.Name, a.out)
 }
 
@@ -257,6 +260,10 @@ func (a *app) buildControlPlane(ctx context.Context, srv *cloud.Server) error {
 		return err
 	}
 	if err := a.runLaptopStages(ctx, srv, hubKey, names, laptopConf, opts); err != nil {
+		return err
+	}
+	// Before the marker: a complete build is never resumed.
+	if err := a.joinMesh(ctx, cp.Name, h, h); err != nil {
 		return err
 	}
 	return stage.Run(ctx, []stage.Stage{stages.CompleteBuild{}}, h, opts)

@@ -144,15 +144,20 @@ func (a *app) workerSetPath() (string, error) {
 // hcloudSite is the site of this environment's Hetzner servers, from its
 // Node set file.
 func (a *app) hcloudSite() (nodeset.Site, error) {
-	path, err := a.cfg.Path(a.cfg.Envs[a.env.Name].NodeSet)
-	if err != nil {
-		return nodeset.Site{}, err
-	}
-	set, err := nodeset.Load(path)
+	set, err := a.nodeSet()
 	if err != nil {
 		return nodeset.Site{}, err
 	}
 	return set.Hcloud(), nil
+}
+
+// nodeSet reads this environment's Node set file.
+func (a *app) nodeSet() (*nodeset.Set, error) {
+	path, err := a.cfg.Path(a.cfg.Envs[a.env.Name].NodeSet)
+	if err != nil {
+		return nil, err
+	}
+	return nodeset.Load(path)
 }
 
 // checkSite refuses a Hetzner server that does not stand in the location

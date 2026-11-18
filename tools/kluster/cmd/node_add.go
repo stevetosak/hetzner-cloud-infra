@@ -501,7 +501,10 @@ func (a *app) planNewWorker(ctx context.Context, w workerset.Worker, cpSrv *clou
 	if err != nil {
 		return err
 	}
-	return stage.PlanNew(ctx, []stage.Stage{a.nodeReady(h), stages.NodeProfile{Node: w.Name, Site: site}}, cpName, a.out)
+	if err := stage.PlanNew(ctx, []stage.Stage{a.nodeReady(h), stages.NodeProfile{Node: w.Name, Site: site}}, cpName, a.out); err != nil {
+		return err
+	}
+	return a.planMeshJoin(ctx, w.Name)
 }
 
 // buildWorker runs every Stage of a new Worker, on it and on the Control
@@ -566,5 +569,8 @@ func (a *app) buildWorker(ctx context.Context, w workerset.Worker, srv, cpSrv *c
 	if err := stage.Run(ctx, []stage.Stage{join}, wh, opts); err != nil {
 		return err
 	}
-	return stage.Run(ctx, []stage.Stage{a.nodeReady(h), stages.NodeProfile{Node: w.Name, Site: site}}, cp, opts)
+	if err := stage.Run(ctx, []stage.Stage{a.nodeReady(h), stages.NodeProfile{Node: w.Name, Site: site}}, cp, opts); err != nil {
+		return err
+	}
+	return a.joinMesh(ctx, w.Name, cp, wh)
 }
