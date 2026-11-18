@@ -132,12 +132,14 @@ then brought back by `kluster node add`.
       writes the admin labels and checks them after each join
       ([Set the node profile](../runbook/workers.md#set-the-node-profile)).
       Every live Node carries the `hel1` profile since 2026-11-17.
-- [ ] The mesh in kluster: `wg-mesh` on every node, the key store
+- [x] The mesh in kluster: `wg-mesh` on every node, the key store
       `kube-system/mesh-peers`, the relay, UDP 51821 on both Hetzner firewalls
       behind the switch `allow_mesh_udp`, off by default, and the join checks
       for an overlapping LAN and the link MTU
       ([Join the mesh](../runbook/workers.md#join-the-mesh)). A machine outside
-      Hetzner joins once the bring-your-own step below exists.
+      Hetzner joins once the bring-your-own step below exists. Merged on
+      2026-11-18 and proven by unit tests and a WireGuard test in network
+      namespaces; it has not run on a cluster.
 - [ ] The mesh catalog in Git: a CronJob sends the full `mesh-peers` store to a
       workflow that writes the branch `mesh-catalog`. The catalog holds no
       endpoints, and the workflow needs one new GitHub token that the operator
