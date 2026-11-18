@@ -153,6 +153,21 @@ curl -s -H "Authorization: Bearer $TF_VAR_HCLOUD_TOKEN" \
 Firewall ids: `tosak-cp-firewall` is `10289761`, `tosak-worker-firewall` is
 `11651947`.
 
+## The mesh port
+
+`allow_mesh_udp` opens UDP 51821, the `wg-mesh` port, on both firewalls. It
+defaults to `false`, and the port stays closed until the mesh has a machine
+outside Hetzner, because two machines at one Hetzner site talk over the private
+network.
+
+The switch belongs in a committed `infra/shared/terraform.tfvars`, which every
+plan loads. A `-var` does not hold: kluster plans this Module with the SSH
+switches only, so its next plan would remove the rule.
+
+Turning the switch off takes `tosak-worker-firewall` from one rule to none when
+bootstrap SSH is closed, which is the provider fault described above. The same
+read-back applies, and the `set_rules` call clears the rule if it survived.
+
 ## Replacing the control plane
 
 `control-plane/` is protected three ways, and all three must be cleared by

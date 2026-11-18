@@ -4,6 +4,10 @@ data "http" "local_pub_ip" {
 
 locals {
   admin_ssh_ip = "${chomp(data.http.local_pub_ip.response_body)}/32"
+
+  # The port wg-mesh listens on, on every machine with a public address (ADR
+  # 0016). Empty while allow_mesh_udp is false, so neither firewall has the rule.
+  mesh_udp_ports = var.allow_mesh_udp ? ["51821"] : []
 }
 
 # Two firewalls, because the VPN is hub and spoke and only the hub listens.
@@ -25,12 +29,23 @@ locals {
 resource "hcloud_firewall" "cp" {
   name = "tosak-cp-firewall"
 
-  # WireGuard. The only port open to the world anywhere in this cluster.
+  # WireGuard. While allow_mesh_udp is false, the only port open to the world
+  # anywhere in this cluster.
   rule {
     direction  = "in"
     protocol   = "udp"
     port       = "51820"
     source_ips = ["0.0.0.0/0"]
+  }
+
+  dynamic "rule" {
+    for_each = local.mesh_udp_ports
+    content {
+      direction  = "in"
+      protocol   = "udp"
+      port       = rule.value
+      source_ips = ["0.0.0.0/0"]
+    }
   }
 
   dynamic "rule" {
@@ -47,7 +62,20 @@ resource "hcloud_firewall" "cp" {
 resource "hcloud_firewall" "worker" {
   name = "tosak-worker-firewall"
 
-  # Bootstrap SSH and nothing else. With allow_public_ssh_worker false this
+  # The mesh port, while allow_mesh_udp is true. Turning it off can take this
+  # firewall from one rule to none, so read the firewall back from the API then
+  # (infra/README.md).
+  dynamic "rule" {
+    for_each = local.mesh_udp_ports
+    content {
+      direction  = "in"
+      protocol   = "udp"
+      port       = rule.value
+      source_ips = ["0.0.0.0/0"]
+    }
+  }
+
+  # Bootstrap SSH. With allow_public_ssh_worker and allow_mesh_udp false this
   # firewall holds no inbound rule at all, which is the intended steady state:
   # a Worker accepts nothing on its public interface. Operators reach it over
   # the VPN, through the Control Plane.

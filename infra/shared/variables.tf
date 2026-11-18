@@ -37,3 +37,16 @@ variable "allow_public_ssh_worker" {
     address resolution as allow_public_ssh_cp.
   EOT
 }
+
+# Not a bootstrap window: while the mesh has a machine outside Hetzner, this
+# port stays open.
+variable "allow_mesh_udp" {
+  type        = bool
+  default     = false
+  description = <<-EOT
+    Open UDP 51821, the wg-mesh port, to the world on tosak-cp-firewall and
+    tosak-worker-firewall. Set it in a committed infra/shared/terraform.tfvars,
+    never with -var: kluster plans this Module with the SSH switches only, so
+    its next plan would close a port that only -var opened.
+  EOT
+}
