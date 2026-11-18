@@ -18,12 +18,18 @@ import (
 
 // The values every wg-mesh interface shares.
 const (
+	// Interface is the name of the mesh's network interface.
+	Interface = "wg-mesh"
 	// Port is the UDP port a public machine listens on.
 	Port = 51821
 	// MTU leaves room for VXLAN inside WireGuard on the smallest planned link.
 	MTU = 1400
 	// Keepalive holds a NAT mapping open, in seconds.
 	Keepalive = 25
+	// ForwardMatch is the iptables rule of the FORWARD chain that lets the
+	// relay pass traffic from one mesh peer to another: a Kubernetes node can
+	// drop what it forwards.
+	ForwardMatch = "-i " + Interface + " -o " + Interface + " -j ACCEPT"
 )
 
 // Machine is one member of the mesh.
@@ -48,12 +54,25 @@ type Peer struct {
 }
 
 // Config is one machine's wg-mesh interface. ListenPort is 0 on a machine
-// behind NAT, which only dials out.
+// behind NAT, which only dials out. Forward is set on the relay.
 type Config struct {
 	Address    netip.Prefix
 	MTU        int
 	ListenPort int
+	Forward    bool
 	Peers      []Peer // sorted by name
+}
+
+// Routes is every address the interface carries, in byte order.
+func (c Config) Routes() []string {
+	var routes []string
+	for _, p := range c.Peers {
+		for _, allowed := range p.AllowedIPs {
+			routes = append(routes, allowed.String())
+		}
+	}
+	slices.Sort(routes)
+	return routes
 }
 
 // Render computes the config of the machine named self. Every machine needs a
@@ -65,7 +84,7 @@ func Render(self, relay string, machines []Machine) (Config, error) {
 		return Config{}, err
 	}
 	sorted := slices.SortedFunc(slices.Values(machines), func(a, b Machine) int { return cmp.Compare(a.Name, b.Name) })
-	c := Config{Address: host(me.Address), MTU: MTU}
+	c := Config{Address: host(me.Address), MTU: MTU, Forward: me.Name == relay}
 	if me.Public {
 		c.ListenPort = Port
 	}
@@ -154,6 +173,9 @@ func (c Config) Text(privateKey string) string {
 	fmt.Fprintf(&b, "[Interface]\nAddress = %s\nMTU = %d\n", c.Address, c.MTU)
 	if c.ListenPort != 0 {
 		fmt.Fprintf(&b, "ListenPort = %d\n", c.ListenPort)
+	}
+	if c.Forward {
+		fmt.Fprintf(&b, "PostUp = iptables -C FORWARD %[1]s 2>/dev/null || iptables -I FORWARD 1 %[1]s\n", ForwardMatch)
 	}
 	if privateKey != "" {
 		fmt.Fprintf(&b, "PrivateKey = %s\n", privateKey)

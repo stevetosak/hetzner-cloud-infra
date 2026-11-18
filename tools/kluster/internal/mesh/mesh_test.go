@@ -178,6 +178,27 @@ PersistentKeepalive = 25
 	}
 }
 
+// The relay must pass traffic between peers again after a reboot.
+func TestTextRelayForwards(t *testing.T) {
+	want := "PostUp = iptables -C FORWARD -i wg-mesh -o wg-mesh -j ACCEPT 2>/dev/null || iptables -I FORWARD 1 -i wg-mesh -o wg-mesh -j ACCEPT\n"
+	relay := render(t, "wk1")
+	if !relay.Forward || !strings.Contains(relay.Text(""), want) {
+		t.Errorf("the relay does not forward:\n%s", relay.Text(""))
+	}
+	other := render(t, "wk2")
+	if other.Forward || strings.Contains(other.Text(""), "PostUp") {
+		t.Errorf("a machine that is not the relay forwards:\n%s", other.Text(""))
+	}
+}
+
+func TestRoutes(t *testing.T) {
+	got := render(t, "box1").Routes()
+	want := []string{"10.0.1.11/32", "10.0.1.12/32", "10.101.0.11/32", "10.101.0.12/32", "10.101.2.1/32", "10.101.3.1/32"}
+	if !slices.Equal(got, want) {
+		t.Errorf("routes = %v, want %v", got, want)
+	}
+}
+
 func TestTextPublicMachineListens(t *testing.T) {
 	if got := render(t, "wk1").Text(""); !strings.Contains(got, "ListenPort = 51821\n") {
 		t.Errorf("no ListenPort:\n%s", got)
