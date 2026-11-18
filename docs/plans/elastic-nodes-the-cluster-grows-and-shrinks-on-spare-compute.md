@@ -69,6 +69,11 @@ a delete that would break the floor is refused.
   becomes only the host of the VMs, is part of the hypervisor grill.
 - VMs on the self-hosted machine go down when it restarts. Whether they start again by
   themselves or the autoscaler replaces them is open.
+- Several VMs on the self-hosted machine are several mesh machines on one site.
+  The Node set refuses that until kluster builds the LAN host routes between
+  them, and real hardware has to prove those routes, `rp_filter` included. They
+  are built here unless a separate Plan for the self-hosted machine takes them
+  first.
 - The autoscaler adds a Deployment to a cluster whose worker memory requests
   were at 75 % on 2026-11-16; its own request is measured before it moves to
   live.

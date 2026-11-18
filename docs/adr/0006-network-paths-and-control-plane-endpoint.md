@@ -187,10 +187,10 @@ allowed addresses decide which interface that machine's node traffic takes, and
 a mistake there is as silent as in the other six.
 
 "Only the hub accepts an inbound WireGuard port" now holds for `wg0` only. On
-`wg-mesh` every public machine accepts UDP 51821: `tosak-cp-firewall` and
-`tosak-worker-firewall` both open it from any address, so the Worker firewall
-no longer opens nothing, and the Public Interface carries two inbound ports
-instead of one.
+`wg-mesh` every public machine accepts UDP 51821: once the switch
+`allow_mesh_udp` is on, `tosak-cp-firewall` and `tosak-worker-firewall` both
+open it from any address, so the Worker firewall no longer opens nothing, and
+the Public Interface carries two inbound ports instead of one.
 
 The pages that describe the live network, the glossary entries for the
 Private Network, the Public Interface and the Control Plane Endpoint, the
