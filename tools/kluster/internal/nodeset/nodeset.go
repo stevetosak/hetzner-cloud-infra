@@ -57,6 +57,7 @@ type Site struct {
 	Reach        string `yaml:"reach"`
 	BlockVolumes string `yaml:"blockVolumes"`
 	LoadBalancer string `yaml:"loadBalancer"`
+	MeshSubnet   string `yaml:"meshSubnet"`
 }
 
 // Labels is the site's profile as Node labels, every key under Prefix. A
@@ -81,6 +82,7 @@ func (s Site) Labels() map[string]string {
 type Set struct {
 	Path  string
 	sites map[string]Site
+	mesh  *Mesh
 }
 
 // Load reads and validates the Node set file at path.
@@ -96,6 +98,7 @@ func Load(path string) (*Set, error) {
 func Parse(path string, src []byte) (*Set, error) {
 	var f struct {
 		Sites map[string]Site `yaml:"sites"`
+		Mesh  *meshFile       `yaml:"mesh"`
 	}
 	dec := yaml.NewDecoder(bytes.NewReader(src))
 	dec.KnownFields(true)
@@ -107,9 +110,11 @@ func Parse(path string, src []byte) (*Set, error) {
 		site.Name = name
 		s.sites[name] = site
 	}
-	if err := s.validate(); err != nil {
+	mesh, meshErr := parseMesh(s.sites, f.Mesh)
+	if err := errors.Join(s.validate(), meshErr); err != nil {
 		return nil, fmt.Errorf("invalid Node set %s: %w", path, err)
 	}
+	s.mesh = mesh
 	return s, nil
 }
 
