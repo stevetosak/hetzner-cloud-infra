@@ -185,6 +185,49 @@ func TestPatchConfigMapDataSendsOneKey(t *testing.T) {
 	}
 }
 
+// answer is an Exec that prints one fixed output.
+type answer struct {
+	recorder
+	out string
+}
+
+func (a *answer) Run(_ context.Context, cmd string) (string, error) {
+	a.cmd = cmd
+	return a.out, nil
+}
+
+func TestConfigMapReadsAllData(t *testing.T) {
+	a := &answer{out: `{"data":{"a":"1","b":"2"}}`}
+	data, found, err := (Kubectl{Exec: a}).ConfigMap(context.Background(), "kube-system", "mesh-peers")
+	if err != nil || !found {
+		t.Fatalf("found=%v err=%v", found, err)
+	}
+	if !reflect.DeepEqual(data, map[string]string{"a": "1", "b": "2"}) {
+		t.Errorf("data = %v", data)
+	}
+	want := "KUBECONFIG=/etc/kubernetes/admin.conf kubectl '-n' 'kube-system' 'get' 'configmap' 'mesh-peers' '-o' 'json' '--ignore-not-found'"
+	if a.cmd != want {
+		t.Errorf("ran\n%s\nwant\n%s", a.cmd, want)
+	}
+}
+
+func TestConfigMapNotFound(t *testing.T) {
+	_, found, err := (Kubectl{Exec: &answer{out: "\n"}}).ConfigMap(context.Background(), "kube-system", "mesh-peers")
+	if err != nil || found {
+		t.Fatalf("found=%v err=%v", found, err)
+	}
+}
+
+func TestCreateConfigMap(t *testing.T) {
+	r := &recorder{}
+	if err := (Kubectl{Exec: r}).CreateConfigMap(context.Background(), "kube-system", "mesh-peers"); err != nil {
+		t.Fatal(err)
+	}
+	if want := "KUBECONFIG=/etc/kubernetes/admin.conf kubectl '-n' 'kube-system' 'create' 'configmap' 'mesh-peers'"; r.cmd != want {
+		t.Errorf("ran\n%s\nwant\n%s", r.cmd, want)
+	}
+}
+
 func TestLabelSetsInOrderAndRemoves(t *testing.T) {
 	r := &recorder{}
 	set := map[string]string{"x/site": "hel1", "x/provider": "hcloud"}

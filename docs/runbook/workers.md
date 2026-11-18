@@ -328,6 +328,75 @@ Run on live on 2026-11-17. The run labelled `k8s-cp`, `k8swk1`, `k8swk2` and
 then showed PROFILE `hel1` and no drift, and a second Plan Mode run found every
 Stage done.
 
+## Join the mesh
+
+`wg-mesh` joins machines at different sites
+([ADR 0016](../adr/0016-every-provider-is-a-set-of-capabilities-and-workers-of-any-provider-join-as-equals.md)).
+A Node set without a `mesh` section changes nothing, and neither live nor the
+rehearsal has one yet. 🔴 `kluster node mesh` has not run on a cluster. The
+renderer's unit tests and a WireGuard test in network namespaces are its proof
+so far: a direct pair, a NAT pair and a relay between two NAT sites, with
+full-size packets on a 1460-byte link.
+
+```sh
+cd tools/kluster
+go test -tags wireguard -run TestWireGuard -v ./internal/mesh/
+```
+
+The Node set file declares each site's subnet and each machine's address:
+
+```yaml
+sites:
+  hel1:
+    # … the site's profile
+    meshSubnet: 10.101.0.0/24
+  ts1:
+    # … the site's profile
+    meshSubnet: 10.101.1.0/24
+mesh:
+  relay: k8swk1 # required with machines on two or more NAT sites
+  machines:
+    k8swk1: { site: hel1, address: 10.101.0.11 }
+    k8swk2: { site: hel1, address: 10.101.0.12 }
+```
+
+A `meshSubnet` is a `/24` inside `10.101.0.0/16`, and no two sites share one. An
+address lies in its site's subnet and is unique. The relay is a machine of the
+mesh on a public site. A site whose provider is not `hcloud` holds one machine,
+because kluster does not build the LAN routes between two machines of such a
+site yet. kluster logs in only to the Control Plane and the Worker set, so it
+refuses a machine outside Hetzner until the bring-your-own step exists.
+
+`kluster node mesh [<name>]` joins every machine of the section, or the named
+one. `node add`, `node replace`, `cp init` and `up` run the same steps for a
+machine the section declares.
+
+```sh
+kluster node mesh           # Plan Mode: each machine's Stages
+kluster node mesh --apply
+```
+
+| Stage | What it does | When it fails |
+|---|---|---|
+| **mesh-join-check** | Compares the machine's LAN with the cluster's ranges and measures the link MTU | A LAN overlaps `10.0.0.0/16`, `10.244.0.0/16`, `10.96.0.0/16`, `10.100.0.0/24` or `10.101.0.0/16`, or the link or its path holds less than 1460 bytes |
+| **mesh-key** | Installs WireGuard and makes `/etc/wireguard/mesh.key`; only the public key leaves the machine | The package or the key cannot be written |
+| **wireguard-mesh** | Writes `/etc/wireguard/wg-mesh.conf`, applies it with `wg syncconf`, reconciles the routes and enables `wg-quick@wg-mesh` | The interface, its peers or its routes differ from the rendered config |
+
+A failed join check or key stops the run before any config changes. After them
+kluster writes each new or changed public key to the ConfigMap
+`kube-system/mesh-peers`. Every joined machine then gets its config, even on a
+named run, because a new key changes the peers of the others. A machine that
+fails its config does not stop the rest, and the run fails at the end.
+
+kluster compares the store with the Node set before it changes anything. After a
+machine leaves the `mesh` section, the run is refused until its data key is
+removed from `kube-system/mesh-peers`; `node remove` does not remove it.
+
+UDP 51821 stays closed on both Hetzner firewalls until `allow_mesh_udp` is set in
+a committed `infra/shared/terraform.tfvars`. The
+[infra README](../../infra/README.md#the-mesh-port) says why a `-var` does not
+hold, and how to prove the rule is gone after the switch is turned off.
+
 ## Why this was done by hand
 
 `infra/scripts/bootstrap/bootstrap_workers.sh` and the `kluster` CLI both call

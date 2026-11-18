@@ -112,8 +112,9 @@ machines inside one trusted network talks over it directly; every other pair
 uses the mesh. A site's reach decides how a pair connects. A machine behind NAT
 starts its tunnels to public peers and keeps them open with a keepalive every
 25 seconds. Two NAT machines at different sites talk through a relay, a
-Hetzner Worker named in `kluster.yaml`, by static routes kluster writes; a site
-that later gets a port forward becomes public, and its pairs go direct.
+public machine named in the Node set's mesh section, by static routes kluster
+writes; a site that later gets a port forward becomes public, and its pairs go
+direct.
 
 The mesh carries node addresses only. Flannel's VXLAN stays the one component
 that routes pod traffic, and for a pair at two sites it runs inside the mesh.
@@ -135,9 +136,9 @@ that overlaps a cluster range: the private network `10.0.0.0/16`, the pods'
 `10.244.0.0/16`, the services' `10.96.0.0/16`, the VPN's `10.100.0.0/24` or the
 mesh. On a self-hosted site, the host firewall lets pods reach the internet and the
 cluster's machines, and no other address on the LAN. Every public machine
-accepts UDP 51821: both Hetzner firewalls open it from any address, an
-OVHcloud machine's host firewall opens it, and a self-hosted site behind NAT opens
-nothing. This changes ADR 0006, as its
+accepts UDP 51821: both Hetzner firewalls open it from any address once the
+switch `allow_mesh_udp` is on, an OVHcloud machine's host firewall opens it, and
+a self-hosted site behind NAT opens nothing. This changes ADR 0006, as its
 [amendment of 2026-11-17](./0006-network-paths-and-control-plane-endpoint.md#amendments)
 records.
 
@@ -290,3 +291,29 @@ provider is `hcloud`, and kluster checks that each server's location, read from
 the Hetzner API, is that site's name. A Worker set entry names its own site only
 once a second Hetzner location is in use. Self-hosted sites are named `ts1`,
 `ts2` and on.
+
+**2026-11-18 — where the mesh keeps its keys, and what the first build leaves
+out.** Building the mesh settled four details, and the text above is corrected
+to match. The public keys live in one store, the ConfigMap
+`kube-system/mesh-peers`, with one entry per machine: its name, site, mesh
+address and public key. kluster reads a new key from the machine, writes the
+store and pushes each machine's config over SSH, so no agent runs on a node, and
+Argo CD does not manage the store. A node's own credentials cannot read a
+ConfigMap in `kube-system`, which `kubectl auth can-i` showed on live on
+2026-11-18, and that is a further reason the push comes from kluster.
+
+The relay is named in the Node set's mesh section, next to the machines it
+serves, and not in `kluster.yaml`. UDP 51821 stays closed on both Hetzner
+firewalls behind the Terraform switch `allow_mesh_udp`, off by default, because
+a Hetzner-only cluster has no pair that uses the mesh: two machines at one site
+get no peer. The switch is turned on when the first machine outside Hetzner
+joins.
+
+The host routes between two machines on one self-hosted site's LAN are not
+built yet. The design above keeps them, but only real hardware on a real LAN can
+prove them, `rp_filter` included, so until then the Node set refuses a second
+machine on a site whose provider is not `hcloud`. kluster also logs in only to
+the Control Plane and the Worker set, so a machine outside Hetzner joins the
+mesh once the bring-your-own step exists. Until then the NAT pair and the relay
+are proven by the renderer's tests and by a WireGuard test in network
+namespaces, not on a cluster.
