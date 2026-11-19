@@ -140,10 +140,13 @@ then brought back by `kluster node add`.
       Hetzner joins once the bring-your-own step below exists. Merged on
       2026-11-18 and proven by unit tests and a WireGuard test in network
       namespaces; it has not run on a cluster.
-- [ ] The mesh catalog in Git: a CronJob sends the full `mesh-peers` store to a
+- [x] The mesh catalog in Git: a CronJob sends the full `mesh-peers` store to a
       workflow that writes the branch `mesh-catalog`. The catalog holds no
       endpoints, and the workflow needs one new GitHub token that the operator
-      creates.
+      creates ([nodes README](../../core/nodes/README.md)). Live since
+      2026-11-19, proven there: a run on the empty store sent nothing, a fake
+      entry in the store reached `peers.json` in one commit, and the run after
+      its removal took it back.
 - [ ] Flannel to `Backend.MTU` 1400. It changes the pod network of every node,
       so it is proven in a rehearsal before live.
 - [ ] Keep the Hetzner-only parts on Hetzner servers: the CSI node DaemonSet
