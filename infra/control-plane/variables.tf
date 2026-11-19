@@ -6,7 +6,7 @@ variable "HCLOUD_TOKEN" {
 
 variable "server_type" {
   type        = string
-  default     = "cx23"
+  default     = "cpx22"
   description = "Hetzner server type for the control plane."
 }
 

@@ -14,7 +14,7 @@ workers = {
       role = "worker"
     }
     private_ip  = "10.0.2.6"
-    server_type = "cx23"
+    server_type = "cpx22"
     vpn_ip      = "10.100.0.2"
   }
   k8swk2 = {
@@ -22,7 +22,7 @@ workers = {
       role = "worker"
     }
     private_ip  = "10.0.2.7"
-    server_type = "cx23"
+    server_type = "cpx22"
     vpn_ip      = "10.100.0.3"
   }
   k8swk3 = {
@@ -30,7 +30,7 @@ workers = {
       role = "worker"
     }
     private_ip  = "10.0.2.8"
-    server_type = "cx23"
+    server_type = "cpx22"
     vpn_ip      = "10.100.0.4"
   }
 }
