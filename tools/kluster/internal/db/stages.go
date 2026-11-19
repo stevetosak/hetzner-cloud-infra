@@ -90,7 +90,7 @@ type liveCluster struct {
 	} `json:"status"`
 }
 
-const healthyPhase = "Cluster in healthy state"
+const healthyPhase = kube.CNPGHealthyPhase
 
 // getCluster returns the Cluster, or nil when there is none.
 func getCluster(ctx context.Context, h *stage.Host) (*liveCluster, error) {
@@ -541,9 +541,7 @@ func (s *Switchover) Act(ctx context.Context, h *stage.Host) error {
 		if target == "" {
 			return errors.New("no healthy standby to switch to")
 		}
-		patch := fmt.Sprintf(`{"status":{"targetPrimary":%q}}`, target)
-		if _, err := h.Exec.Run(ctx, kubectl("patch", "clusters.postgresql.cnpg.io", ClusterName, "-n", Namespace,
-			"--type", "merge", "--subresource", "status", "-p", patch)); err != nil {
+		if err := (kube.Kubectl{Exec: h.Exec}).SetTargetPrimary(ctx, Namespace, ClusterName, target); err != nil {
 			return err
 		}
 		st, err := s.Until(ctx, func() (stage.Status, error) {

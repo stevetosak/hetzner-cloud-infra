@@ -4,12 +4,15 @@
 # Three local edits. Keep them across any upgrade; 1 and 2 are required by
 # ADR 0001:
 #
-#   1. Backend.MTU = 1450. This is the UNDERLAY MTU — the MTU of the Hetzner
-#      private network itself. Flannel subtracts the 50-byte VXLAN overhead
-#      from this value on its own, so pods end up at 1400, which is what ADR
-#      0001 specifies. Do not write 1400 here: it subtracts twice and yields
-#      1350. Left implicit, the value would follow whichever interface flannel
-#      picks, which is the thing edit 2 exists to control.
+#   1. Backend.MTU = 1400. This is the UNDERLAY MTU: the WireGuard mesh
+#      tunnel's MTU, the smallest link a pod packet crosses between sites
+#      (ADR 0016; it was 1450, the Hetzner private network, under ADR 0001).
+#      Flannel subtracts the 50-byte VXLAN overhead from this value on its
+#      own, so pods end up at 1350, kluster.yaml's podMTU. Do not write 1350
+#      here: it subtracts twice. Left implicit, the value would follow
+#      whichever interface flannel picks, which is the thing edit 2 exists to
+#      control. Flannel does not resize an existing flannel.1: change a
+#      running cluster with `kluster node pod-mtu`.
 #
 #   2. --iface-regex=^10\.0\.  Without it flannel binds the first interface it
 #      finds, which is the PUBLIC NIC. Pod traffic would then leave the private
@@ -110,7 +113,7 @@ data:
       "EnableNFTables": false,
       "Backend": {
         "Type": "vxlan",
-        "MTU": 1450
+        "MTU": 1400
       }
     }
 kind: ConfigMap
