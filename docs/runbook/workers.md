@@ -392,6 +392,14 @@ kluster compares the store with the Node set before it changes anything. After a
 machine leaves the `mesh` section, the run is refused until its data key is
 removed from `kube-system/mesh-peers`; `node remove` does not remove it.
 
+The store keeps no history. Its public record is the mesh catalog: `peers.json`
+on the branch `mesh-catalog`, with each machine's name, site, mesh address and
+public key, and never an endpoint. A CronJob in the namespace `nodes` compares
+the store with the catalog every hour and sends the store to a workflow when the
+two differ, so a hand edit is recorded too, but a change put back within the
+hour leaves no trace. The [nodes README](../../core/nodes/README.md) shows the
+flow and how to start a run by hand.
+
 UDP 51821 stays closed on both Hetzner firewalls until `allow_mesh_udp` is set in
 a committed `infra/shared/terraform.tfvars`. The
 [infra README](../../infra/README.md#the-mesh-port) says why a `-var` does not
