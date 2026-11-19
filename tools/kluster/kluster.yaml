@@ -33,8 +33,9 @@ cluster:
   serviceCIDR: "10.96.0.0/16"
   hcloudNetwork: tosak-net
   # What pods and flannel.1 get; core/cni/flannel.yaml carries the underlay
-  # MTU, 1450, and flannel subtracts its own 50 bytes.
-  podMTU: 1400
+  # MTU, 1400 (the mesh tunnel, ADR 0016), and flannel subtracts its own 50
+  # bytes. A running cluster changes with `kluster node pod-mtu`.
+  podMTU: 1350
 
 node:
   sshUser: root
