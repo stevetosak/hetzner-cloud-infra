@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: mesh-catalog-github
+    namespace: nodes
+type: Opaque
+data:
+    github-token: ENC[AES256_GCM,data:QE73gjuGmE40UY9PvJzKLeTNdwcX8rqw4HIE4qZRfmAuXIKChYXkFfRtvLij7+sTOtsTt5tUXOnYX4uErGE/k5TjVnA8b2OhdIucx1dGIbGDKzdUXMuviI+CGefRVLb/2Sfg5onxx/13zFKt+aPdQyIyqR+u+URjNy1plg==,iv:3T5VhetkgjhTtDXe/BL56UPbaSZF49RPjAWG5XZaG5Y=,tag:JQ9aZM2Z/K5eXBGHRqoeOQ==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBQRjI5N2dDNk9RMFJjNHB6
+            enhtZWRmUUhTU3FqRldPRnJVbVptWW1NNDEwClVza2wxeWliZEJ5SDh6dncyZFk1
+            MkFCc05PSG1NNis5SmtZZ0FYUng0QlUKLS0tIGI3cWRtVVEvQW51dHBWN1g5S25v
+            WFJwUlNGeXVra1VLN1ZrejRYa1pxeXcKX/Vc4IyA5mwZqpwmQCVAFec9JhQEbnkg
+            e+HegNZ47BRebJXKApeoDULhuXqNWUgzZ6LSIRqPRXIRRTmSJy2GSA==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1djev7m4tq9z9lgrd8r3unhlzgzfkx3j6vz6dltu4rumqnnu7fq5q0aqtnd
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBtUzhVc3Z2VHlmbVJ0dFFW
+            c1d6MytsQVVXa21lQnN4Tms0ZzVpdGw2R1Q0CmR5NDhmRDcyZU5yTkl6U2NtNEpN
+            Q255bmQ2ckpIRHpEMi9LbHJmZzJTNEEKLS0tIEt4UDRhMTI3clRRUkt0UE1mTEN5
+            QzZYUnpFQlpRbUFtTVYyMHJJOG51M00K9DpsMti+N+NIjm+SCbaVRWREcRj5NtmT
+            jiZWTiJS+pCA4uydQh4UNE2Qljw0Sa8dsbZXk3R2HeSOJQUWjRUa6w==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age167896gaqg05ht7eaa78z2jhk4p9gxnyfep8ft3f8cvu8wh3dd3hscv3n8j
+    encrypted_regex: ^(data|stringData)$
+    lastmodified: "2026-11-19T19:29:00Z"
+    mac: ENC[AES256_GCM,data:KaI+/scckShnmeRT+mMGz49gx9wV4bbhjABianlu3h5TIyDeQDrJTlQ59O5GfKRWhCOLImumkrdqo+b6D+LqDXVCU/00Y6ZvML7zP4nMFEPZOIaOGBULcb8K2Jpwu1BpxmhaJucIbdGxqnG2S041G5Snmww9kTV8w9dB7ROO5yQ=,iv:6NSvzlp2bOLbug2V1pUODMPC0fo3oWaNvFH8gKtTS1w=,tag:77k3AXZWa53y/eYZJ8z5tw==,type:str]
+    version: 3.13.3
