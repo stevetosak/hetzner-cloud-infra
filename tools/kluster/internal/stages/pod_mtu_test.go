@@ -137,34 +137,74 @@ func TestFlannelMTURefusesAnOldConfigMap(t *testing.T) {
 	}
 }
 
-// The device goes first, so the new pod cannot reuse it; cni0 goes last,
-// once the new tunnel is up.
-func TestFlannelMTURebuildsTheDeviceThenTheBridge(t *testing.T) {
+// loggedHost records each command with its host's name in one shared log,
+// so a test sees the order across the Control Plane and the node.
+type loggedHost struct {
+	*scriptHost
+	name string
+	log  *[]string
+}
+
+func (l loggedHost) Run(ctx context.Context, cmd string) (string, error) {
+	*l.log = append(*l.log, l.name+": "+cmd)
+	return l.scriptHost.Run(ctx, cmd)
+}
+
+// A running flanneld makes a deleted flannel.1 again at its own MTU, without
+// routes: the pod goes first (the new one reads the ConfigMap), then the
+// device (the new pod makes it at PodMTU), then the pod again (a fresh
+// flanneld programs the peers), then cni0.
+func TestFlannelMTURestartsFlannelAroundTheDevice(t *testing.T) {
+	var log []string
 	cp := &scriptHost{out: map[string]string{getFlannelCM: flannelCMJSON(t, "1400"), getNodes: threeNodes}}
-	node := &scriptHost{}
 	m := flannelMTU(cp)
-	if err := m.Act(context.Background(), &stage.Host{Exec: node}); err != nil {
+	m.CP = loggedHost{cp, "cp", &log}
+	if err := m.Act(context.Background(), &stage.Host{Exec: loggedHost{&scriptHost{}, "node", &log}}); err != nil {
 		t.Fatal(err)
 	}
-	if len(node.ran) != 3 || node.ran[0] != "if [ -e /sys/class/net/flannel.1 ]; then ip link delete flannel.1; fi" ||
-		!strings.HasPrefix(node.ran[1], probeScript) || node.ran[2] != "if [ -e /sys/class/net/cni0 ]; then ip link set cni0 mtu 1350; fi" {
-		t.Fatalf("ran on the node %q", node.ran)
-	}
-	for _, want := range []string{"cat /sys/class/net/flannel.1/mtu)\" = 1350", "grep -qx 'FLANNEL_MTU=1350' /run/flannel/subnet.env",
-		"ip -4 route show dev flannel.1 | wc -l)\" -ge 2"} {
-		if !strings.Contains(node.ran[1], want) {
-			t.Errorf("the wait does not check %q", want)
+	var steps []string
+	for _, l := range log {
+		switch {
+		case strings.HasPrefix(l, "cp: "+delFlannelPod):
+			steps = append(steps, "delete pod")
+		case l == "node: if [ -e /sys/class/net/flannel.1 ]; then ip link delete flannel.1; fi":
+			steps = append(steps, "delete flannel.1")
+		case l == "node: if [ -e /sys/class/net/cni0 ]; then ip link set cni0 mtu 1350; fi":
+			steps = append(steps, "cni0")
+		case strings.HasPrefix(l, "node: "+probeScript):
+			var held []string
+			for _, c := range []string{"flannel.1/mtu)\" = 1350", "'FLANNEL_MTU=1350'", "dev flannel.1 | wc -l)\" -ge 2"} {
+				if strings.Contains(l, c) {
+					held = append(held, c[:9])
+				}
+			}
+			steps = append(steps, "wait "+strings.Join(held, "+"))
+			if strings.Contains(l, "cni0") {
+				t.Error("a wait checks cni0, which is set after it")
+			}
 		}
 	}
-	if strings.Contains(node.ran[1], "cni0") {
-		t.Error("the wait checks cni0, which is set after it")
+	want := []string{"delete pod", "wait 'FLANNEL_", "delete flannel.1", "wait flannel.1", "delete pod",
+		"wait flannel.1+'FLANNEL_+dev flann", "cni0"}
+	if strings.Join(steps, " | ") != strings.Join(want, " | ") {
+		t.Fatalf("steps\n got %q\nwant %q", steps, want)
 	}
-	deleted := false
-	for _, c := range cp.ran {
-		deleted = deleted || strings.HasPrefix(c, delFlannelPod)
+}
+
+// A wait that runs out stops Act with the failing check; nothing after it runs.
+func TestFlannelMTUStopsWhenAWaitRunsOut(t *testing.T) {
+	cp := &scriptHost{out: map[string]string{getFlannelCM: flannelCMJSON(t, "1400"), getNodes: threeNodes}}
+	node := &scriptHost{out: map[string]string{probeScript: "subnet.env\n"}}
+	m := flannelMTU(cp)
+	m.Wait = 5 * time.Millisecond
+	err := m.Act(context.Background(), &stage.Host{Exec: node})
+	if err == nil || !strings.Contains(err.Error(), "k8swk2: waited 5ms for the new Flannel pod's FLANNEL_MTU, not yet: subnet.env") {
+		t.Fatalf("got %v", err)
 	}
-	if !deleted {
-		t.Fatalf("the Flannel pod was not deleted: %q", cp.ran)
+	for _, c := range node.ran {
+		if !strings.HasPrefix(c, probeScript) {
+			t.Fatalf("ran %q after the wait ran out", c)
+		}
 	}
 }
 

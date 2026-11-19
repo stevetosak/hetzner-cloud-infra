@@ -168,12 +168,16 @@ func (f FlannelConfig) Act(ctx context.Context, h *stage.Host) error {
 
 // FlannelMTU rebuilds one node's flannel.1 at PodMTU, on that node. Flannel
 // does not resize an existing VXLAN device (docs/runbook/control-plane.md,
-// "Correction — the MTU was set twice"), so Act deletes flannel.1, then
-// deletes the node's Flannel pod through the Control Plane (CP); the new pod
-// reads the ConfigMap, builds flannel.1 again and writes FLANNEL_MTU. Last,
-// cni0 gets PodMTU, because the bridge keeps the MTU it was made with. The
-// pods keep their own MTU until they restart (PodMTURestart). Between the
-// delete and the new pod, pod traffic of this node to other nodes stops.
+// "Correction — the MTU was set twice"), and a running flanneld makes a
+// deleted flannel.1 again at once, at the MTU it started with, but without
+// its routes, FDB entries or neighbours (Flannel's vxlan device watcher). So
+// Act first deletes the node's Flannel pod through the Control Plane (CP):
+// the new pod reads the ConfigMap and writes FLANNEL_MTU. Then it deletes
+// flannel.1, which the new pod makes again at PodMTU, and deletes the pod
+// once more, so that a fresh flanneld programs the peers on the new device.
+// Last, cni0 gets PodMTU, because the bridge keeps the MTU it was made with.
+// The pods keep their own MTU until they restart (PodMTURestart). While the
+// device has no routes, pod traffic of this node to other nodes stops.
 type FlannelMTU struct {
 	Node   string
 	PodMTU int
@@ -185,15 +189,25 @@ type FlannelMTU struct {
 func (FlannelMTU) Name() string    { return "flannel-mtu" }
 func (FlannelMTU) Runbook() string { return podMTURunbook }
 
+// deviceCheck holds once flannel.1 has PodMTU.
+func (m FlannelMTU) deviceCheck() check {
+	return check{"flannel.1", `[ "$(cat /sys/class/net/flannel.1/mtu)" = ` + strconv.Itoa(m.PodMTU) + " ]"}
+}
+
+// subnetEnvCheck holds once a flanneld that read PodMTU's ConfigMap started.
+func (m FlannelMTU) subnetEnvCheck() check {
+	return check{"subnet.env", "grep -qx 'FLANNEL_MTU=" + strconv.Itoa(m.PodMTU) + "' " + flannelSubnetEnv}
+}
+
+// routesCheck holds once flanneld has programmed every other node: it adds a
+// route to each one's pod subnet at its start.
+func routesCheck(peers int) check {
+	return check{"routes", `[ "$(ip -4 route show dev flannel.1 | wc -l)" -ge ` + strconv.Itoa(peers) + " ]"}
+}
+
 // tunnelChecks hold once the new Flannel pod has rebuilt flannel.1.
 func (m FlannelMTU) tunnelChecks(peers int) []check {
-	mtu := strconv.Itoa(m.PodMTU)
-	return []check{
-		{"flannel.1", `[ "$(cat /sys/class/net/flannel.1/mtu)" = ` + mtu + " ]"},
-		{"subnet.env", "grep -qx 'FLANNEL_MTU=" + mtu + "' " + flannelSubnetEnv},
-		// Flannel adds a route to every other node's pod subnet at its start.
-		{"routes", `[ "$(ip -4 route show dev flannel.1 | wc -l)" -ge ` + strconv.Itoa(peers) + " ]"},
-	}
+	return []check{m.deviceCheck(), m.subnetEnvCheck(), routesCheck(peers)}
 }
 
 func (m FlannelMTU) checks(peers int) []check {
@@ -231,14 +245,20 @@ func (m FlannelMTU) cni0() string {
 }
 
 func (m FlannelMTU) Preview(context.Context, *stage.Host) (string, error) {
-	return "ip link delete flannel.1\n" +
-		"# on the Control Plane: kubectl " + strings.Join(m.deletePod(), " ") + "\n" +
-		"# wait until the new Flannel pod has built flannel.1 at " + strconv.Itoa(m.PodMTU) + " with its routes\n" +
+	mtu := strconv.Itoa(m.PodMTU)
+	del := "# on the Control Plane: kubectl " + strings.Join(m.deletePod(), " ") + "\n"
+	return del +
+		"# wait until the new Flannel pod has written FLANNEL_MTU=" + mtu + "\n" +
+		"ip link delete flannel.1\n" +
+		"# wait until the new Flannel pod has made flannel.1 again at " + mtu + "\n" +
+		del +
+		"# wait until the next Flannel pod has programmed the routes on flannel.1\n" +
 		m.cni0() + "\n", nil
 }
 
 // Act refuses while the ConfigMap does not give PodMTU: the new pod would
-// build flannel.1 at the old MTU, after an outage for nothing.
+// build flannel.1 at the old MTU, after an outage for nothing. Each wait that
+// runs out stops Act with the checks that still fail.
 func (m FlannelMTU) Act(ctx context.Context, h *stage.Host) error {
 	got, _, err := liveBackendMTU(ctx, m.CP)
 	if err != nil {
@@ -247,20 +267,46 @@ func (m FlannelMTU) Act(ctx context.Context, h *stage.Host) error {
 	if want := underlayMTU(m.PodMTU); got != want {
 		return fmt.Errorf("ConfigMap %s has Backend.MTU %d, not %d: run flannel-config first", flannelCMPath, got, want)
 	}
-	if _, err := h.Exec.Run(ctx, "if [ -e /sys/class/net/flannel.1 ]; then ip link delete flannel.1; fi"); err != nil {
-		return err
-	}
-	if _, err := (kube.Kubectl{Exec: m.CP}).Run(ctx, m.deletePod()...); err != nil {
-		return err
-	}
 	peers, err := m.peers(ctx)
 	if err != nil {
 		return err
 	}
-	tunnel := m.tunnelChecks(peers)
-	if err := waitFor(ctx, m.Wait, m.Every, func() (stage.Status, error) { return probe(ctx, h, tunnel) }); err != nil {
+	cp := kube.Kubectl{Exec: m.CP}
+	if _, err := cp.Run(ctx, m.deletePod()...); err != nil {
+		return err
+	}
+	if err := m.await(ctx, h, "the new Flannel pod's FLANNEL_MTU", []check{m.subnetEnvCheck()}); err != nil {
+		return err
+	}
+	if _, err := h.Exec.Run(ctx, "if [ -e /sys/class/net/flannel.1 ]; then ip link delete flannel.1; fi"); err != nil {
+		return err
+	}
+	if err := m.await(ctx, h, "flannel.1 made again", []check{m.deviceCheck()}); err != nil {
+		return err
+	}
+	if _, err := cp.Run(ctx, m.deletePod()...); err != nil {
+		return err
+	}
+	if err := m.await(ctx, h, "the routes on flannel.1", m.tunnelChecks(peers)); err != nil {
 		return err
 	}
 	_, err = h.Exec.Run(ctx, m.cni0())
 	return err
+}
+
+// await waits until checks hold on the node, or fails with those that do not.
+func (m FlannelMTU) await(ctx context.Context, h *stage.Host, what string, checks []check) error {
+	var last stage.Status
+	err := waitFor(ctx, m.Wait, m.Every, func() (stage.Status, error) {
+		st, err := probe(ctx, h, checks)
+		last = st
+		return st, err
+	})
+	if err != nil {
+		return err
+	}
+	if !last.Done {
+		return fmt.Errorf("%s: waited %s for %s, %s", m.Node, m.Wait, what, last.Detail)
+	}
+	return nil
 }

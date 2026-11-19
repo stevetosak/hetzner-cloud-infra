@@ -29,8 +29,9 @@ var nodePodMTUCmd = &cobra.Command{
 	Use:   "pod-mtu",
 	Short: "Give every pod kluster.yaml's podMTU: Flannel's ConfigMap, flannel.1 on each Node, then each workload restarted (docs/runbook/workers.md)",
 	Long: "Every Node of the cluster, one at a time. On the Control Plane kluster sets net-conf.json in the " +
-		"kube-flannel-cfg ConfigMap from core/cni/flannel.yaml. On each Node it deletes flannel.1 and that " +
-		"Node's Flannel pod, waits for the new tunnel at podMTU, then sets cni0. Back on the Control Plane " +
+		"kube-flannel-cfg ConfigMap from core/cni/flannel.yaml. On each Node it restarts that Node's " +
+		"Flannel pod, deletes flannel.1 (the new pod makes it again at podMTU), restarts the pod once more " +
+		"so that it programs the routes, then sets cni0. Back on the Control Plane " +
 		"it restarts, one at a time, each workload with a pod not at podMTU (CloudNativePG Clusters last, " +
 		"by a switchover) and proves the end state. kluster dials every Node first and refuses a Node it " +
 		"has no login to before anything changes. --until flannel stops before the restarts. Live goes " +
