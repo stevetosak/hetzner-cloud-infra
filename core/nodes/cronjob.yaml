@@ -1,0 +1,83 @@
+# The mesh catalog (ADR 0016): each hour, send the mesh store to the workflow
+# mesh-catalog.yml when it differs from peers.json on the public branch
+# `mesh-catalog`. The logic is mesh-catalog/send.sh; read its header first.
+#
+# Run it by hand at any time:
+#   kubectl create job --from=cronjob/mesh-catalog -n nodes mesh-catalog-manual-$(date -u +%Y%m%d%H%M)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mesh-catalog
+  namespace: nodes
+spec:
+  # Minute 17, off the full hour that other jobs and GitHub's own load favour.
+  schedule: "17 * * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  # A run missed while the control plane was down is not made up: the next
+  # hour sends the same store.
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      # Two retries absorb a short network fault; a run is safe to repeat,
+      # because it always sends the whole store.
+      backoffLimit: 2
+      activeDeadlineSeconds: 300
+      template:
+        spec:
+          serviceAccountName: mesh-catalog
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: send
+              # kubectl, jq, curl and bash in one image (the same as the
+              # Restore Drill's).
+              image: alpine/k8s:1.37.1@sha256:712dc5385d1c1a3f83b747fa9e40f64d433a97f72ff42f9755ff7dd1f62846e4
+              imagePullPolicy: IfNotPresent
+              command: [bash, /scripts/send.sh]
+              env:
+                # kubectl writes its cache under $HOME.
+                - name: HOME
+                  value: /tmp
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ['ALL']
+              # The first guess of ADR 0013; a CronJob keeps it until a
+              # measured window holds one of its runs.
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 256Mi
+                limits:
+                  memory: 512Mi
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: github
+                  mountPath: /run/secrets/github
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: scripts
+              configMap:
+                name: mesh-catalog
+            # A fine-grained token that may only send the dispatch
+            # (secrets.yaml). Optional: a store that matches the catalog
+            # needs no token, so the Job runs before the Secret exists.
+            - name: github
+              secret:
+                secretName: mesh-catalog-github
+                optional: true
+            - name: tmp
+              emptyDir: {}
