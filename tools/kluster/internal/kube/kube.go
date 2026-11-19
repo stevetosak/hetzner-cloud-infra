@@ -157,7 +157,17 @@ type Pod struct {
 	// its containers with its sidecars, and its largest init container,
 	// plus its overhead.
 	MemoryRequest resource.Quantity
+	// Node is where the pod is scheduled; IP is its pod IP, the Node's own
+	// address under HostNetwork.
+	Node, IP    string
+	HostNetwork bool
+	// Owner is the pod's controller, empty for a bare pod.
+	Owner  Owner
+	Labels map[string]string
 }
+
+// Owner is an object's controlling owner.
+type Owner struct{ Kind, Name string }
 
 // Remains reports whether the pod still holds work a drain must move.
 func (p Pod) Remains() bool { return !p.DaemonSet && !p.Mirror && !p.Finished }
@@ -171,6 +181,63 @@ func (k Kubectl) PodsOn(ctx context.Context, node string) ([]Pod, error) {
 	return ParsePods([]byte(out))
 }
 
+// Pods reads every pod of the cluster.
+func (k Kubectl) Pods(ctx context.Context) ([]Pod, error) {
+	out, err := k.Run(ctx, "get", "pods", "--all-namespaces", "-o", "json")
+	if err != nil {
+		return nil, err
+	}
+	return ParsePods([]byte(out))
+}
+
+// ownerRef is a metadata.ownerReferences entry.
+type ownerRef struct {
+	Kind       string `json:"kind"`
+	Name       string `json:"name"`
+	Controller bool   `json:"controller"`
+}
+
+// controller is the owner that controls the object.
+func controller(refs []ownerRef) Owner {
+	for _, o := range refs {
+		if o.Controller {
+			return Owner{Kind: o.Kind, Name: o.Name}
+		}
+	}
+	return Owner{}
+}
+
+// ReplicaSetOwners maps each ReplicaSet, as namespace/name, to its controller.
+func (k Kubectl) ReplicaSetOwners(ctx context.Context) (map[string]Owner, error) {
+	out, err := k.Run(ctx, "get", "replicasets", "--all-namespaces", "-o", "json")
+	if err != nil {
+		return nil, err
+	}
+	return ParseOwners([]byte(out))
+}
+
+// ParseOwners reads the controller of each object of a `kubectl get -o json`
+// list, by namespace/name.
+func ParseOwners(b []byte) (map[string]Owner, error) {
+	var list struct {
+		Items []struct {
+			Metadata struct {
+				Namespace       string     `json:"namespace"`
+				Name            string     `json:"name"`
+				OwnerReferences []ownerRef `json:"ownerReferences"`
+			} `json:"metadata"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(b, &list); err != nil {
+		return nil, fmt.Errorf("reading the owner list: %w", err)
+	}
+	owners := make(map[string]Owner, len(list.Items))
+	for _, it := range list.Items {
+		owners[it.Metadata.Namespace+"/"+it.Metadata.Name] = controller(it.Metadata.OwnerReferences)
+	}
+	return owners, nil
+}
+
 // mirrorAnnotation marks the API's copy of a static pod.
 const mirrorAnnotation = "kubernetes.io/config.mirror"
 
@@ -179,15 +246,17 @@ func ParsePods(b []byte) ([]Pod, error) {
 	var list struct {
 		Items []struct {
 			Metadata struct {
-				Namespace       string                  `json:"namespace"`
-				Name            string                  `json:"name"`
-				Annotations     map[string]string       `json:"annotations"`
-				OwnerReferences []struct{ Kind string } `json:"ownerReferences"`
+				Namespace       string            `json:"namespace"`
+				Name            string            `json:"name"`
+				Annotations     map[string]string `json:"annotations"`
+				Labels          map[string]string `json:"labels"`
+				OwnerReferences []ownerRef        `json:"ownerReferences"`
 			} `json:"metadata"`
 			Spec   podSpec `json:"spec"`
 			Status struct {
 				Phase  string `json:"phase"`
 				Reason string `json:"reason"`
+				PodIP  string `json:"podIP"`
 			} `json:"status"`
 		} `json:"items"`
 	}
@@ -198,7 +267,9 @@ func ParsePods(b []byte) ([]Pod, error) {
 	for _, it := range list.Items {
 		p := Pod{Namespace: it.Metadata.Namespace, Name: it.Metadata.Name,
 			Finished: it.Status.Phase == "Succeeded" || it.Status.Phase == "Failed",
-			Phase:    it.Status.Phase, Reason: it.Status.Reason}
+			Phase:    it.Status.Phase, Reason: it.Status.Reason,
+			Node: it.Spec.NodeName, IP: it.Status.PodIP, HostNetwork: it.Spec.HostNetwork,
+			Owner: controller(it.Metadata.OwnerReferences), Labels: it.Metadata.Labels}
 		req, err := it.Spec.memoryRequest()
 		if err != nil {
 			return nil, fmt.Errorf("pod %s/%s: %w", p.Namespace, p.Name, err)
@@ -221,6 +292,8 @@ type container struct {
 }
 
 type podSpec struct {
+	NodeName       string            `json:"nodeName"`
+	HostNetwork    bool              `json:"hostNetwork"`
 	Containers     []container       `json:"containers"`
 	InitContainers []container       `json:"initContainers"`
 	Overhead       map[string]string `json:"overhead"`
@@ -345,6 +418,9 @@ type Database struct {
 	Instances int
 	Ready     int
 	Phase     string
+	// CurrentPrimary is the instance that is primary now; TargetPrimary the
+	// one the operator makes primary, the same outside a switchover.
+	CurrentPrimary, TargetPrimary string
 }
 
 // Healthy reports whether every instance the Cluster asks for is ready.
@@ -352,6 +428,42 @@ func (d Database) Healthy() bool { return d.Instances > 0 && d.Ready >= d.Instan
 
 // cnpgClusters is the CloudNativePG Cluster resource.
 const cnpgClusters = "clusters.postgresql.cnpg.io"
+
+// CNPGHealthyPhase is a Cluster's phase when every instance runs and no
+// switchover or failover is under way.
+const CNPGHealthyPhase = "Cluster in healthy state"
+
+// Database reads one CloudNativePG Cluster.
+func (k Kubectl) Database(ctx context.Context, namespace, name string) (Database, error) {
+	out, err := k.Run(ctx, "-n", namespace, "get", cnpgClusters, name, "-o", "json")
+	if err != nil {
+		return Database{}, err
+	}
+	dbs, err := ParseDatabases([]byte(`{"items":[` + out + `]}`))
+	if err != nil {
+		return Database{}, err
+	}
+	return dbs[0], nil
+}
+
+// SetTargetPrimary asks the CloudNativePG operator for a switchover to the
+// instance target, as `kubectl cnpg promote` does: the operator reads
+// status.targetPrimary.
+func (k Kubectl) SetTargetPrimary(ctx context.Context, namespace, name, target string) error {
+	patch, err := json.Marshal(map[string]any{"status": map[string]string{"targetPrimary": target}})
+	if err != nil {
+		return err
+	}
+	_, err = k.Run(ctx, "-n", namespace, "patch", cnpgClusters, name, "--type", "merge", "--subresource", "status", "-p", string(patch))
+	return err
+}
+
+// PodReady reports whether a pod exists and its Ready condition is True.
+func (k Kubectl) PodReady(ctx context.Context, namespace, name string) (bool, error) {
+	out, err := k.Run(ctx, "-n", namespace, "get", "pod", name, "--ignore-not-found",
+		"-o", `jsonpath={.status.conditions[?(@.type=="Ready")].status}`)
+	return strings.TrimSpace(out) == "True", err
+}
 
 // Databases reads every CloudNativePG Cluster. A cluster without the CNPG
 // CRD has none: nil and no error.
@@ -384,6 +496,8 @@ func ParseDatabases(b []byte) ([]Database, error) {
 			Status struct {
 				ReadyInstances int    `json:"readyInstances"`
 				Phase          string `json:"phase"`
+				CurrentPrimary string `json:"currentPrimary"`
+				TargetPrimary  string `json:"targetPrimary"`
 			} `json:"status"`
 		} `json:"items"`
 	}
@@ -393,7 +507,8 @@ func ParseDatabases(b []byte) ([]Database, error) {
 	dbs := make([]Database, 0, len(list.Items))
 	for _, it := range list.Items {
 		dbs = append(dbs, Database{Namespace: it.Metadata.Namespace, Name: it.Metadata.Name,
-			Instances: it.Spec.Instances, Ready: it.Status.ReadyInstances, Phase: it.Status.Phase})
+			Instances: it.Spec.Instances, Ready: it.Status.ReadyInstances, Phase: it.Status.Phase,
+			CurrentPrimary: it.Status.CurrentPrimary, TargetPrimary: it.Status.TargetPrimary})
 	}
 	return dbs, nil
 }

@@ -240,3 +240,48 @@ func TestLabelSetsInOrderAndRemoves(t *testing.T) {
 		t.Errorf("ran\n%s\nwant\n%s", r.cmd, want)
 	}
 }
+
+func TestParsePodsReadsTheNetworkAndTheController(t *testing.T) {
+	pods, err := ParsePods([]byte(`{"items":[
+ {"metadata":{"namespace":"doma","name":"web-x","labels":{"app":"web"},
+   "ownerReferences":[{"kind":"Other","name":"o"},{"kind":"ReplicaSet","name":"web-5d8f","controller":true}]},
+  "spec":{"nodeName":"k8swk2"},"status":{"phase":"Running","podIP":"10.244.2.7"}},
+ {"metadata":{"namespace":"kube-flannel","name":"flannel-x"},
+  "spec":{"nodeName":"k8s-cp","hostNetwork":true},"status":{"phase":"Running","podIP":"10.0.1.5"}}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Pod{
+		{Namespace: "doma", Name: "web-x", Phase: "Running", Node: "k8swk2", IP: "10.244.2.7",
+			Owner: Owner{Kind: "ReplicaSet", Name: "web-5d8f"}, Labels: map[string]string{"app": "web"}},
+		{Namespace: "kube-flannel", Name: "flannel-x", Phase: "Running", Node: "k8s-cp", IP: "10.0.1.5", HostNetwork: true},
+	}
+	for i := range pods {
+		pods[i].MemoryRequest = want[i].MemoryRequest
+	}
+	if !reflect.DeepEqual(pods, want) {
+		t.Fatalf("got %+v", pods)
+	}
+}
+
+func TestReplicaSetOwners(t *testing.T) {
+	s := scripted{"'get' 'replicasets'": `{"items":[
+ {"metadata":{"namespace":"doma","name":"web-5d8f","ownerReferences":[{"kind":"Deployment","name":"web","controller":true}]}},
+ {"metadata":{"namespace":"x","name":"bare"}}]}`}
+	owners, err := Kubectl{Exec: s}.ReplicaSetOwners(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]Owner{"doma/web-5d8f": {Kind: "Deployment", Name: "web"}, "x/bare": {}}
+	if !reflect.DeepEqual(owners, want) {
+		t.Fatalf("got %+v", owners)
+	}
+}
+
+func TestDatabasesReadsThePrimaries(t *testing.T) {
+	dbs, err := ParseDatabases([]byte(`{"items":[{"metadata":{"namespace":"pg-cluster","name":"tosak-pg-cluster"},
+ "spec":{"instances":2},"status":{"readyInstances":2,"currentPrimary":"tosak-pg-cluster-2","targetPrimary":"tosak-pg-cluster-1"}}]}`))
+	if err != nil || len(dbs) != 1 || dbs[0].CurrentPrimary != "tosak-pg-cluster-2" || dbs[0].TargetPrimary != "tosak-pg-cluster-1" {
+		t.Fatalf("got %+v %v", dbs, err)
+	}
+}
