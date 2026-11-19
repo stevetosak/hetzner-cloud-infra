@@ -317,3 +317,15 @@ the Control Plane and the Worker set, so a machine outside Hetzner joins the
 mesh once the bring-your-own step exists. Until then the NAT pair and the relay
 are proven by the renderer's tests and by a WireGuard test in network
 namespaces, not on a cluster.
+
+**2026-11-19 — the store gets a public record.** The ConfigMap
+`kube-system/mesh-peers` keeps no history, so the mesh catalog records it in
+Git: `peers.json` on the branch `mesh-catalog`, with each machine's name, site,
+mesh address and public key, and never an endpoint, because the repository is
+public. A CronJob in the new namespace `nodes`, which will also hold the other
+helpers that keep the nodes in order, compares the store with the catalog every
+hour and sends the whole store to a workflow only when the two differ. A
+CronJob was chosen over a send from kluster after each write because it also
+records a hand edit of the store. It records states, not every change: a change
+put back within the hour leaves no trace, and only a watch on the ConfigMap
+would close that gap.

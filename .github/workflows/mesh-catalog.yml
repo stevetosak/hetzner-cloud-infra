@@ -1,0 +1,87 @@
+name: Mesh catalog
+
+# Records the mesh store, kube-system/mesh-peers, as peers.json on its own
+# branch `mesh-catalog` (ADR 0016). The CronJob mesh-catalog (core/nodes)
+# sends the whole store when it differs from that file. The data branch holds
+# data, never code that runs: the gate script comes from `master`, and it
+# refuses every field but a machine's site, mesh address and public key, so no
+# endpoint reaches this public branch.
+#
+# One run at a time, and a newer pending run replaces an older one: every
+# payload is the whole store, so the newest one is the only one that counts.
+
+on:
+  repository_dispatch:
+    types: [mesh-peers]
+  workflow_dispatch:
+    inputs:
+      payload:
+        description: 'client_payload JSON, {"peers": {...}}, for a manual replay'
+        required: true
+
+concurrency:
+  group: mesh-catalog
+  cancel-in-progress: false
+
+permissions:
+  contents: write # the mesh-catalog branch; master's ruleset refuses this token
+
+jobs:
+  record:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: master
+          persist-credentials: false
+          sparse-checkout: core/nodes/mesh-catalog
+
+      # A checkout of master only to get a clone with this run's credentials;
+      # the next step replaces its files with the data branch.
+      - uses: actions/checkout@v7
+        with:
+          ref: master
+          path: _catalog
+          sparse-checkout: core/nodes/mesh-catalog
+
+      - name: Take the data branch, or start it
+        working-directory: _catalog
+        run: |
+          git sparse-checkout disable
+          if git fetch -q --depth 1 origin mesh-catalog; then
+            git checkout -q -B mesh-catalog FETCH_HEAD
+          else
+            git checkout -q --orphan mesh-catalog
+            git rm -rq --cached . && git clean -fdq
+          fi
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # The payload reaches the script only through `env`, never through
+      # `${{ }}` inside a script.
+      - name: Check and write peers.json
+        id: rec
+        env:
+          EVENT: ${{ github.event_name }}
+          DISPATCHED: ${{ toJSON(github.event.client_payload) }}
+          REPLAYED: ${{ github.event.inputs.payload }}
+        run: |
+          if [ "$EVENT" = workflow_dispatch ]; then PAYLOAD=$REPLAYED; else PAYLOAD=$DISPATCHED; fi
+          RESULT=$(node core/nodes/mesh-catalog/catalog.mjs "$PAYLOAD" _catalog)
+          echo "$RESULT"
+          echo "result=$RESULT" >> "$GITHUB_OUTPUT"
+
+      - name: Push to mesh-catalog
+        if: fromJSON(steps.rec.outputs.result).result == 'written'
+        working-directory: _catalog
+        env:
+          MSG: ${{ fromJSON(steps.rec.outputs.result).message }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add peers.json
+          git commit -q -m "$MSG"
+          git push -q origin HEAD:mesh-catalog

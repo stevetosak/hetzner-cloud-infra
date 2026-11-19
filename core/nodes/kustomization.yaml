@@ -1,0 +1,15 @@
+# Synced by the Application core-nodes (ADR 0010). NOT listed: the namespace,
+# which `kluster services seed` applies, and mesh-catalog-github.enc.yaml,
+# which `kluster secrets apply` owns (secrets.yaml).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - rbac.yaml
+  - cronjob.yaml
+# send.sh stays a real file, tested as such (mesh-catalog/send.test.mjs). The
+# name gets a content hash, so a changed script rolls into the CronJob.
+configMapGenerator:
+  - name: mesh-catalog
+    namespace: nodes
+    files:
+      - mesh-catalog/send.sh

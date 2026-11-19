@@ -45,6 +45,7 @@ spec:
           - {dir: metrics-server, path: core/metrics-server, namespace: metrics-server}
           - {dir: limit-ranges, path: core/limit-ranges, namespace: authos}
           - {dir: monitoring, path: core/monitoring, namespace: monitoring}
+          - {dir: nodes, path: core/nodes, namespace: nodes}
           - {dir: pg-drill, path: core/pg-drill, namespace: pg-drill}
           - {dir: redis, path: core/redis, namespace: redis}
           - {dir: reloader, path: core/reloader, namespace: reloader}

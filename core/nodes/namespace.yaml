@@ -1,0 +1,7 @@
+# The namespace of the helpers that keep the nodes and their mesh in order
+# (ADR 0016): the mesh catalog now, the dead-node remover later. Applied by
+# `kluster services seed`, never by a sync.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nodes
