@@ -6,6 +6,7 @@ _Generated from `history.jsonl` on this branch by `deployments/render-catalog.mj
 
 | App | Version | Commit | Env | Deployed (UTC) |
 | --- | --- | --- | --- | --- |
+| core-nodes | unknown | - | dev | 2026-11-19T19:47:14Z |
 | mail-stalwart | unknown | - | dev | 2026-11-15T10:52:43Z |
 | tosak-net-site | site-v0.0.0+7282838 | [7282838](https://github.com/stevetosak/tosak-net/commit/7282838cf24e30e19d5a297971dbfc1bb56b0d6d) | dev | 2026-11-14T13:44:06Z |
 | core-vpa | unknown | - | dev | 2026-11-08T08:34:20Z |
@@ -30,6 +31,7 @@ _Generated from `history.jsonl` on this branch by `deployments/render-catalog.mj
 
 | App | Version | Commit | Env | Deployed (UTC) |
 | --- | --- | --- | --- | --- |
+| core-nodes | unknown | - | dev | 2026-11-19T19:47:14Z |
 | mail-stalwart | unknown | - | dev | 2026-11-15T10:52:43Z |
 | tosak-net-site | site-v0.0.0+7282838 | [7282838](https://github.com/stevetosak/tosak-net/commit/7282838cf24e30e19d5a297971dbfc1bb56b0d6d) | dev | 2026-11-14T13:44:06Z |
 | tosak-net-site | site-v0.0.0+a873df3 | [a873df3](https://github.com/stevetosak/tosak-net/commit/a873df37df1917a0d0c32bf3d1a415e53b8faa16) | dev | 2026-11-14T00:48:05Z |
@@ -49,6 +51,5 @@ _Generated from `history.jsonl` on this branch by `deployments/render-catalog.mj
 | authos-api | authos-api-v0.0.0+a8d580f | [a8d580f](https://github.com/stevetosak/authos/commit/a8d580fc30e315004afa15ad19fcdb26715d3784) | dev | 2026-10-23T11:12:44Z |
 | authos-ui | authos-ui-v0.0.0+a8d580f | [a8d580f](https://github.com/stevetosak/authos/commit/a8d580fc30e315004afa15ad19fcdb26715d3784) | dev | 2026-10-23T10:59:33Z |
 | authos-demo | authos-demo-v0.0.0+a8d580f | [a8d580f](https://github.com/stevetosak/authos/commit/a8d580fc30e315004afa15ad19fcdb26715d3784) | dev | 2026-10-23T10:56:24Z |
-| doma-web | v0.3.0-7-gd0fa1d7 | [d0fa1d7](https://github.com/stevetosak/doma/commit/d0fa1d74932ca2df272c89aff47621dbbb3cddc2) | dev | 2026-10-23T10:35:30Z |
 
 </details>
