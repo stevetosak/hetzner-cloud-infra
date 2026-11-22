@@ -681,6 +681,14 @@ Safe here because no workload uses the pod network yet — the control-plane
 static pods are all on host networking. **After Workers join, this is no longer
 a free operation.** Settle the MTU before Phase 3.
 
+Since 2026-11-22 the manifest carries 1400 again, this time on purpose: a pod
+packet between sites is VXLAN inside the WireGuard mesh, so
+[ADR 0016](../adr/0016-every-provider-is-a-set-of-capabilities-and-workers-of-any-provider-join-as-equals.md)
+plans for a 1400-byte tunnel and pods at 1350. On a running cluster the change
+is `kluster node pod-mtu`, which rebuilds `flannel.1` on each node and restarts
+every workload ([Workers runbook](./workers.md#change-the-pod-mtu)); the two
+commands above are not enough there.
+
 Final state:
 
 ```

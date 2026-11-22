@@ -147,8 +147,13 @@ then brought back by `kluster node add`.
       2026-11-19, proven there: a run on the empty store sent nothing, a fake
       entry in the store reached `peers.json` in one commit, and the run after
       its removal took it back.
-- [ ] Flannel to `Backend.MTU` 1400. It changes the pod network of every node,
-      so it is proven in a rehearsal before live.
+- [x] Flannel to `Backend.MTU` 1400. It changes the pod network of every node,
+      so it is proven in a rehearsal before live. `kluster node pod-mtu`
+      rebuilds `flannel.1` on each node and restarts every workload
+      ([Workers runbook](../runbook/workers.md#change-the-pod-mtu)). Proven in
+      a rehearsal on 2026-11-19 and live since 2026-11-22: pods at 1350,
+      don't-fragment pings and 4 MiB pulls between every pair of nodes before,
+      between and after the two halves of the change.
 - [ ] Keep the Hetzner-only parts on Hetzner servers: the CSI node DaemonSet
       gets the affinity `instance.hetzner.cloud/provided-by In [cloud]`, and
       both StorageClasses are owned by this repository with

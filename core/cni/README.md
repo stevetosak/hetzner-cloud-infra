@@ -4,12 +4,16 @@
 header comment in the file names them; read it before any upgrade, because a
 straight re-download drops all three.
 
-- **`Backend.MTU = 1450`** — this is the **UNDERLAY** MTU, the MTU of the
-  Hetzner private network. Flannel subtracts VXLAN's 50 bytes itself, so pods
-  get 1400. The file said `1400` once, reasoning that "the network is 1450 and
-  VXLAN costs 50" — which subtracts twice and gives pods 1350. Flannel also
-  does not resize an existing VXLAN device, so correcting it needed
-  `ip link delete flannel.1` and a restart, not just a re-apply.
+- **`Backend.MTU = 1400`** — this is the **UNDERLAY** MTU: the WireGuard mesh
+  tunnel's, the smallest link a pod packet crosses between sites (ADR 0016).
+  Flannel subtracts VXLAN's 50 bytes itself, so pods get 1350, which is
+  `podMTU` in `kluster.yaml`; a kluster test refuses the two out of step.
+  Writing the pod value here subtracts twice. Until 2026-11-22 the value was
+  1450, the Hetzner private network, and pods got 1400. Flannel does not
+  resize an existing VXLAN device, so a running cluster changes with
+  `kluster node pod-mtu`
+  ([Workers runbook](../../docs/runbook/workers.md#change-the-pod-mtu)), not
+  with a re-apply.
 - **`--iface-regex=^10\.0\.`** — binds flanneld to the private NIC. Without it
   flannel takes the first interface it finds, which is the public one: pod
   traffic would leave the private network and the derived MTU would be wrong.
@@ -41,4 +45,4 @@ stays `Pending`. That is expected, not a fault.
 curl -fLO https://github.com/flannel-io/flannel/releases/download/<tag>/kube-flannel.yml
 ```
 
-Then re-apply both edits and keep the header comment.
+Then re-apply all three edits and keep the header comment.
