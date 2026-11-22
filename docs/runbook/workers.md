@@ -3,7 +3,7 @@ title: "Workers — build runbook"
 description: "How kluster adds, removes and replaces a Worker, and every command that built and joined the first three by hand on 2026-09-20, with the checks that proved each step."
 type: procedure
 topics: [provisioning, kubernetes, networking]
-verified: 2026-10-06
+verified: 2026-11-22
 ---
 
 The numbered steps below were written verbatim as each command ran, on
@@ -404,6 +404,102 @@ UDP 51821 stays closed on both Hetzner firewalls until `allow_mesh_udp` is set i
 a committed `infra/shared/terraform.tfvars`. The
 [infra README](../../infra/README.md#the-mesh-port) says why a `-var` does not
 hold, and how to prove the rule is gone after the switch is turned off.
+
+## Change the pod MTU
+
+A pod packet between sites is VXLAN inside the WireGuard mesh, so
+[ADR 0016](../adr/0016-every-provider-is-a-set-of-capabilities-and-workers-of-any-provider-join-as-equals.md)
+plans packet sizes for that path: Flannel's `Backend.MTU` in
+`core/cni/flannel.yaml` is 1400, and pods get 1350, which is `podMTU` in
+`kluster.yaml`. `Backend.MTU` is the underlay value and Flannel subtracts the
+50-byte VXLAN header itself
+([control-plane runbook](./control-plane.md#correction--the-mtu-was-set-twice));
+a test in `tools/kluster` refuses a manifest whose value is not `podMTU` + 50.
+A build applies the manifest, and the `cni-flannel` Stage checks `flannel.1`
+against `podMTU`. Argo CD does not sync `core/cni`, so a merge changes only the
+next build.
+
+A running cluster needs more than an apply. Flannel does not resize an
+existing `flannel.1`, and Flannel v0.28.9 watches the device: a deleted
+`flannel.1` is made again at once by the running `flanneld`, at the MTU of the
+configuration that `flanneld` started with, and without its routes, FDB entries
+or neighbours, which only a `flanneld` start programs. A pod keeps the MTU its
+interface got at creation until it is replaced. `kluster node pod-mtu` makes
+the change in four Stages:
+
+1. **flannel-config** (Control Plane) — patches only `net-conf.json` of
+   `kube-flannel/kube-flannel-cfg` from `core/cni/flannel.yaml`, with a diff
+   in Plan Mode. A ConfigMap change starts no rollout.
+2. **flannel-mtu** (every Node, the Control Plane included, one at a time) —
+   deletes the Node's Flannel pod and waits until the new pod has written
+   `FLANNEL_MTU`, deletes `flannel.1` and waits until that pod has made it
+   again at the pod MTU, deletes the Flannel pod once more so that the next
+   start programs the peers, waits for one `flannel.1` route per other Node,
+   then sets `cni0`. Done when `flannel.1`, `/run/flannel/subnet.env`, the
+   routes and `cni0` hold the value.
+3. **pod-mtu-restart** (Control Plane) — reads the `eth0` MTU of every pod
+   network namespace on every Node, joins them to pods by IP, and restarts the
+   owner of each pod at another MTU, one at a time: `rollout restart` and
+   `rollout status --timeout=5m` for a Deployment, StatefulSet or DaemonSet,
+   then each CloudNativePG Cluster last (its replicas deleted, a switchover
+   through `status.targetPrimary`, the old primary deleted). Bare pods, Jobs
+   and ReplicaSets without a Deployment are reported, not restarted. The first
+   restart that does not finish stops the run.
+4. **pod-mtu-proof** (Control Plane) — waits up to three minutes for every
+   Node Ready, no pod Pending, every database healthy and every workload's
+   pods at the pod MTU.
+
+A Stage whose Probe passes is skipped, so a stopped run resumes. On live
+kluster reaches every Node through WireGuard and dials all of them before any
+Stage runs; a rehearsal opens bootstrap SSH and closes it at the end.
+`--until flannel` stops after Stage 2, which leaves old pods sending through
+tunnels of the new size; path MTU discovery covers that state (proven below).
+
+```sh
+cd tools/kluster
+kluster node pod-mtu                          # Plan Mode: the diff, every restart
+kluster node pod-mtu --until flannel --apply  # tunnels only
+kluster node pod-mtu --apply                  # restarts and the proof
+```
+
+Each Deployment with the `Recreate` strategy is down during its restart, and
+the switchover stops database writes for a few seconds. On live on 2026-11-22
+nine Deployments used `Recreate`: `argocd-notifications-controller`,
+`authos-api`, `authos-demo`, `authos-ui`, `duster`, `barman-cloud`, `doma`,
+`stalwart` and `redis`.
+
+### The proof
+
+A throwaway DaemonSet in a `netcheck` namespace runs one
+`nicolaka/netshoot:v0.16` pod per Node, each an `iperf3` server. For every
+ordered pair of pods on two Nodes (12 pairs), a ping with the don't-fragment
+bit (`ping -M do -s <payload>`) at the largest payload that fits must pass, the
+next larger must fail, and a 4 MiB `iperf3` pull (`-R`) must complete. A pull
+is the check that matters: an MTU fault shows as a TCP black hole, where small
+packets pass and large ones vanish. The namespace is deleted afterwards.
+
+| State | Passes | Fails | 4 MiB pulls |
+|---|---|---|---|
+| Before: tunnels and pods at 1400 | 1372 | 1373, refused by the sender (`Message too large`) | 12 of 12 |
+| After Stage 2: tunnels 1350, pods 1400 | 1322 | 1372, `Frag needed and DF set (mtu = 1350)` from the path | 12 of 12 |
+| After Stage 4: pods 1350 | 1322 | 1323, refused by the sender | 12 of 12 |
+
+The same three states passed in a rehearsal on 2026-11-19 and on live on
+2026-11-22. On live, Stages 1 and 2 took 72 seconds for four Nodes. The full
+run took eight minutes (08:49:52 to 08:57:42 UTC): 36 rollouts, then the
+CloudNativePG switchover from `tosak-pg-cluster-2` to `tosak-pg-cluster-1`, and
+the proof. While the `barman-cloud` plugin restarted, the Cluster reported
+"cannot proceed to reconciliation due to an error while interacting with
+plugins" for about ten seconds and was healthy again before its own turn.
+Afterwards every Argo CD Application was Synced and Healthy, the only active
+alert was Watchdog, and none of the 13 public-host and mail-port probes had
+recorded a failure in the last 15 minutes (5 samples each, so an outage of a
+few seconds is not excluded).
+
+🔴 **The rehearsal found that deleting `flannel.1` under a running `flanneld`
+does not change its MTU.** The first version of Stage 2 deleted the device
+first; the old `flanneld` made it again at 1400 and the new pod kept it. That is
+why Stage 2 now restarts Flannel before and after the delete.
 
 ## Why this was done by hand
 
@@ -1011,6 +1107,10 @@ private network — silently.
 Pod subnets: `10.244.0.0/24` on the Control Plane, then `10.244.1/2/3.0/24`.
 
 ### The MTU chain, end to end
+
+These are the values of this build. Since 2026-11-22 `Backend.MTU` is 1400 and
+the chain from `FLANNEL_MTU` to the pods is 1350
+([Change the pod MTU](#change-the-pod-mtu)); `enp7s0` stays at 1450.
 
 | Layer | Value |
 |---|---|
