@@ -491,10 +491,14 @@ CloudNativePG switchover from `tosak-pg-cluster-2` to `tosak-pg-cluster-1`, and
 the proof. While the `barman-cloud` plugin restarted, the Cluster reported
 "cannot proceed to reconciliation due to an error while interacting with
 plugins" for about ten seconds and was healthy again before its own turn.
-Afterwards every Argo CD Application was Synced and Healthy, the only active
-alert was Watchdog, and none of the 13 public-host and mail-port probes had
-recorded a failure in the last 15 minutes (5 samples each, so an outage of a
-few seconds is not excluded).
+Afterwards every Argo CD Application was Synced and Healthy, and none of the
+13 public-host and mail-port probes had recorded a failure in the last 15
+minutes (5 samples each, so an outage of a few seconds is not excluded). The
+only firing alert was Watchdog, but that check came too early: the run had
+restarted Prometheus at 08:54, which deletes its history, and every alert
+waited out its `for:` again. Fifteen `ContainerMemoryNearRequest` alerts
+(`for: 30m`) were pending from 08:55 and fired from about 09:25. Whether they
+fired before the run is not known.
 
 🔴 **The rehearsal found that deleting `flannel.1` under a running `flanneld`
 does not change its MTU.** The first version of Stage 2 deleted the device
