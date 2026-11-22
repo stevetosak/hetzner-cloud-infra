@@ -154,11 +154,13 @@ then brought back by `kluster node add`.
       a rehearsal on 2026-11-19 and live since 2026-11-22: pods at 1350,
       don't-fragment pings and 4 MiB pulls between every pair of nodes before,
       between and after the two halves of the change.
-- [ ] Keep the Hetzner-only parts on Hetzner servers: the CSI node DaemonSet
+- [x] Keep the Hetzner-only parts on Hetzner servers: the CSI node DaemonSet
       gets the affinity `instance.hetzner.cloud/provided-by In [cloud]`, and
       both StorageClasses are owned by this repository with
-      `allowedTopologies: csi.hetzner.cloud/location In [hel1]`. The live
-      StorageClasses change in place, with the operator's yes.
+      `allowedTopologies: csi.hetzner.cloud/location In [hel1]`
+      ([the CSI driver](../runbook/control-plane.md#8c-the-csi-driver)). Live
+      since 2026-11-22: the classes changed in place, and a test claim got a
+      volume whose PV requires `hel1`, which was deleted with its claim.
 - [ ] Bring-your-own nodes in kluster: the `byo` provisioner, the kubelet
       settings above, the best-effort taint at registration, the bootstrap with a
       console-checked host key, and a ready check that no longer waits for an

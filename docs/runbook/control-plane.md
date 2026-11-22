@@ -807,6 +807,17 @@ core/hcloud/storageclasses.yaml`; a server-side dry run on live proved it on
 class is deleted and applied again by hand, with the operator's yes. Bound
 volumes keep working while it is missing; only a new claim waits.
 
+On live on 2026-11-22 the two applies took one minute (09:49:37 to 09:50:08
+UTC): the node DaemonSet rolled on all four Nodes in six seconds, one at a
+time, and both classes took the allowed location in place. `hcloud-volumes-retain`
+still carried the `core-cnpg` tracking annotation, so Argo CD marked it
+"requires pruning" once the class left `core/cnpg`; removing the annotation
+(`kubectl annotate storageclass hcloud-volumes-retain
+argocd.argoproj.io/tracking-id-`) made `core-cnpg` Synced again. A test claim
+of 10Gi on the default class was provisioned and attached on `k8swk3`, its PV
+required `csi.hetzner.cloud/location=hel1`, and the volume was deleted with the
+claim (the driver logged "volume deleted").
+
 ### Correction — CoreDNS does NOT stay `Pending`
 
 Earlier notes, including the Phase 2 handoff, say CoreDNS stays `Pending` for
