@@ -10,7 +10,6 @@ kind: Kustomization
 resources:
   - operator.yaml
   - plugin-barman-cloud.yaml
-  - storageclass-retain.yaml
   - objectstore.yaml
   - source-objectstore.yaml
   - scheduled-backup.yaml

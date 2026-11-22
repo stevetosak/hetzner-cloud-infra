@@ -161,7 +161,8 @@ Storage stays on Hetzner servers the same way. The hcloud CSI node binary exits
 when Hetzner's metadata service gives it no server ID (CSI v2.23.0), so its pod
 would crash in a loop on any other machine; the DaemonSet gets the affinity
 `instance.hetzner.cloud/provided-by In [cloud]`. Both StorageClasses become
-owned by this repository, with the chart's own switched off, and carry
+owned by this repository in `core/hcloud/storageclasses.yaml`, next to the
+driver and applied with it, with the chart's own switched off, and carry
 `allowedTopologies: csi.hetzner.cloud/location In [hel1]`. The existing
 PostgreSQL volumes already require `hel1`; the guard is for a new claim, which
 with `WaitForFirstConsumer` and no allowed topologies can be provisioned for a
@@ -250,9 +251,8 @@ nodes Plan, while a small controller covers every Worker now.
 
 The protection of a Worker outside Hetzner rests on an error path of the hcloud
 CCM, not on a documented feature, so each CCM version bump has to prove it
-again in a rehearsal. Owning the StorageClasses means deleting and recreating
-the live ones, because an existing StorageClass's `allowedTopologies` cannot
-be changed; that needs the operator's yes.
+again in a rehearsal. Owning the StorageClasses changes the two live classes in
+place, and that change needs the operator's yes.
 
 The pod MTU change touches every node: Flannel and every pod restart with the
 new value. Each Hetzner server gets a world-reachable UDP port, where ADR 0006
@@ -329,3 +329,17 @@ CronJob was chosen over a send from kluster after each write because it also
 records a hand edit of the store. It records states, not every change: a change
 put back within the hour leaves no trace, and only a watch on the ConfigMap
 would close that gap.
+
+**2026-11-22 — the StorageClasses change in place, and both live in
+`core/hcloud`.** The text above said an existing StorageClass's
+`allowedTopologies` cannot be changed, so owning the classes meant deleting
+and recreating the live ones. That is wrong for this cluster: a server-side
+dry run of `allowedTopologies` on both live classes (`kubectl diff` and
+`kubectl apply --dry-run=server`, Kubernetes v1.37.0) passed validation. Only
+`provisioner`, `parameters`, `reclaimPolicy` and `volumeBindingMode` cannot
+change. The text above is corrected to match. Both classes live in
+`core/hcloud/storageclasses.yaml`, which `kluster cp init` applies after the
+driver, and `hcloud-volumes-retain` leaves `core/cnpg`, so Argo CD no longer
+manages it. The `csi` Stage refuses a class file whose location is not the
+name of the `hcloud` site in the environment's Node set, and it only applies:
+no kluster run deletes a live class.

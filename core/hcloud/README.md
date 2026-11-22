@@ -9,6 +9,7 @@ credentials.
 | `ccm-values.yaml` | the values that produced it | — |
 | `csi.yaml` | chart `hcloud-csi` | v2.23.0 |
 | `csi-values.yaml` | the values that produced it | — |
+| `storageclasses.yaml` | hand-written: `hcloud-volumes` and `hcloud-volumes-retain` | — |
 
 The YAML is rendered, not hand-written. Do not edit it in place: change the
 values file and render again, so the file always matches a named chart version.
@@ -24,9 +25,29 @@ The CCM clears that taint, writes each node's `providerID`, and puts the
 server's private address on the Node object as InternalIP. The CSI driver needs
 that `providerID` to attach a volume, so the order is CCM first, CSI second.
 
-The CSI driver makes `hcloud-volumes` the **default** StorageClass, which is
-where PostgreSQL now lives. Volumes are independent of the servers that mount
-them, so destroying every worker no longer destroys the data (ADR 0005).
+Volumes are independent of the servers that mount them, so destroying every
+worker no longer destroys the data (ADR 0005).
+
+## Hetzner servers only (ADR 0016)
+
+A Hetzner volume attaches only to a Hetzner server in its own location, and
+the CSI node binary exits on a machine where Hetzner's metadata service gives
+it no server ID. So `csi-values.yaml` keeps the node DaemonSet on Nodes the CCM
+labelled `instance.hetzner.cloud/provided-by=cloud`, and switches the chart's
+own StorageClass off (`storageClasses: []`). `storageclasses.yaml` holds both
+classes instead: `hcloud-volumes`, the default (`Delete`), and
+`hcloud-volumes-retain`, the class every PostgreSQL volume is made from
+(`Retain`). Each allows only `csi.hetzner.cloud/location` `hel1`, so a claim is
+never provisioned for a Node without the driver
+([external-provisioner#544](https://github.com/kubernetes-csi/external-provisioner/issues/544)).
+That value is the name of the `hcloud` site in `infra/nodes/<env>.yaml`;
+kluster's `csi` Stage refuses a file that disagrees, and a test holds them
+equal.
+
+`allowedTopologies` and the annotations change in place with `kubectl apply`.
+`provisioner`, `parameters`, `reclaimPolicy` and `volumeBindingMode` cannot
+change: the class is deleted and applied again by hand, with the operator's
+yes.
 
 ## The one setting that must not drift
 
@@ -63,6 +84,7 @@ cluster has not been restored, only recreated (ADR 0003).
 ```sh
 kubectl apply -f core/hcloud/ccm.yaml
 kubectl apply -f core/hcloud/csi.yaml
+kubectl apply -f core/hcloud/storageclasses.yaml
 ```
 
 ## Re-rendering after a version bump
@@ -88,4 +110,6 @@ helm template hcloud-csi /tmp/charts/hcloud-csi \
   --values core/hcloud/csi-values.yaml > core/hcloud/csi.yaml
 ```
 
-Then check the diff for the route-controller setting before committing.
+Then check the diff before committing: the route-controller setting in
+`ccm.yaml`, and in `csi.yaml` no StorageClass and the node DaemonSet's
+`provided-by In [cloud]` affinity.

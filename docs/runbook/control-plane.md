@@ -771,14 +771,41 @@ addresses   InternalIP=10.0.1.5   ExternalIP=46.62.209.249       (private is int
 
 ```
 kubectl apply -f core/hcloud/csi.yaml
+kubectl apply -f core/hcloud/storageclasses.yaml
 ```
 
-Chart `v2.23.0`. It creates `hcloud-volumes` **already marked default**, so
-[ADR 0005](../adr/0005-storage-and-worker-identity.md) needs no override:
+Chart `v2.23.0`, rendered from `core/hcloud/csi-values.yaml`. On 2026-09-20 the
+chart itself made `hcloud-volumes` the default class
+([ADR 0005](../adr/0005-storage-and-worker-identity.md)), and the second file
+did not exist. Since 2026-11-22
+([ADR 0016](../adr/0016-every-provider-is-a-set-of-capabilities-and-workers-of-any-provider-join-as-equals.md),
+Amendment 2026-11-22) the chart makes no class, and `storageclasses.yaml`
+holds both of them:
 
 ```
 hcloud-volumes (default)  csi.hetzner.cloud  Delete  WaitForFirstConsumer  true
+hcloud-volumes-retain     csi.hetzner.cloud  Retain  WaitForFirstConsumer  true
 ```
+
+`hcloud-volumes-retain` is the class every PostgreSQL volume is made from. Both
+allow only `csi.hetzner.cloud/location` `hel1`, the key the CSI node pod
+reports for its Node, so no volume is provisioned for a Node without the
+driver. The node DaemonSet runs only where the CCM labelled the Node
+`instance.hetzner.cloud/provided-by=cloud`: on any other machine the driver
+gets no server ID and its pod crashes in a loop.
+
+The `csi` Stage refuses a `storageclasses.yaml` whose location is not the name
+of the `hcloud` site in the environment's Node set (`infra/nodes/<env>.yaml`),
+and a `csi.yaml` that still carries a class. Its Probe checks the default
+class, each class's allowed location, the DaemonSet's affinity and its rollout.
+
+**Changing a class on a running cluster.** `allowedTopologies` and the
+annotations change in place with `kubectl apply -f
+core/hcloud/storageclasses.yaml`; a server-side dry run on live proved it on
+2026-11-22. `provisioner`, `parameters`, `reclaimPolicy` and
+`volumeBindingMode` cannot change: the API server refuses the apply, and the
+class is deleted and applied again by hand, with the operator's yes. Bound
+volumes keep working while it is missing; only a new claim waits.
 
 ### Correction — CoreDNS does NOT stay `Pending`
 

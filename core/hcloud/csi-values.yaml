@@ -11,6 +11,12 @@
 # The node pod mounts every volume on its node, as flannel and kube-proxy
 # carry the network, so it takes system-node-critical as they do; the
 # controller takes system-cluster-critical, as the CCM does.
+#
+# HETZNER SERVERS ONLY (ADR 0016). The node pod gets no server ID from the
+# metadata service on any other machine and crashes in a loop, so it runs
+# only where the CCM labelled the Node provided-by=cloud. The chart's own
+# StorageClass is off: both classes are in storageclasses.yaml, with the
+# allowed topology the chart cannot set.
 
 controller:
   priorityClassName: system-cluster-critical
@@ -48,6 +54,15 @@ controller:
 
 node:
   priorityClassName: system-node-critical
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: instance.hetzner.cloud/provided-by
+                operator: In
+                values:
+                  - cloud
   resources:
     csiNodeDriverRegistrar:
       requests:
@@ -67,3 +82,5 @@ node:
         memory: 32Mi
       limits:
         memory: 64Mi
+
+storageClasses: []

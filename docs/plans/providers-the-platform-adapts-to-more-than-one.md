@@ -158,7 +158,7 @@ then brought back by `kluster node add`.
       gets the affinity `instance.hetzner.cloud/provided-by In [cloud]`, and
       both StorageClasses are owned by this repository with
       `allowedTopologies: csi.hetzner.cloud/location In [hel1]`. The live
-      StorageClasses are deleted and made again only with the operator's yes.
+      StorageClasses change in place, with the operator's yes.
 - [ ] Bring-your-own nodes in kluster: the `byo` provisioner, the kubelet
       settings above, the best-effort taint at registration, the bootstrap with a
       console-checked host key, and a ready check that no longer waits for an
