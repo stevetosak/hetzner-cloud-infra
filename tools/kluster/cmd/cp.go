@@ -315,6 +315,10 @@ func (a *app) cpStages(srv *cloud.Server) ([]stage.Stage, error) {
 	if err != nil {
 		return nil, err
 	}
+	storageClasses, err := read(c.Manifests.StorageClasses)
+	if err != nil {
+		return nil, err
+	}
 	// The cluster's own token, not the one Terraform and kluster use, so
 	// either can be revoked alone.
 	token, err := a.env.HcloudClusterToken()
@@ -335,7 +339,7 @@ func (a *app) cpStages(srv *cloud.Server) ([]stage.Stage, error) {
 		stages.Flannel{Manifest: flannel, Node: cp.Name, PrivateIP: cp.PrivateIP, Interface: c.Node.NetworkInterface, PodMTU: c.Cluster.PodMTU},
 		stages.CloudController{Token: token, Network: c.Cluster.HcloudNetwork, Manifest: ccm,
 			Node: cp.Name, ServerID: srv.ID, PrivateIP: cp.PrivateIP},
-		stages.CSI{Manifest: csi},
+		stages.CSI{Manifest: csi, StorageClasses: storageClasses, Location: site.Name},
 		stages.NodeProfile{Node: cp.Name, Site: site},
 	}, nil
 }

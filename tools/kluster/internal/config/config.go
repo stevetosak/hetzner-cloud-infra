@@ -147,6 +147,8 @@ type Manifests struct {
 	Flannel string `yaml:"flannel"`
 	CCM     string `yaml:"ccm"`
 	CSI     string `yaml:"csi"`
+	// StorageClasses are the CSI driver's classes, applied with CSI.
+	StorageClasses string `yaml:"storageClasses"`
 }
 
 type Terraform struct {
@@ -291,6 +293,7 @@ func (c *Config) validate() error {
 		{"manifests.flannel", c.Manifests.Flannel},
 		{"manifests.ccm", c.Manifests.CCM},
 		{"manifests.csi", c.Manifests.CSI},
+		{"manifests.storageClasses", c.Manifests.StorageClasses},
 		{"workers.serverType", c.Workers.ServerType},
 		{"workers.privateIPs", c.Workers.PrivateIPs},
 		{"workers.vpnIPs", c.Workers.VpnIPs},

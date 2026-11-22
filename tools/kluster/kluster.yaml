@@ -114,6 +114,7 @@ manifests:
   flannel: ../../core/cni/flannel.yaml
   ccm: ../../core/hcloud/ccm.yaml
   csi: ../../core/hcloud/csi.yaml
+  storageClasses: ../../core/hcloud/storageclasses.yaml
 
 terraform:
   # One path per root Module, relative to this file (ADR 0002: three Modules,
