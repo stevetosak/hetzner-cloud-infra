@@ -396,3 +396,37 @@ machine's address with a second `--iface-regex=^10\.101\.` after `^10\.0\.`,
 as the design said; Flannel tries the patterns in order (v0.28.9 source), so a
 Hetzner server keeps its private address. The join check also refuses a LAN
 inside `10.245.0.0/16`, which ADR 0001 keeps for a move of the pods to Cilium.
+
+**2026-11-23 — placement as built.** Most of the binding already held without a
+rule. Every pod with a Hetzner Volume is bound to `hel1` by the volume's own
+topology, which only a Node running the Hetzner CSI node plugin carries, and
+that plugin runs only on Hetzner servers. Every pod without the best-effort
+toleration stays off a best-effort Node. Flannel, kube-proxy and node-exporter
+already tolerate every `NoSchedule` taint, so they run on a byo machine as on
+any other Node.
+
+The required rules are therefore the ones the decision names. Envoy, through
+its `EnvoyProxy`, and Stalwart need `load-balancer=hcloud`, because both sit
+behind a Hetzner load balancer with `externalTrafficPolicy: Local`.
+PostgreSQL's Cluster needs `block-volumes=hcloud`, beside CloudNativePG's
+default anti-affinity. The volume topology already gave PostgreSQL that
+binding; the rule states it where the Cluster is read. Applying it restarts
+every instance, and the operator chose to take that restart now. The postgres
+container's memory change from 384 to 256 Mi, which the Capacity Plan had held
+for a later restart, goes in the same one.
+
+The zone of the data is a preferred pod affinity to the pod that holds
+CloudNativePG's primary role (`cnpg.io/instanceRole=primary` in `pg-cluster`),
+with the admin site label as the topology key. A preference on the site name
+would have to change in every application when the data moves; this one
+follows the primary to any Node or site, and no application names a site. It
+lives once, as the kustomize Component `core/placement/data-zone`, which an
+overlay takes with `components:`. `authos-api`, `doma` and Stalwart take it
+today, and the Base layer chart can emit the same term for any component that
+uses the platform's PostgreSQL. Like every preference, it acts only when a pod
+is scheduled: after a failover, a running pod stays where it is.
+
+Grafana and cert-manager carry only the toleration, with no preference for
+either reliability. The scheduler's own scoring places them, so a Node of high
+reliability and a best-effort one stay equal choices, and an empty self-hosted
+machine will most likely take them at their next restart.

@@ -64,7 +64,10 @@ the rehearsal project.
       platform values mapped onto the application's own environment names,
       and the platform's standards (security context, writable `/tmp` and
       declared paths, probe conventions as defaults, `revisionHistoryLimit`)
-      applied, not taken from the Spec.
+      applied, not taken from the Spec. A component with
+      `services.database` also gets the data-zone preference, the same term
+      as the kustomize Component `core/placement/data-zone`
+      ([ADR 0016, Amendment 2026-11-23](../adr/0016-every-provider-is-a-set-of-capabilities-and-workers-of-any-provider-join-as-equals.md#amendments)).
 - [ ] Create the private Registry repository and the Registry generator: one
       multi-source Application per entry, with the chart from this repository
       and the Spec and Extras from the entry's repository. Argo CD reads the

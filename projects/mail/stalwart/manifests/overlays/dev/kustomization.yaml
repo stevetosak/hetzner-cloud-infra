@@ -7,6 +7,10 @@ resources:
 - ../../base
 - vpa.yaml
 
+# Prefer the site of the PostgreSQL primary.
+components:
+- ../../../../../../core/placement/data-zone
+
 replicas:
 - count: 1
   name: stalwart
