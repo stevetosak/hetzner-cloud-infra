@@ -293,6 +293,15 @@ grafana:
   persistence:
     enabled: false
 
+  # Grafana may run on a best-effort Node, such as a self-hosted machine,
+  # because it holds no state (ADR 0016, Placement follows the profile). Only
+  # the toleration, no preference: the scheduler places it like any other pod.
+  tolerations:
+    - key: tosak.net/reliability
+      operator: Equal
+      value: best-effort
+      effect: NoSchedule
+
   testFramework:
     enabled: false
 

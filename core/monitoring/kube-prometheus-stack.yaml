@@ -1816,6 +1816,11 @@ spec:
             requests:
               cpu: 67m
               memory: 528Mi
+      tolerations:
+        - effect: NoSchedule
+          key: tosak.net/reliability
+          operator: Equal
+          value: best-effort
       volumes:
         - name: tmp
           emptyDir: {}

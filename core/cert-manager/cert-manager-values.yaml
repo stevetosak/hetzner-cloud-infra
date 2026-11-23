@@ -43,14 +43,29 @@ resources:
     cpu: 10m
     memory: 64Mi
 
+# Every cert-manager pod may run on a best-effort Node, such as a self-hosted
+# machine: it holds no state, and issuance waits out a lost pod (ADR 0016,
+# Placement follows the profile). Only the toleration, no preference: the
+# scheduler places it like any other pod.
+tolerations: &best-effort
+  - key: tosak.net/reliability
+    operator: Equal
+    value: best-effort
+    effect: NoSchedule
+
 cainjector:
+  tolerations: *best-effort
   resources:
     requests:
       cpu: 10m
       memory: 80Mi
 
 webhook:
+  tolerations: *best-effort
   resources:
     requests:
       cpu: 10m
       memory: 32Mi
+
+startupapicheck:
+  tolerations: *best-effort

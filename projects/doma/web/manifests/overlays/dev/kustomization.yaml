@@ -7,6 +7,10 @@ resources:
 - ../../base
 - vpa.yaml
 
+# Prefer the site of the PostgreSQL primary.
+components:
+- ../../../../../../core/placement/data-zone
+
 images:
 - name: stevetosak/doma
   newTag: alpha-03b371692a8810598a211039654afe362a3cacab

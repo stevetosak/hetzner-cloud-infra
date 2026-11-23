@@ -24,6 +24,20 @@ spec:
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
+      # Only a Node that a Hetzner load balancer reaches: mail-lb targets Nodes
+      # over the Private Network with externalTrafficPolicy Local, so a pod on
+      # a Node of another site gets no mail (ADR 0016, Placement follows the
+      # profile). kluster writes the label; no kubelet can set it. The binding
+      # lasts until Part C of the Providers Plan makes the entry point
+      # provider-neutral.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: tosak.net.node-restriction.kubernetes.io/load-balancer
+                    operator: In
+                    values: ["hcloud"]
       securityContext:
         runAsNonRoot: true
         runAsUser: 2000

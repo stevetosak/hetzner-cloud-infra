@@ -32,6 +32,21 @@ spec:
         # traffic to a node that actually runs an Envoy pod; one replica would
         # make a single node a single point of failure.
         replicas: 2
+        # Only a Node that a Hetzner load balancer reaches: the load balancer
+        # targets Nodes over the Private Network, and a Node of another site
+        # never gets its traffic (ADR 0016, Placement follows the profile).
+        # kluster writes the label; no kubelet can set it. The binding lasts
+        # until Part C of the Providers Plan makes the entry point
+        # provider-neutral.
+        pod:
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: tosak.net.node-restriction.kubernetes.io/load-balancer
+                        operator: In
+                        values: ["hcloud"]
         # Sized by ADR 0013: the Envoy floor of 128Mi (peak 38 MiB on
         # 2026-11-01..05, Capacity Plan Snapshots 0 and 1). Envoy Gateway's
         # default was 512Mi with no limit. No limits: VPA sets the request in

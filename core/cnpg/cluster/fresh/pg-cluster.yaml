@@ -46,6 +46,21 @@ spec:
     # to Retain by hand. That mismatch is expected.
     storageClass: hcloud-volumes-retain
 
+  # Only a Node with Hetzner volumes: the storage above is a Hetzner Volume
+  # (ADR 0016, Placement follows the profile). kluster writes the label; no
+  # kubelet can set it. A Volume's own topology already binds each instance to
+  # hel1; this rule says so where the Cluster is read. The binding lasts until
+  # Part C of the Providers Plan decides the storage. CloudNativePG keeps its
+  # default anti-affinity (preferred, one instance per Node) beside it.
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: tosak.net.node-restriction.kubernetes.io/block-volumes
+                operator: In
+                values: ["hcloud"]
+
   # WAL archiving and base backups to R2, through the barman-cloud CNPG-I
   # plugin (core/cnpg/plugin-barman-cloud.yaml, objectstore.yaml).
   plugins:

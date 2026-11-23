@@ -1009,6 +1009,11 @@ spec:
               memory: 80Mi
       nodeSelector:
         kubernetes.io/os: "linux"
+      tolerations:
+        - effect: NoSchedule
+          key: tosak.net/reliability
+          operator: Equal
+          value: best-effort
 ---
 # Source: cert-manager/templates/deployment.yaml
 apiVersion: apps/v1
@@ -1108,6 +1113,11 @@ spec:
             failureThreshold: 8
       nodeSelector:
         kubernetes.io/os: "linux"
+      tolerations:
+        - effect: NoSchedule
+          key: tosak.net/reliability
+          operator: Equal
+          value: best-effort
 ---
 # Source: cert-manager/templates/webhook-deployment.yaml
 apiVersion: apps/v1
@@ -1210,6 +1220,11 @@ spec:
               memory: 32Mi
       nodeSelector:
         kubernetes.io/os: "linux"
+      tolerations:
+        - effect: NoSchedule
+          key: tosak.net/reliability
+          operator: Equal
+          value: best-effort
 ---
 # Source: cert-manager/templates/webhook-mutating-webhook.yaml
 apiVersion: admissionregistration.k8s.io/v1
@@ -1431,3 +1446,8 @@ spec:
                 fieldPath: metadata.namespace
       nodeSelector:
         kubernetes.io/os: "linux"
+      tolerations:
+        - effect: NoSchedule
+          key: tosak.net/reliability
+          operator: Equal
+          value: best-effort
