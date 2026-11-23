@@ -37,6 +37,7 @@ Nobody pushes to the infra `master`: rulesets require a PR, and `deploy-scope` r
 
 - An application is never built around the platform; it incorporates it. The platform adapts to the app's own names, ports and paths, and every platform service is optional. Contract checks prove that an app keeps the platform's rules before it deploys. If the platform becomes a product, how tedious and limiting integration is matters.
 - Compounding: each platform service is built for reuse, with standard, automated configuration (a new mail domain must be trivial), and a pattern from one service is extracted to the whole cluster where it has merit.
+- A client chooses if its app is open or closed source. The platform is the public, open-source base layer; a client app's manifests and code stay in the owner's repository, so no step puts them in the public infrastructure repository `stevetosak/hetzner-cloud-infra`.
 
 ## Conventions every app follows
 
