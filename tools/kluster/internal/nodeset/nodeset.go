@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/netip"
 	"os"
 	"regexp"
 	"slices"
@@ -78,11 +79,78 @@ func (s Site) Labels() map[string]string {
 	return l
 }
 
+// ReliabilityTaint is the taint every Node of a best-effort site carries, so
+// only the workloads that tolerate it run there (ADR 0016).
+var ReliabilityTaint = Taint{Key: "tosak.net/reliability", Value: "best-effort", Effect: "NoSchedule"}
+
+// Taint is a Node taint.
+type Taint struct{ Key, Value, Effect string }
+
+// String is the taint as the kubelet's --register-with-taints and `kubectl
+// taint` write it.
+func (t Taint) String() string { return t.Key + "=" + t.Value + ":" + t.Effect }
+
+// Taint is the reliability taint of the site's Nodes; false for a site of high
+// reliability, whose Nodes carry none.
+func (s Site) Taint() (Taint, bool) {
+	if s.Reliability != "best-effort" {
+		return Taint{}, false
+	}
+	return ReliabilityTaint, true
+}
+
+// TaintChange is what turns a Node's reliability taint into its site's:
+// RemoveKey drops every taint with the key, then Add, when set, is added.
+type TaintChange struct {
+	RemoveKey bool
+	Add       string
+}
+
+// Empty reports whether the Node already carries the site's taint.
+func (c TaintChange) Empty() bool { return !c.RemoveKey && c.Add == "" }
+
+// DiffTaint compares a Node's taints, each as Taint.String writes it, with
+// its site's. Only the reliability key counts: every other taint belongs to
+// someone else.
+func DiffTaint(have []string, s Site) TaintChange {
+	want, wanted := s.Taint()
+	var c TaintChange
+	found := false
+	for _, t := range have {
+		if !strings.HasPrefix(t, ReliabilityTaint.Key+"=") && !strings.HasPrefix(t, ReliabilityTaint.Key+":") {
+			continue
+		}
+		if wanted && t == want.String() {
+			found = true
+			continue
+		}
+		c.RemoveKey = true
+	}
+	if wanted && (!found || c.RemoveKey) {
+		c.Add = want.String()
+	}
+	return c
+}
+
+// String names the change: "remove tosak.net/reliability; add …".
+func (c TaintChange) String() string {
+	var parts []string
+	if c.RemoveKey {
+		parts = append(parts, "remove taint "+ReliabilityTaint.Key)
+	}
+	if c.Add != "" {
+		parts = append(parts, "add taint "+c.Add)
+	}
+	return strings.Join(parts, "; ")
+}
+
 // Set is one environment's Node set file.
 type Set struct {
-	Path  string
-	sites map[string]Site
-	mesh  *Mesh
+	Path    string
+	src     []byte
+	sites   map[string]Site
+	subnets map[string]netip.Prefix // each site's meshSubnet
+	mesh    *Mesh
 }
 
 // Load reads and validates the Node set file at path.
@@ -97,25 +165,35 @@ func Load(path string) (*Set, error) {
 // Parse reads and validates a Node set from src; path names it in errors.
 func Parse(path string, src []byte) (*Set, error) {
 	var f struct {
-		Sites map[string]Site `yaml:"sites"`
-		Mesh  *meshFile       `yaml:"mesh"`
+		Sites    map[string]Site        `yaml:"sites"`
+		Machines map[string]machineFile `yaml:"machines"`
+		Mesh     *meshFile              `yaml:"mesh"`
 	}
 	dec := yaml.NewDecoder(bytes.NewReader(src))
 	dec.KnownFields(true)
 	if err := dec.Decode(&f); err != nil {
 		return nil, fmt.Errorf("parsing the Node set %s: %w", path, err)
 	}
-	s := &Set{Path: path, sites: map[string]Site{}}
+	s := &Set{Path: path, src: src, sites: map[string]Site{}}
 	for name, site := range f.Sites {
 		site.Name = name
 		s.sites[name] = site
 	}
-	mesh, meshErr := parseMesh(s.sites, f.Mesh)
+	mesh, subnets, meshErr := parseMesh(s.sites, f.Machines, f.Mesh)
 	if err := errors.Join(s.validate(), meshErr); err != nil {
 		return nil, fmt.Errorf("invalid Node set %s: %w", path, err)
 	}
-	s.mesh = mesh
+	s.mesh, s.subnets = mesh, subnets
 	return s, nil
+}
+
+// Bytes is the file as it was read.
+func (s *Set) Bytes() []byte { return s.src }
+
+// Site finds a site by its name.
+func (s *Set) Site(name string) (Site, bool) {
+	site, ok := s.sites[name]
+	return site, ok
 }
 
 // Hcloud is the site of the Hetzner Cloud servers. A valid set has exactly

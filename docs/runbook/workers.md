@@ -290,20 +290,25 @@ The profiles live in the environment's Node set file,
 [`infra/nodes/live.yaml`](../../infra/nodes/live.yaml) or
 [`infra/nodes/rehearsal.yaml`](../../infra/nodes/rehearsal.yaml). The Control
 Plane and each Worker of the Worker set belong to the site whose provider is
-`hcloud`, `hel1`, so all of them carry the same labels today. No workload is
-placed by them yet.
+`hcloud`, `hel1`; a byo machine belongs to the site its entry in the Node set's
+`machines` names. A Node of a best-effort site also carries the taint
+`tosak.net/reliability=best-effort:NoSchedule`, and a Node of high reliability
+carries none. No workload is placed by the labels yet.
 
 `kluster node profile [<name>]` writes and checks the labels on every Node, or
 on the named one, in one **node-profile** Stage per Node run on the Control
 Plane. The Stage compares the Node's labels under the prefix with the site's
 profile. It is done when they match; otherwise it sets the missing or wrong
 values and removes any other key under the prefix with one `kubectl label node
-… --overwrite`, and reads them back. Labels outside the prefix are never
+… --overwrite`, and reads them back. It adds the reliability taint with
+`kubectl taint node … --overwrite` where the site asks for it, and removes the
+key everywhere else. Labels outside the prefix and other taints are never
 touched. `node add`, `node replace`, `cp init` and `up` run the same Stage
 after the Node is Ready, so a new Node joins with its profile.
 
-kluster refuses, and does not label, a Node that is neither the Control Plane
-nor in the Worker set (it knows no site for it), a Node with no Hetzner server,
+kluster refuses, and does not label, a Node that is neither the Control Plane,
+in the Worker set nor a byo machine of the Node set (it knows no site for it), a
+Hetzner Node with no server,
 and a Node whose server stands in a location other than the site's name. The
 other Nodes are still labelled, and the run fails at the end. The same location
 check runs before `node add` creates a server and in the preflight of `up`, so
@@ -332,8 +337,8 @@ Stage done.
 
 `wg-mesh` joins machines at different sites
 ([ADR 0016](../adr/0016-every-provider-is-a-set-of-capabilities-and-workers-of-any-provider-join-as-equals.md)).
-A Node set without a `mesh` section changes nothing, and neither live nor the
-rehearsal has one yet. 🔴 `kluster node mesh` has not run on a cluster. The
+A Node set without `machines` changes nothing, and neither live nor the
+rehearsal has any yet. 🔴 `kluster node mesh` has not run on a cluster. The
 renderer's unit tests and a WireGuard test in network namespaces are its proof
 so far: a direct pair, a NAT pair and a relay between two NAT sites, with
 full-size packets on a 1460-byte link.
@@ -343,7 +348,8 @@ cd tools/kluster
 go test -tags wireguard -run TestWireGuard -v ./internal/mesh/
 ```
 
-The Node set file declares each site's subnet and each machine's address:
+The Node set file declares each site's subnet, and each machine's site,
+provisioner and mesh address:
 
 ```yaml
 sites:
@@ -353,19 +359,24 @@ sites:
   ts1:
     # … the site's profile
     meshSubnet: 10.101.1.0/24
+machines:
+  k8s-cp: { site: hel1, provisioner: hcloud, meshAddress: 10.101.0.1 }
+  k8swk1: { site: hel1, provisioner: hcloud, meshAddress: 10.101.0.11 }
+  tswk1: { site: ts1, provisioner: byo, meshAddress: 10.101.1.1 }
 mesh:
   relay: k8swk1 # required with machines on two or more NAT sites
-  machines:
-    k8swk1: { site: hel1, address: 10.101.0.11 }
-    k8swk2: { site: hel1, address: 10.101.0.12 }
 ```
 
 A `meshSubnet` is a `/24` inside `10.101.0.0/16`, and no two sites share one. An
-address lies in its site's subnet and is unique. The relay is a machine of the
-mesh on a public site. A site whose provider is not `hcloud` holds one machine,
-because kluster does not build the LAN routes between two machines of such a
-site yet. kluster logs in only to the Control Plane and the Worker set, so it
-refuses a machine outside Hetzner until the bring-your-own step exists.
+address lies in its site's subnet and is unique. A machine names its
+provisioner, because a site's provider does not say how its machines are made:
+`hcloud` for the Control Plane and the Worker set, on the `hcloud` site only,
+and `byo` for a machine the operator installed, on any other site. The relay is
+a machine on a public site. A site whose provider is not `hcloud` holds one
+machine, because kluster does not build the LAN routes between two machines of
+such a site yet. kluster reaches a Hetzner server as `node add` does, and a byo
+machine through the Control Plane (see the next section); a byo machine on a
+public site is refused, because no record holds its public address yet.
 
 `kluster node mesh [<name>]` joins every machine of the section, or the named
 one. `node add`, `node replace`, `cp init` and `up` run the same steps for a
@@ -378,7 +389,7 @@ kluster node mesh --apply
 
 | Stage | What it does | When it fails |
 |---|---|---|
-| **mesh-join-check** | Compares the machine's LAN with the cluster's ranges and measures the link MTU | A LAN overlaps `10.0.0.0/16`, `10.244.0.0/16`, `10.96.0.0/16`, `10.100.0.0/24` or `10.101.0.0/16`, or the link or its path holds less than 1460 bytes |
+| **mesh-join-check** | Compares the machine's LAN with the cluster's ranges and measures the link MTU | A LAN overlaps `10.0.0.0/16`, `10.244.0.0/16`, `10.96.0.0/16`, `10.100.0.0/24`, `10.101.0.0/16` or `10.245.0.0/16` (kept for Cilium, ADR 0001), or the link or its path holds less than 1460 bytes; a Hetzner server's private interface is exempt from the first |
 | **mesh-key** | Installs WireGuard and makes `/etc/wireguard/mesh.key`; only the public key leaves the machine | The package or the key cannot be written |
 | **wireguard-mesh** | Writes `/etc/wireguard/wg-mesh.conf`, applies it with `wg syncconf`, reconciles the routes and enables `wg-quick@wg-mesh` | The interface, its peers or its routes differ from the rendered config |
 
@@ -389,7 +400,7 @@ named run, because a new key changes the peers of the others. A machine that
 fails its config does not stop the rest, and the run fails at the end.
 
 kluster compares the store with the Node set before it changes anything. After a
-machine leaves the `mesh` section, the run is refused until its data key is
+machine leaves the `machines` section, the run is refused until its data key is
 removed from `kube-system/mesh-peers`; `node remove` does not remove it.
 
 The store keeps no history. Its public record is the mesh catalog: `peers.json`
@@ -404,6 +415,134 @@ UDP 51821 stays closed on both Hetzner firewalls until `allow_mesh_udp` is set i
 a committed `infra/shared/terraform.tfvars`. The
 [infra README](../../infra/README.md#the-mesh-port) says why a `-var` does not
 hold, and how to prove the rule is gone after the switch is turned off.
+
+## Add a bring-your-own machine
+
+A bring-your-own (byo) machine is one the operator installs: a self-hosted
+machine behind a router's NAT is the first
+([ADR 0016](../adr/0016-every-provider-is-a-set-of-capabilities-and-workers-of-any-provider-join-as-equals.md#amendments)).
+🔴 No byo machine has been built yet. The proof so far is the unit tests, a
+test of the site firewall in network namespaces, and a test of the jump
+against an SSH server in the test process; the first real build is the
+Providers Plan's rehearsal.
+
+A byo machine is built only when three things hold, and `node add` refuses
+until each does:
+
+- every Node is a machine of the Node set's `machines` section and has joined
+  the mesh ([Join the mesh](#join-the-mesh)), because a byo machine reaches the
+  other Nodes only over `wg-mesh`;
+- both Hetzner firewalls admit UDP 51821 (`allow_mesh_udp`, read over the
+  Hetzner API);
+- the machine's site in the Node set has a `meshSubnet`, and its reach is
+  `nat`.
+
+The machine is installed with Ubuntu Server 24.04 on amd64, the release of the
+Hetzner image, with its hostname set to the Node name, a user `tosak` that logs
+in with the cluster's key, and sudo without a password. On its console, before
+the second run:
+
+```sh
+echo 'tosak ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/tosak
+ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub   # the fingerprint, SHA256:…
+ip -4 addr                                         # its address on the LAN
+```
+
+The first run writes the machine's entry, with the next free address of the
+site's subnet, into the `machines` section; it is committed before the second
+run, as with the Worker set. The second run takes the two values read on the
+console:
+
+```sh
+cd tools/kluster
+kluster node add tswk1 --provisioner byo --site ts1 --apply   # run 1: the entry
+git add ../../infra/nodes/live.yaml && git commit -m "…"
+kluster node add tswk1                                         # Plan Mode
+kluster node add tswk1 --bootstrap 192.168.1.20 \
+  --host-key SHA256:… --apply                                  # run 2
+```
+
+Run 2 runs from a laptop on the machine's LAN, because it logs in at the
+bootstrap address directly, as `tosak`, and accepts only a host key with that
+fingerprint, then pins it. It runs these Stages, each skipped when its
+Probe says done:
+
+| Where | Stage | What it does |
+|---|---|---|
+| the machine | **byo-check** | Refuses another hostname, release or architecture, or a CA of another cluster (a machine that left a rehearsal without `kubeadm reset`) |
+| the machine | **rotate-host-key** | Makes a new host key on the machine and pins it alone |
+| the machine | **base-host**, **kube-prep** | As on a Worker, with the login user's own key kept and the byo kubelet arguments |
+| the machine | **mesh-join-check**, **mesh-key** | Joins the mesh as in [Join the mesh](#join-the-mesh) |
+| every joined machine | **wireguard-mesh** | Brings each `wg-mesh` to the config with the new peer |
+| the machine | **join**, **node-registered** | Joins over the jump; restarts the kubelet when the Node is gone |
+| Control Plane | **node-ready**, **node-profile** | Waits for the Node, then writes the profile labels and the taint |
+| the machine | **site-firewall** | Closes the machine to everything but the mesh |
+
+The byo kubelet arguments are the mesh address as node IP, the providerID
+`kluster://<site>/<node>`, no `--cloud-provider`, the taint
+`tosak.net/reliability=best-effort:NoSchedule` at registration on a
+best-effort site, and the label
+`node.kubernetes.io/exclude-from-external-load-balancers=true`. In the source of the
+hcloud cloud controller v1.37.0, its lookup of that providerID fails with an
+error, so it never deletes the Node
+([ADR 0016](../adr/0016-every-provider-is-a-set-of-capabilities-and-workers-of-any-provider-join-as-equals.md));
+no running cluster has shown it yet.
+**node-ready** waits for that providerID and that label, and for the mesh
+address as InternalIP.
+
+Once the machine has joined the mesh, kluster proves the jump: it logs in at
+the mesh address through the Control Plane's session, with the key pinned at
+the bootstrap address, and pins the key there too. Every Stage after that runs
+over the jump. A run that stopped before this pin resumes with `--bootstrap`
+alone, since the key is pinned at that address already; after it, with no
+flags. A run without `--bootstrap` neither checks the bootstrap address at the
+end nor drops its pin. The operator reaches the machine the same way:
+`ssh -J k8s-cp tosak@10.101.1.1`.
+
+The site firewall is an nftables table of its own, `inet kluster_site`, in
+`/etc/kluster/site-firewall.nft`, loaded at boot by
+`kluster-site-firewall.service`. It takes new connections only from `wg-mesh`,
+loopback and the machine's pods (`cni0`, `flannel.1`); replies, ICMP and DHCP
+pass. Pods reach the cluster's ranges and the internet, and no other private
+address: not the LAN, not the router. The table's comment is the sha256 of its
+rules, so the Probe tells the loaded rules from the file. After the firewall,
+kluster logs in through the jump once more, checks that SSH at the bootstrap
+address no longer answers, and drops the pin there.
+
+```sh
+cd tools/kluster
+go test -tags nftables -run TestSiteFirewallLab -v ./internal/stages/
+```
+
+The test loads the rules into a machine built of network namespaces, with a
+LAN, a `wg-mesh` link and one pod, and passes when SSH from the LAN and a pod's
+packets to the LAN are dropped, while SSH over the mesh and from a pod, a pod's
+packets to the internet and the Control Plane, and the replies of a connection
+the machine opens all pass.
+
+A Node the dead-node remover deleted comes back with the same command and no
+flags: the kubelet of a running machine never registers again, so
+**node-registered** restarts it, and **node-profile** writes the admin labels
+again.
+
+## Take a bring-your-own machine out
+
+`node remove` and `node replace` refuse a byo machine until the Providers Plan
+step that adds it. By hand, with the operator's yes for each write:
+
+```sh
+kubectl drain tswk1 --ignore-daemonsets --delete-emptydir-data
+kubectl delete node tswk1
+ssh -J k8s-cp tosak@10.101.1.1 'sudo kubeadm reset -f'
+kubectl -n kube-system patch configmap mesh-peers --type json \
+  -p '[{"op":"remove","path":"/data/tswk1"}]'
+# remove the machine's entry from the Node set's machines and commit it
+kluster node mesh --apply                     # takes its peer off every machine
+```
+
+A machine that goes to another cluster next, such as from a rehearsal to live,
+is reinstalled or reset: **byo-check** refuses a machine whose CA is another
+cluster's.
 
 ## Change the pod MTU
 

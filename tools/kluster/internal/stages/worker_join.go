@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -76,16 +78,18 @@ func (j Join) Act(ctx context.Context, h *stage.Host) error {
 	return err
 }
 
-// NodeReady waits on the Control Plane until the joined Worker's Node is
-// Ready with its private InternalIP, and the cloud controller has set its
-// providerID and cleared the uninitialized taint (docs/runbook/workers.md,
-// step 8).
+// NodeReady waits on the Control Plane until the joined node's Node is Ready
+// with its InternalIP and providerID, carries no uninitialized taint, and
+// has the labels its kubelet registered (docs/runbook/workers.md, step 8).
+// A Hetzner server's providerID, hcloud://<server id>, comes from the cloud
+// controller; another machine's kubelet sets its own.
 type NodeReady struct {
-	Node      string
-	PrivateIP string
-	ServerID  string
-	Every     time.Duration
-	Timeout   time.Duration
+	Node       string
+	InternalIP string
+	ProviderID string
+	Labels     map[string]string
+	Every      time.Duration
+	Timeout    time.Duration
 }
 
 func (NodeReady) Name() string    { return "node-ready" }
@@ -109,24 +113,29 @@ func (n NodeReady) status(node kube.Node) stage.Status {
 	if !node.Ready {
 		not = append(not, "Ready")
 	}
-	if node.InternalIP != n.PrivateIP {
-		not = append(not, "InternalIP "+n.PrivateIP+" (is "+node.InternalIP+")")
+	if node.InternalIP != n.InternalIP {
+		not = append(not, "InternalIP "+n.InternalIP+" (is "+node.InternalIP+")")
 	}
-	if node.ProviderID != "hcloud://"+n.ServerID {
-		not = append(not, "providerID hcloud://"+n.ServerID+" (is "+node.ProviderID+")")
+	if node.ProviderID != n.ProviderID {
+		not = append(not, "providerID "+n.ProviderID+" (is "+node.ProviderID+")")
 	}
 	if node.Uninitialized {
 		not = append(not, "initialized")
 	}
+	for _, k := range slices.Sorted(maps.Keys(n.Labels)) {
+		if v, ok := node.Labels[k]; !ok || v != n.Labels[k] {
+			not = append(not, "label "+k+"="+n.Labels[k])
+		}
+	}
 	if len(not) > 0 {
 		return stage.Status{Detail: "not yet: " + strings.Join(not, ", ")}
 	}
-	return stage.Status{Done: true, Detail: fmt.Sprintf("Ready, %s, hcloud://%s", n.PrivateIP, n.ServerID)}
+	return stage.Status{Done: true, Detail: fmt.Sprintf("Ready, %s, %s", n.InternalIP, n.ProviderID)}
 }
 
 func (n NodeReady) Preview(context.Context, *stage.Host) (string, error) {
-	return fmt.Sprintf("# wait up to %s for Node %s: Ready, InternalIP %s, providerID hcloud://%s, no uninitialized taint\n",
-		n.Timeout, n.Node, n.PrivateIP, n.ServerID), nil
+	return fmt.Sprintf("# wait up to %s for Node %s: Ready, InternalIP %s, providerID %s, no uninitialized taint\n",
+		n.Timeout, n.Node, n.InternalIP, n.ProviderID), nil
 }
 
 func (n NodeReady) Act(ctx context.Context, h *stage.Host) error {

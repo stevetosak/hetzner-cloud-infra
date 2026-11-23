@@ -28,11 +28,11 @@ func init() {
 var nodeMeshCmd = &cobra.Command{
 	Use:   "mesh [<name>]",
 	Short: "Join the machines of the Node set's mesh and bring each wg-mesh to its config (docs/runbook/workers.md#join-the-mesh)",
-	Long: "Every machine of the Node set's mesh section, or the named one, passes the join checks, makes its " +
+	Long: "Every machine of the Node set's machines section, or the named one, passes the join checks, makes its " +
 		"own key and writes the public half to the ConfigMap " + meshstore.Namespace + "/" + meshstore.Name + ". " +
 		"Then every machine that has joined gets its config, because a new key changes the peers of the others. " +
-		"A Node set without a mesh section changes nothing. kluster logs in only to the Control Plane and the " +
-		"Worker set, so a machine outside Hetzner is refused until the bring-your-own step. node add, node " +
+		"A Node set without machines changes nothing. kluster logs in to the Control Plane and the Worker set " +
+		"as node add does, and to a byo machine through a jump over the Control Plane. node add, node " +
 		"replace, cp init and up run the same steps for the machine they build. Live goes through WireGuard and " +
 		"opens nothing; a rehearsal opens bootstrap SSH and closes it at the end.",
 	Args: cobra.MaximumNArgs(1),
@@ -119,7 +119,7 @@ func (a *app) planMeshJoin(ctx context.Context, name string) error {
 	if !meshDeclares(set.Mesh(), name) {
 		return nil
 	}
-	if err := stage.PlanNew(ctx, meshJoinStages(), name, a.out); err != nil {
+	if err := stage.PlanNew(ctx, meshJoinStages(true), name, a.out); err != nil {
 		return err
 	}
 	fmt.Fprintf(a.out, "then: write the public key of %s to %s/%s and bring every joined machine's %s to its config\n",
@@ -135,11 +135,11 @@ func meshDeclares(m *nodeset.Mesh, name string) bool {
 	return declared
 }
 
-// meshJoinStages run on a machine before its key goes to the store. kluster
-// logs in only to Hetzner servers, so the private interface is always exempt
-// from the LAN check.
-func meshJoinStages() []stage.Stage {
-	return []stage.Stage{stages.MeshJoinCheck{Hcloud: true}, stages.MeshKey{}}
+// meshJoinStages run on a machine before its key goes to the store. A
+// Hetzner server's private interface stands in the private network by design,
+// so only there is it exempt from the LAN check.
+func meshJoinStages(hcloud bool) []stage.Stage {
+	return []stage.Stage{stages.MeshJoinCheck{Hcloud: hcloud}, stages.MeshKey{}}
 }
 
 // newMeshRun reads what a run needs. The hosts in open are sessions the caller
@@ -160,6 +160,9 @@ func (a *app) newMeshRun(ctx context.Context, set *nodeset.Set, cp *stage.Host, 
 	sessions := &meshSessions{
 		open: map[string]*stage.Host{cp.Name: cp},
 		dial: func(ctx context.Context, name string) (*stage.Host, func(), error) {
+			if m, ok := set.Mesh().Machine(name); ok && m.Provisioner == nodeset.ProvisionerByo {
+				return a.dialJump(ctx, cp, m)
+			}
 			w, ok := workers.Get(name)
 			if !ok {
 				return nil, nil, fmt.Errorf("%s is not in the Worker set %s", name, path)
@@ -214,7 +217,8 @@ func (s *meshSessions) close() {
 	}
 }
 
-// meshHost is a machine of the mesh and the Hetzner server behind it.
+// meshHost is a machine of the mesh and the Hetzner server behind it; a byo
+// machine has none.
 type meshHost struct {
 	machine nodeset.Machine
 	server  *cloud.Server
@@ -236,20 +240,33 @@ func (i meshInventory) sort() ([]meshHost, map[string]error) {
 	var ready []meshHost
 	refused := map[string]error{}
 	for _, m := range i.mesh.Machines {
-		srv, err := i.server(m)
+		h, err := i.host(m)
 		if err != nil {
 			refused[m.Name] = err
 			continue
 		}
-		ready = append(ready, meshHost{machine: m, server: srv})
+		ready = append(ready, h)
 	}
 	return ready, refused
 }
 
-func (i meshInventory) server(m nodeset.Machine) (*cloud.Server, error) {
-	if m.Site.Provider != nodeset.ProviderHcloud {
-		return nil, fmt.Errorf("mesh machine %s stands on site %s, and kluster logs in only to Hetzner servers until the bring-your-own step", m.Name, m.Site.Name)
+// host is a machine as its provisioner makes it: a Hetzner server of the
+// Control Plane or the Worker set, or a machine the operator installed.
+func (i meshInventory) host(m nodeset.Machine) (meshHost, error) {
+	switch m.Provisioner {
+	case nodeset.ProvisionerHcloud:
+		srv, err := i.server(m)
+		return meshHost{machine: m, server: srv}, err
+	case nodeset.ProvisionerByo:
+		if m.Name == i.controlPlane || slices.Contains(i.workers, m.Name) {
+			return meshHost{}, fmt.Errorf("mesh machine %s has provisioner %s, but %s or the Worker set holds that name", m.Name, m.Provisioner, i.controlPlane)
+		}
+		return meshHost{machine: m}, checkByoReach(m.Name, m.Site)
 	}
+	return meshHost{}, fmt.Errorf("mesh machine %s: kluster has no provisioner %s", m.Name, m.Provisioner)
+}
+
+func (i meshInventory) server(m nodeset.Machine) (*cloud.Server, error) {
 	if m.Name != i.controlPlane && !slices.Contains(i.workers, m.Name) {
 		return nil, fmt.Errorf("mesh machine %s is neither %s nor in the Worker set", m.Name, i.controlPlane)
 	}
@@ -285,6 +302,11 @@ func meshMembers(ready []meshHost, entries map[string]meshstore.Entry) ([]mesh.M
 }
 
 func meshMember(h meshHost, e meshstore.Entry) (mesh.Machine, error) {
+	if h.server == nil {
+		// A byo machine stands behind NAT (checkByoReach): it dials out, so
+		// its peers need no address of it but its mesh one.
+		return mesh.Machine{Name: h.machine.Name, Site: h.machine.Site.Name, Address: h.machine.Address, PublicKey: e.PublicKey}, nil
+	}
 	public, err := netip.ParseAddr(h.server.PublicIP)
 	if err != nil {
 		return mesh.Machine{}, fmt.Errorf("mesh machine %s: the public address: %w", h.machine.Name, err)
@@ -375,7 +397,7 @@ func (r *meshRun) join(ctx context.Context, h meshHost, entries map[string]meshs
 		fmt.Fprintf(r.out, "Plan Mode: %s was not reached (%v); --apply logs in\n", name, err)
 		return nil
 	}
-	if err := r.runStages(ctx, meshJoinStages(), host); err != nil {
+	if err := r.runStages(ctx, meshJoinStages(h.machine.Provisioner == nodeset.ProvisionerHcloud), host); err != nil {
 		return err
 	}
 	key, err := r.publicKey(ctx, host)

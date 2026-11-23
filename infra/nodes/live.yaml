@@ -17,6 +17,15 @@
 #   blockVolumes  the kind of block volume the site attaches; empty: none.
 #   loadBalancer  the kind of load balancer that reaches the site; empty:
 #                 none.
+#   meshSubnet    the site's /24 inside 10.101.0.0/16 on wg-mesh; a site
+#                 without one holds no machine of the mesh.
+#
+# Two sections follow once the mesh is in use: `machines`, each machine of the
+# mesh with its site, its provisioner (hcloud or byo, never taken from the
+# site's provider) and its wg-mesh address, and `mesh`, whose relay carries
+# the traffic between two NAT sites. `kluster node add <name> --provisioner
+# byo --site <site>` writes a byo machine's entry. The schema and its rules:
+# docs/runbook/workers.md#join-the-mesh.
 sites:
   hel1:
     provider: hcloud

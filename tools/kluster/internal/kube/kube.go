@@ -53,6 +53,9 @@ type Node struct {
 	AllocatableMemory string
 	// Labels are the Node's labels, every key.
 	Labels map[string]string
+	// Taints are the Node's taints as `kubectl taint` writes them:
+	// key=value:Effect, or key:Effect for a taint without a value.
+	Taints []string
 }
 
 // UninitializedTaint is set on a Node of a kubelet run with
@@ -77,9 +80,9 @@ func ParseNodes(b []byte) ([]Node, error) {
 				Labels map[string]string `json:"labels"`
 			} `json:"metadata"`
 			Spec struct {
-				ProviderID    string                 `json:"providerID"`
-				Unschedulable bool                   `json:"unschedulable"`
-				Taints        []struct{ Key string } `json:"taints"`
+				ProviderID    string                                `json:"providerID"`
+				Unschedulable bool                                  `json:"unschedulable"`
+				Taints        []struct{ Key, Value, Effect string } `json:"taints"`
 			} `json:"spec"`
 			Status struct {
 				Conditions []struct{ Type, Status string }  `json:"conditions"`
@@ -102,6 +105,7 @@ func ParseNodes(b []byte) ([]Node, error) {
 			AllocatableMemory: it.Status.Allocatable["memory"], Labels: it.Metadata.Labels}
 		for _, t := range it.Spec.Taints {
 			n.Uninitialized = n.Uninitialized || t.Key == UninitializedTaint
+			n.Taints = append(n.Taints, taintString(t.Key, t.Value, t.Effect))
 		}
 		_, n.ControlPlane = it.Metadata.Labels["node-role.kubernetes.io/control-plane"]
 		for _, c := range it.Status.Conditions {
@@ -117,6 +121,26 @@ func ParseNodes(b []byte) ([]Node, error) {
 		nodes = append(nodes, n)
 	}
 	return nodes, nil
+}
+
+// taintString writes a taint as `kubectl taint` takes it.
+func taintString(key, value, effect string) string {
+	if value == "" {
+		return key + ":" + effect
+	}
+	return key + "=" + value + ":" + effect
+}
+
+// RemoveTaintKey removes every taint with key from a Node.
+func (k Kubectl) RemoveTaintKey(ctx context.Context, node, key string) error {
+	_, err := k.Run(ctx, "taint", "node", node, key+"-")
+	return err
+}
+
+// AddTaint adds a taint, written key=value:Effect, to a Node.
+func (k Kubectl) AddTaint(ctx context.Context, node, taint string) error {
+	_, err := k.Run(ctx, "taint", "node", node, taint, "--overwrite")
+	return err
 }
 
 // LabelArgs is the kubectl command that sets the labels of set on a Node,

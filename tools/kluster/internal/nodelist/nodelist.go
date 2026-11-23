@@ -1,7 +1,7 @@
-// Package nodelist puts the three records of a Worker side by side — the
-// Worker set, the Hetzner servers and the Kubernetes Nodes — and marks where
-// they disagree with each other or with the profile of their site
-// (`kluster node list`).
+// Package nodelist puts the records of a Worker side by side — the Worker set
+// or the Node set's byo machines, the Hetzner servers and the Kubernetes
+// Nodes — and marks where they disagree with each other or with the profile
+// of their site (`kluster node list`).
 package nodelist
 
 import (
@@ -21,11 +21,12 @@ import (
 // Row is one Worker name and what each record holds for it. A nil field
 // means that record has no such Worker.
 type Row struct {
-	Name   string
-	Set    *workerset.Worker
-	Server *cloud.Server
-	Node   *kube.Node
-	Drift  []string
+	Name    string
+	Set     *workerset.Worker
+	Machine *nodeset.Machine // a byo machine of the Node set
+	Server  *cloud.Server
+	Node    *kube.Node
+	Drift   []string
 }
 
 // Input is what Compare reads. Nodes is nil when they could not be read,
@@ -37,6 +38,9 @@ type Input struct {
 	NodesRead    bool
 	ControlPlane string       // left out of every record
 	Site         nodeset.Site // the site every Hetzner Worker belongs to
+	// Byo are the Node set's byo machines: each belongs to its own site and
+	// has no Hetzner server.
+	Byo []nodeset.Machine
 }
 
 // Compare returns one Row per Worker name, sorted.
@@ -56,6 +60,9 @@ func Compare(in Input) []Row {
 			row(s.Name).Server = s
 		}
 	}
+	for _, m := range in.Byo {
+		row(m.Name).Machine = &m
+	}
 	for _, n := range in.Nodes {
 		if n.Name != in.ControlPlane && !n.ControlPlane {
 			row(n.Name).Node = &n
@@ -71,6 +78,9 @@ func Compare(in Input) []Row {
 }
 
 func drift(r *Row, site nodeset.Site, nodesRead bool) []string {
+	if r.Machine != nil {
+		return byoDrift(r, nodesRead)
+	}
 	var d []string
 	switch {
 	case r.Set != nil && r.Server == nil:
@@ -105,10 +115,51 @@ func drift(r *Row, site nodeset.Site, nodesRead bool) []string {
 			d = append(d, fmt.Sprintf("Node InternalIP %s, set %s", r.Node.InternalIP, r.Set.PrivateIP))
 		}
 		if r.Set != nil {
-			if c := nodeset.Diff(r.Node.Labels, site.Labels()); !c.Empty() {
-				d = append(d, "profile: "+c.String())
-			}
+			d = append(d, profileDrift(r.Node, site)...)
 		}
+	}
+	return d
+}
+
+// byoDrift is the drift of a byo machine: it has no Worker set entry and no
+// Hetzner server, and its Node stands on its mesh address with the providerID
+// its kubelet set.
+func byoDrift(r *Row, nodesRead bool) []string {
+	var d []string
+	m := r.Machine
+	if r.Set != nil {
+		d = append(d, "also in the Worker set")
+	}
+	if r.Server != nil {
+		d = append(d, "a Hetzner server has its name")
+	}
+	if !nodesRead {
+		return d
+	}
+	if r.Node == nil {
+		return append(d, "not joined")
+	}
+	if !r.Node.Ready {
+		d = append(d, "NotReady")
+	}
+	if r.Node.InternalIP != m.Address.String() {
+		d = append(d, fmt.Sprintf("Node InternalIP %s, mesh address %s", r.Node.InternalIP, m.Address))
+	}
+	if r.Node.ProviderID != m.ProviderID() {
+		d = append(d, fmt.Sprintf("providerID %q, want %s", r.Node.ProviderID, m.ProviderID()))
+	}
+	return append(d, profileDrift(r.Node, m.Site)...)
+}
+
+// profileDrift names what a Node lacks of its site's profile: the labels and
+// the reliability taint.
+func profileDrift(n *kube.Node, site nodeset.Site) []string {
+	var d []string
+	if c := nodeset.Diff(n.Labels, site.Labels()); !c.Empty() {
+		d = append(d, "profile: "+c.String())
+	}
+	if c := nodeset.DiffTaint(n.Taints, site); !c.Empty() {
+		d = append(d, "profile: "+c.String())
 	}
 	return d
 }
@@ -125,8 +176,11 @@ func Print(w io.Writer, rows []Row, nodesRead bool) error {
 	fmt.Fprintln(tw, "WORKER\tSET (private, vpn)\tSERVER (status, private)\tNODE\tPROFILE\tDRIFT")
 	for _, r := range rows {
 		set, srv, node, profile := "-", "-", "-", "-"
-		if r.Set != nil {
+		switch {
+		case r.Set != nil:
 			set = r.Set.PrivateIP + ", " + r.Set.VpnIP
+		case r.Machine != nil:
+			set = "byo " + r.Machine.Site.Name + ", mesh " + r.Machine.Address.String()
 		}
 		if r.Server != nil {
 			srv = r.Server.Status + ", " + strings.Join(r.Server.PrivateIPs, " ")

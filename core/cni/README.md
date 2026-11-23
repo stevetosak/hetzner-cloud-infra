@@ -14,11 +14,19 @@ straight re-download drops all three.
   `kluster node pod-mtu`
   ([Workers runbook](../../docs/runbook/workers.md#change-the-pod-mtu)), not
   with a re-apply.
-- **`--iface-regex=^10\.0\.`** — binds flanneld to the private NIC. Without it
-  flannel takes the first interface it finds, which is the public one: pod
-  traffic would leave the private network and the derived MTU would be wrong.
-  The pattern matches `10.0.x.x` only. The public address, the WireGuard
-  address `10.100.0.1` and loopback all fail to match.
+- **`--iface-regex=^10\.0\.` then `--iface-regex=^10\.101\.`** — bind
+  flanneld to the private NIC, or to `wg-mesh` on a machine outside Hetzner.
+  Without them flannel takes the first interface it finds, which is the public
+  one: pod traffic would leave the private network and the derived MTU would
+  be wrong. Flannel tries the patterns in order and takes the first match
+  (v0.28.9 `main.go`): a Hetzner server matches its private address
+  `10.0.x.x`, and a bring-your-own machine, which has none, matches its mesh
+  address `10.101.x.x` (ADR 0016). The public address, the VPN address
+  `10.100.0.x` and loopback match neither. The second pattern has a cost: a
+  Hetzner server that lost its private address binds `wg-mesh` instead of
+  failing to start, so the Flannel Stage's interface check is the guard on
+  the Control Plane. The second pattern is in Git only until the Providers
+  Plan's live step applies it.
 - **The kube-flannel container's resources** — `25m` / `32Mi`, limit `64Mi`,
   sized by ADR 0013 from measured peaks. Upstream's `100m` / `50Mi` comes back
   with a re-download.

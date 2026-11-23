@@ -130,6 +130,7 @@ func TestLANOverlapsRefuses(t *testing.T) {
 	for name, tc := range map[string]struct{ lan, want string }{
 		"private network": {"10.0.5.2/24", "the private network (10.0.0.0/16)"},
 		"pods":            {"10.244.9.2/24", "the pods (10.244.0.0/16)"},
+		"cilium pods":     {"10.245.1.2/24", "the range kept for a move of the pods to Cilium (10.245.0.0/16)"},
 		"services":        {"10.96.1.2/24", "the services (10.96.0.0/16)"},
 		"VPN":             {"10.100.0.9/24", "the VPN (10.100.0.0/24)"},
 		"mesh":            {"10.101.7.2/24", "the mesh (10.101.0.0/16)"},

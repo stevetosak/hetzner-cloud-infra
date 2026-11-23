@@ -1,6 +1,7 @@
 # The rehearsal Node set, for the tosak-rehearsal project only (ADR 0009).
-# It declares the same sites as live; see live.yaml for the fields. A site
-# changed here for a test never changes the profile of a live Node.
+# It declares the same sites as live; see live.yaml for the fields and the
+# sections. A site changed here for a test never changes the profile of a
+# live Node, and a machine declared here never joins live's mesh.
 sites:
   hel1:
     provider: hcloud

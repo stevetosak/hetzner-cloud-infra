@@ -10,6 +10,7 @@ import (
 
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/kube"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/nodelist"
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/nodeset"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/remote"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/sshgate"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/stage"
@@ -28,7 +29,7 @@ var nodeCmd = &cobra.Command{
 
 var nodeListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "The Worker set, the Hetzner servers and the Nodes side by side, drift marked",
+	Short: "The Worker set and the byo machines, the Hetzner servers and the Nodes side by side, drift marked",
 	Long: "Read-only. The Nodes are read with kubectl on the Control Plane; PROFILE is the site label a " +
 		"Node carries, and drift marks a profile that differs from its site in the Node set file. In a rehearsal that needs " +
 		"bootstrap SSH on the Control Plane firewall; node list never opens it, so with it closed the " +
@@ -48,7 +49,7 @@ func nodeList(ctx context.Context, a *app) error {
 	if err != nil {
 		return err
 	}
-	site, err := a.hcloudSite()
+	nodeSet, err := a.nodeSet()
 	if err != nil {
 		return err
 	}
@@ -63,7 +64,8 @@ func nodeList(ctx context.Context, a *app) error {
 		Nodes:        nodes,
 		NodesRead:    nodesErr == nil,
 		ControlPlane: a.cfg.ControlPlane.Name,
-		Site:         site,
+		Site:         nodeSet.Hcloud(),
+		Byo:          byoMachines(nodeSet),
 	}
 	rows := nodelist.Compare(in)
 	fmt.Fprintf(a.out, "Worker set: %s\n", path)
@@ -165,4 +167,17 @@ func (a *app) dialPinned(ctx context.Context, name, addr, user string, sudo bool
 	}
 	fmt.Fprintf(a.out, "[%s] login as %s at %s verified against the pinned host key\n", name, user, addr)
 	return &stage.Host{Name: name, Addr: addr, Exec: c}, func() { _ = c.Close() }, nil
+}
+
+// byoMachines are the Node set's machines of provisioner byo.
+func byoMachines(set *nodeset.Set) []nodeset.Machine {
+	var byo []nodeset.Machine
+	if m := set.Mesh(); m != nil {
+		for _, machine := range m.Machines {
+			if machine.Provisioner == nodeset.ProvisionerByo {
+				byo = append(byo, machine)
+			}
+		}
+	}
+	return byo
 }

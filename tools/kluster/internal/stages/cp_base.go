@@ -8,12 +8,16 @@ import (
 )
 
 // BaseHost is a host's base setup: the operator user, kernel modules and
-// sysctl, no swap, time sync, containerd, runc and the CNI plugins. It runs
-// as root, the only user a fresh Hetzner image has.
+// sysctl, no swap, time sync, containerd, runc and the CNI plugins. On a
+// Hetzner server it runs as root, the only user a fresh image has, and gives
+// the user root's key.
 type BaseHost struct {
-	User       string // cp-dev, or tosak on a Worker
-	Containerd string // 2.2.0
-	Runc       string // 1.4.0
+	User string // cp-dev, or tosak on a Worker
+	// KeepUserKeys is set on a machine the operator installed: User is the
+	// login, with its own key, and root has none to copy over it.
+	KeepUserKeys bool
+	Containerd   string // 2.2.0
+	Runc         string // 1.4.0
 	// CNIPlugins is the plugin tarball's version. Empty: no tarball. The
 	// Workers drop it: kubernetes-cni installs into the same directory and
 	// owns every file there (docs/runbook/workers.md, step 4).
@@ -31,9 +35,7 @@ cloud-init status --wait >/dev/null || true
 # user
 id -u %[1]s >/dev/null 2>&1 || adduser --disabled-password --gecos '' %[1]s
 usermod -aG sudo %[1]s
-install -d -m 700 -o %[1]s -g %[1]s /home/%[1]s/.ssh
-install -m 600 -o %[1]s -g %[1]s /root/.ssh/authorized_keys /home/%[1]s/.ssh/authorized_keys
-echo '%[1]s ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/%[1]s
+%[6]secho '%[1]s ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/%[1]s
 chmod 440 /etc/sudoers.d/%[1]s
 visudo -c
 
@@ -69,7 +71,24 @@ wget -q https://github.com/opencontainers/runc/releases/download/v%[3]s/runc.amd
 install -m 755 runc.amd64 /usr/local/sbin/runc
 %[4]s`, u, b.Containerd, b.Runc, b.cniScript(), heredoc("/etc/sysctl.d/k8s.conf", `net.bridge.bridge-nf-call-iptables  = 1
 net.bridge.bridge-nf-call-ip6tables = 1
-net.ipv4.ip_forward                 = 1`))
+net.ipv4.ip_forward                 = 1`), b.keysScript())
+}
+
+// keysScript gives the user root's key; a user that keeps its own gets none.
+func (b BaseHost) keysScript() string {
+	if b.KeepUserKeys {
+		return ""
+	}
+	return fmt.Sprintf(`install -d -m 700 -o %[1]s -g %[1]s /home/%[1]s/.ssh
+install -m 600 -o %[1]s -g %[1]s /root/.ssh/authorized_keys /home/%[1]s/.ssh/authorized_keys
+`, b.User)
+}
+
+func (b BaseHost) keysCheck() check {
+	if b.KeepUserKeys {
+		return check{"authorized-keys", "[ -s /home/" + b.User + "/.ssh/authorized_keys ]"}
+	}
+	return check{"authorized-keys", "cmp -s /root/.ssh/authorized_keys /home/" + b.User + "/.ssh/authorized_keys"}
 }
 
 func (b BaseHost) cniScript() string {
@@ -89,7 +108,7 @@ func (b BaseHost) checks() []check {
 	c := []check{
 		{"user", "id -u " + u},
 		{"sudo", "sudo -u " + u + " sudo -n true"},
-		{"authorized-keys", "cmp -s /root/.ssh/authorized_keys /home/" + u + "/.ssh/authorized_keys"},
+		b.keysCheck(),
 		{"modules", "lsmod | grep -q '^overlay ' && lsmod | grep -q '^br_netfilter '"},
 		{"sysctl", `[ "$(sysctl -n net.bridge.bridge-nf-call-iptables net.bridge.bridge-nf-call-ip6tables net.ipv4.ip_forward | tr -d '\n')" = 111 ]`},
 		{"no-swap", `[ -z "$(swapon --show)" ] && ! grep -qE '^[^#].* swap ' /etc/fstab`},

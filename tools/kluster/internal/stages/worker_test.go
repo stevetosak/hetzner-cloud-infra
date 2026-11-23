@@ -120,7 +120,8 @@ func TestJoinKeepsTheTokenOffCommandLines(t *testing.T) {
 }
 
 func TestWorkerKubePrepHoldsCNIAndResolvesTheControlPlane(t *testing.T) {
-	k := KubePrep{Version: "v1.37.0", Endpoint: "k8s-cp.tosak.internal", EndpointIP: "10.0.1.5", PrivateIP: "10.0.2.9", HoldCNI: true}
+	k := KubePrep{Version: "v1.37.0", Endpoint: "k8s-cp.tosak.internal", EndpointIP: "10.0.1.5",
+		Kubelet: KubeletArgs{NodeIP: "10.0.2.9", CloudProviderExternal: true}, HoldCNI: true}
 	s := k.script()
 	for _, want := range []string{"apt-mark hold kubelet kubeadm kubectl kubernetes-cni\n",
 		"/core:/stable:/v1.37/deb/", "kubelet='1.37.0-*' kubeadm='1.37.0-*' kubectl='1.37.0-*'", "'10.0.1.5  k8s-cp.tosak.internal'", "--node-ip=10.0.2.9 "} {
@@ -159,7 +160,7 @@ func TestBaseHostWithoutCNIPlugins(t *testing.T) {
 }
 
 func TestNodeReadyStatus(t *testing.T) {
-	n := NodeReady{Node: "k8swk4", PrivateIP: "10.0.2.9", ServerID: "42"}
+	n := NodeReady{Node: "k8swk4", InternalIP: "10.0.2.9", ProviderID: "hcloud://42"}
 	good := kube.Node{Name: "k8swk4", Ready: true, InternalIP: "10.0.2.9", ProviderID: "hcloud://42"}
 	if st := n.status(good); !st.Done {
 		t.Fatalf("good Node not done: %+v", st)
@@ -176,9 +177,77 @@ func TestNodeReadyStatus(t *testing.T) {
 	}
 }
 
+// A machine outside Hetzner is ready on its mesh address with the providerID
+// its own kubelet set, and the labels it registered.
+func TestNodeReadyStatusOfAMachineOutsideHetzner(t *testing.T) {
+	exclude := "node.kubernetes.io/exclude-from-external-load-balancers"
+	n := NodeReady{Node: "tswk1", InternalIP: "10.101.1.1", ProviderID: "kluster://ts1/tswk1", Labels: map[string]string{exclude: "true"}}
+	good := kube.Node{Name: "tswk1", Ready: true, InternalIP: "10.101.1.1", ProviderID: "kluster://ts1/tswk1",
+		Labels: map[string]string{exclude: "true", "kubernetes.io/hostname": "tswk1"}}
+	if st := n.status(good); !st.Done || st.Detail != "Ready, 10.101.1.1, kluster://ts1/tswk1" {
+		t.Fatalf("good Node: %+v", st)
+	}
+	unlabelled := good
+	unlabelled.Labels = map[string]string{}
+	if st := n.status(unlabelled); st.Done || st.Detail != "not yet: label "+exclude+"=true" {
+		t.Fatalf("a Node without the label: %+v", st)
+	}
+	hetzner := good
+	hetzner.ProviderID = "hcloud://42"
+	if st := n.status(hetzner); st.Done {
+		t.Fatal("a Node with another providerID is done")
+	}
+}
+
 func TestAtNamesAnotherRunbook(t *testing.T) {
 	s := At(PrivateNetwork{}, "docs/runbook/workers.md#3-base-host-setup")
 	if s.Runbook() != "docs/runbook/workers.md#3-base-host-setup" || s.Name() != "private-network" {
 		t.Fatalf("got %s %s", s.Name(), s.Runbook())
+	}
+}
+
+// The Hetzner line is what every live node's /etc/default/kubelet holds: a
+// change to it would fail the Probe on every live node.
+func TestKubeletArgsOfAHetznerServerStayTheLiveLine(t *testing.T) {
+	got := KubeletArgs{NodeIP: "10.0.2.9", CloudProviderExternal: true}.String()
+	if want := "KUBELET_EXTRA_ARGS=--node-ip=10.0.2.9 --cloud-provider=external"; got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+}
+
+func TestKubeletArgsOfAMachineOutsideHetzner(t *testing.T) {
+	got := KubeletArgs{
+		NodeIP:     "10.101.1.1",
+		ProviderID: "kluster://ts1/tswk1",
+		Taints:     []string{"tosak.net/reliability=best-effort:NoSchedule"},
+		Labels:     []string{"node.kubernetes.io/exclude-from-external-load-balancers=true"},
+	}.String()
+	want := "KUBELET_EXTRA_ARGS=--node-ip=10.101.1.1 --provider-id=kluster://ts1/tswk1 " +
+		"--register-with-taints=tosak.net/reliability=best-effort:NoSchedule " +
+		"--node-labels=node.kubernetes.io/exclude-from-external-load-balancers=true"
+	if got != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+	if strings.Contains(got, "cloud-provider") {
+		t.Error("a machine outside Hetzner must not wait for a cloud controller")
+	}
+}
+
+// A Hetzner server gives the user root's key; a machine the operator
+// installed keeps the login user's own key and never reads root's.
+func TestBaseHostKeys(t *testing.T) {
+	hetzner := BaseHost{User: "tosak"}
+	if !strings.Contains(hetzner.script(), "install -m 600 -o tosak -g tosak /root/.ssh/authorized_keys /home/tosak/.ssh/authorized_keys\necho 'tosak ALL=(ALL) NOPASSWD:ALL'") {
+		t.Errorf("the Hetzner script lost root's key:\n%s", hetzner.script())
+	}
+	if c := hetzner.keysCheck(); c.cmd != "cmp -s /root/.ssh/authorized_keys /home/tosak/.ssh/authorized_keys" {
+		t.Errorf("Hetzner check: %s", c.cmd)
+	}
+	byo := BaseHost{User: "tosak", KeepUserKeys: true}
+	if strings.Contains(byo.script(), "/root/.ssh") {
+		t.Errorf("the byo script touches root's keys:\n%s", byo.script())
+	}
+	if c := byo.keysCheck(); c.cmd != "[ -s /home/tosak/.ssh/authorized_keys ]" {
+		t.Errorf("byo check: %s", c.cmd)
 	}
 }

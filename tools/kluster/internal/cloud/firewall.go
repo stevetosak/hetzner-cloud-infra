@@ -3,8 +3,12 @@ package cloud
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strconv"
 
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
+
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/mesh"
 )
 
 // SSHPort is the port bootstrap SSH opens.
@@ -46,6 +50,25 @@ func (c *Client) SSHOpen(ctx context.Context, name string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// IsMeshRule reports whether r admits inbound UDP on the mesh's port: the
+// rule allow_mesh_udp puts on both Hetzner firewalls (ADR 0016).
+func IsMeshRule(r hcloud.FirewallRule) bool {
+	return r.Direction == hcloud.FirewallRuleDirectionIn &&
+		r.Protocol == hcloud.FirewallRuleProtocolUDP &&
+		r.Port != nil && *r.Port == strconv.Itoa(mesh.Port)
+}
+
+// MeshOpen reads the named firewall from the API and reports whether it
+// admits the mesh's port. A machine behind NAT reaches a Hetzner server only
+// when it does.
+func (c *Client) MeshOpen(ctx context.Context, name string) (bool, error) {
+	fw, err := c.firewall(ctx, name)
+	if err != nil {
+		return false, err
+	}
+	return slices.ContainsFunc(fw.Rules, IsMeshRule), nil
 }
 
 // ClearSSH removes every port 22 rule from the named firewall through the API

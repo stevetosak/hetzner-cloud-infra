@@ -2,6 +2,7 @@ package nodelist
 
 import (
 	"bytes"
+	"net/netip"
 	"slices"
 	"strings"
 	"testing"
@@ -155,5 +156,60 @@ func TestCompareMarksProfileDrift(t *testing.T) {
 		if strings.HasPrefix(l, "k8swk3 ") && strings.Contains(l, " hel1 ") {
 			t.Errorf("k8swk3 carries no site label: %q", l)
 		}
+	}
+}
+
+var ts1 = nodeset.Site{Name: "ts1", Provider: "self-hosted", Reliability: "best-effort", Reach: "nat"}
+
+var tswk1 = nodeset.Machine{Name: "tswk1", Site: ts1, Provisioner: nodeset.ProvisionerByo, Address: netip.MustParseAddr("10.101.1.1")}
+
+// byoNode is tswk1's Node as a good build leaves it.
+func byoNode() kube.Node {
+	return kube.Node{Name: "tswk1", InternalIP: "10.101.1.1", Ready: true, Kubelet: "v1.37.0", ProviderID: "kluster://ts1/tswk1",
+		Labels: ts1.Labels(), Taints: []string{nodeset.ReliabilityTaint.String()}}
+}
+
+func byoRow(t *testing.T, n *kube.Node, servers ...*cloud.Server) Row {
+	t.Helper()
+	in := Input{Servers: servers, NodesRead: true, ControlPlane: "k8s-cp", Site: hel1, Byo: []nodeset.Machine{tswk1}}
+	if n != nil {
+		in.Nodes = []kube.Node{*n}
+	}
+	r, ok := byName(Compare(in))["tswk1"]
+	if !ok {
+		t.Fatal("no row for tswk1")
+	}
+	return r
+}
+
+// A byo machine has no Worker set entry and no server, and that is no drift.
+func TestCompareByoInStep(t *testing.T) {
+	n := byoNode()
+	if r := byoRow(t, &n); len(r.Drift) != 0 {
+		t.Fatalf("drift %v", r.Drift)
+	}
+	var out bytes.Buffer
+	if err := Print(&out, []Row{byoRow(t, &n)}, true); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "byo ts1, mesh 10.101.1.1") {
+		t.Errorf("table:\n%s", out.String())
+	}
+}
+
+func TestCompareMarksByoDrift(t *testing.T) {
+	if r := byoRow(t, nil); !slices.Equal(r.Drift, []string{"not joined"}) {
+		t.Errorf("no Node: %v", r.Drift)
+	}
+	n := byoNode()
+	n.InternalIP, n.ProviderID, n.Taints = "192.168.1.5", "", nil
+	want := []string{"Node InternalIP 192.168.1.5, mesh address 10.101.1.1", `providerID "", want kluster://ts1/tswk1`,
+		"profile: add taint tosak.net/reliability=best-effort:NoSchedule"}
+	if r := byoRow(t, &n); !slices.Equal(r.Drift, want) {
+		t.Errorf("drift %q\nwant  %q", r.Drift, want)
+	}
+	good := byoNode()
+	if r := byoRow(t, &good, server("tswk1", "10.0.2.9")); !slices.Contains(r.Drift, "a Hetzner server has its name") {
+		t.Errorf("a server by its name: %v", r.Drift)
 	}
 }
