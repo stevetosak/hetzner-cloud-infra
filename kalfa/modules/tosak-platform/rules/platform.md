@@ -33,6 +33,11 @@ push to main → CI gate (tests, lint, typecheck) → Docker image → Docker Hu
 
 Nobody pushes to the infra `master`: rulesets require a PR, and `deploy-scope` refuses an App PR that changes anything but one listed overlay's `newTag`.
 
+## Design principles
+
+- An application is never built around the platform; it incorporates it. The platform adapts to the app's own names, ports and paths, and every platform service is optional. Contract checks prove that an app keeps the platform's rules before it deploys. If the platform becomes a product, how tedious and limiting integration is matters.
+- Compounding: each platform service is built for reuse, with standard, automated configuration (a new mail domain must be trivial), and a pattern from one service is extracted to the whole cluster where it has merit.
+
 ## Conventions every app follows
 
 - Image `stevetosak/<project>[-<component>]` on Docker Hub. Tags: `latest` (always pushed; the first overlay uses it) and `alpha-<full-sha>` (every CI build; the overlay's `newTag`).
