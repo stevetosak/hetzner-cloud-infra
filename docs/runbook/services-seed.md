@@ -10,9 +10,9 @@ verified: 2026-10-25
 
 ```sh
 cd tools/kluster
-go run . services seed                              # Plan Mode: what would change
-go run . services seed --diff-dir /tmp/seed-diff    # also saves one diff per core Application
-go run . services seed --apply
+kluster services seed                              # Plan Mode: what would change
+kluster services seed --diff-dir /tmp/seed-diff    # also saves one diff per core Application
+kluster services seed --apply
 ```
 
 Seven stages run in order, and an eighth, `rehearsal-cuts`, joins them in a rehearsal. Each is skipped when its probe finds nothing to do. `kluster up` runs the same stages, with `zone` moved behind the database ([below](#zone)). The seed builds the ArgoCD parts with kustomize 5.8.1 (the version of ArgoCD v3.5.3) from the revision the environment reads: `origin/master` for live, the branch `rehearsal` for a rehearsal. CRDs, Namespaces and Secrets come from the working tree. Objects that ArgoCD syncs are applied server-side as the manager `argocd-controller`, with force, and carry the same `argocd.argoproj.io/tracking-id` that ArgoCD adds, so a seed run takes nothing from ArgoCD's ownership (🔴 without that annotation every run would strip it).
@@ -89,7 +89,7 @@ A rehearsal reads the branch `rehearsal`, not `master`. Push the branch first, t
 
 ```sh
 git push -f origin HEAD:rehearsal
-go run . --env rehearsal services seed --apply
+kluster --env rehearsal services seed --apply
 ```
 
 The rehearsal cuts are kustomize overlays at `core/rehearsal/<dir>` (self-signed ClusterIssuer, notifications off, the `projects` ApplicationSet cut to the rehearsed projects, the Restore Drill on the rehearsal buckets with no outside report, only the mail Probes and those pointed inside, no Roles for projects that do not run, and the CNPG archive store pointed at the rehearsal bucket; [ADR 0010, Amendment 2026-11-14](../adr/0010-argocd-syncs-core-and-kluster-only-seeds-it.md#amendments)). Kustomize refuses an overlay inside its own base, so they cannot live in `core/<dir>/rehearsal`. The stage [`rehearsal-cuts`](#rehearsal-cuts) shows from the cluster that they hold. A whole rehearsal, seed included, is `kluster up` ([rehearsal runbook](./rehearsal.md#a-whole-rehearsal-with-kluster-up)).

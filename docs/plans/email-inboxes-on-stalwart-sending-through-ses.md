@@ -335,7 +335,7 @@ production drill passes its mail phase, the mailboxes `dmarc@tosak.net` and
       not page (operator, 2026-11-14). The merge of `feat/mail` makes Argo
       CD sync the probes and alert rules at once, while the parts they test
       come by hand. From the `feat/mail` work tree: seed the namespace `mail`
-      and its Secrets (`go run . services seed --env live --apply` in
+      and its Secrets (`kluster services seed --env live --apply` in
       `tools/kluster`); apply the load balancer (it buys `mail-lb`, so the
       operator approves it first) and note its public IP address; apply the
       ClusterIP Service, `httproute.yaml` and the `Certificate`, so that

@@ -42,10 +42,10 @@ operator runs it in their own terminal, because it reads Bitwarden.
 
 ```sh
 cd tools/kluster
-go run . db create --recover                 # Plan Mode: every Stage and what it reads
-go run . db create --recover --apply
-go run . db create --recover --target-time 2026-10-04T10:00:00Z --rehearsed --apply   # logical damage on live
-go run . up --db recover --apply             # total loss: the whole cluster, database included
+kluster db create --recover                 # Plan Mode: every Stage and what it reads
+kluster db create --recover --apply
+kluster db create --recover --target-time 2026-10-04T10:00:00Z --rehearsed --apply   # logical damage on live
+kluster up --db recover --apply             # total loss: the whole cluster, database included
 ```
 
 `db create --fresh` is the first build of an empty database. `up --db
@@ -315,7 +315,7 @@ rehearsal on 2026-10-03, is gone.
 
 ```sh
 git push -f origin HEAD:rehearsal
-go run . --env rehearsal up --db recover --apply
+kluster --env rehearsal up --db recover --apply
 # a PITR rehearsal: --target-time 2026-10-04T10:00:00Z
 ```
 

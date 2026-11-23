@@ -9,7 +9,7 @@ How every Secret in this cluster is stored, made, rotated and applied. The
 decision is [ADR 0003](../adr/0003-recoverability.md) and its 2026-09-22 and
 2026-10-06 amendments; the build is recorded in
 [the Log of 2026-10-20](../logs/2026-10-20-kluster-secrets-and-reloader-built-every-secret-rotated-live.md).
-The tool is `kluster secrets` (`cd tools/kluster && go run . secrets --help`);
+The tool is `kluster secrets` (`cd tools/kluster && kluster secrets --help`);
 this page is what its help text cannot tell you.
 
 🔴 **This repository is public.** Every `*.enc.yaml` is published for ever.
@@ -111,7 +111,7 @@ vault need the unlocked agent, so the operator runs them in their own terminal.
 
 | Task | Command |
 |---|---|
-| See every key, its kind and its state | `go run . secrets list` (`--no-bitwarden` skips the vault; `--attachments` also compares attachments, slower) |
+| See every key, its kind and its state | `kluster secrets list` (`--no-bitwarden` skips the vault; `--attachments` also compares attachments, slower) |
 | New Secret | add the entry to `secrets.yaml`, then `generate`, `pull` or `set` for its keys, then `check` |
 | Make every missing generated value, and rewrite every copy and literal | `generate --apply` |
 | Give generated keys a new value, and every copy of them in the same write | `rotate <namespace>/<name>.<key>…` or `rotate --all`, with `--apply` |
@@ -205,7 +205,7 @@ Pass: a non-zero byte count. Remove the key file from that machine afterwards.
 ```bash
 $EDITOR .sops.yaml                    # add or remove a public key under `age:`
 sops updatekeys -y <every *.enc.yaml> # re-wraps the data key; values are unchanged
-go run . secrets check
+kluster secrets check
 ```
 
 `updatekeys` is a plain `sops` run, outside kluster, and needs a private key

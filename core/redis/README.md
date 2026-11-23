@@ -98,7 +98,7 @@ The Secret must exist before the Deployment, or the pod stops at
 
 ```
 kubectl apply -f core/redis/namespace.yaml
-# the `redis` Secret, from tools/kluster:  go run . secrets apply --apply redis/redis
+# the `redis` Secret, from tools/kluster:  kluster secrets apply --apply redis/redis
 kubectl apply --server-side -k core/redis
 ```
 

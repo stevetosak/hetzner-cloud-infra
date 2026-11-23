@@ -33,6 +33,7 @@ crash.log
 # kluster is built from source (tools/kluster); the binary is a build
 # artefact, not infrastructure. kluster.yaml IS committed.
 tools/kluster/kluster
+tools/kluster/kluster.build.*
 tools/kluster/.idea/
 
 # Editor swap files. A stale one was committed by accident in this repo once.

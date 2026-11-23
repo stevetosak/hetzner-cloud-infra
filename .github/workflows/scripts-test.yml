@@ -16,6 +16,7 @@ on:
       - 'core/pg-drill/drill/*.py'
       - 'core/monitoring/*.py'
       - 'core/nodes/mesh-catalog/**'
+      - 'scripts/**'
 
 permissions:
   contents: read
@@ -31,7 +32,12 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-      - run: node --test '.github/**/*.test.mjs' 'deployments/*.test.mjs' 'core/nodes/mesh-catalog/*.test.mjs'
+      # The kluster dispatcher's tests build small Go programs.
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: tools/kluster/go.mod
+          cache: false
+      - run: node --test '.github/**/*.test.mjs' 'deployments/*.test.mjs' 'core/nodes/mesh-catalog/*.test.mjs' 'scripts/*.test.mjs'
 
   python:
     runs-on: ubuntu-24.04

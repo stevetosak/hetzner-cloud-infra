@@ -19,11 +19,11 @@ kubectl apply -f manifests/service.yaml     # duster (ClusterIP :8785)
 
 # duster-admin: committed encrypted (ADR 0003). credentials lives under api/.
 # From tools/kluster:
-go run . secrets apply --apply authos/duster-admin
+kluster secrets apply --apply authos/duster-admin
 ```
 
 `secrets.yaml` at the top describes the Secret. A new token is
-`go run . secrets rotate --apply authos/duster-admin.DUSTER_ADMIN_TOKEN`; dstr and
+`kluster secrets rotate --apply authos/duster-admin.DUSTER_ADMIN_TOKEN`; dstr and
 authos-demo must then get the same value.
 
 `REDIS_PASSWORD` is sourced from the existing `credentials` secret (`.REDIS_PASS`) by the

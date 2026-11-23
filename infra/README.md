@@ -28,12 +28,15 @@ modules at plan time.
 ## Environment
 
 State lives in Cloudflare R2, not in git. Every command runs through kluster,
-from `tools/kluster`, with the Bitwarden vault unlocked:
+from `tools/kluster`, with the Bitwarden vault unlocked. `kluster` is the
+dispatcher `scripts/kluster`, linked once from a checkout with
+`ln -sfn "$PWD/scripts/kluster" ~/.local/bin/kluster`: it runs the binary of
+the checkout you are in and builds it first when its source changed.
 
 ```sh
 cd tools/kluster
-go run . exec -- terraform -chdir=../../infra/shared plan
-go run . exec --env rehearsal -- <command>    # the rehearsal project
+kluster exec -- terraform -chdir=../../infra/shared plan
+kluster exec --env rehearsal -- <command>    # the rehearsal project
 ```
 
 `kluster exec` reads the environment's Bitwarden item (`kluster/live` or

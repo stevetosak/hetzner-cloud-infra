@@ -54,13 +54,13 @@ token (or the instances have no archiver). The plugin needs cert-manager.
 kubectl apply --server-side --field-manager=cloud-infra -f core/cnpg/crds.yaml
 kubectl apply -f core/cnpg/namespace.yaml
 # the two Secrets (from tools/kluster; drop --apply for the diff first)
-#   go run . secrets apply --apply pg-cluster/db-credentials pg-cluster/r2-backup-credentials
+#   kluster secrets apply --apply pg-cluster/db-credentials pg-cluster/r2-backup-credentials
 # the operator, the plugin, the StorageClass, both ObjectStores, the
 # ScheduledBackup and doma's Database: what the Application core-cnpg syncs.
 # Run it again if it fails on a webhook: the operator starts first.
 kubectl apply --server-side --field-manager=cloud-infra -k core/cnpg
 # the Cluster: not by hand, and never by ArgoCD
-#   go run . db create --fresh --apply         (from tools/kluster)
+#   kluster db create --fresh --apply         (from tools/kluster)
 ```
 
 `kluster db create` builds `cluster/fresh` or `cluster/recover`, applies it into
