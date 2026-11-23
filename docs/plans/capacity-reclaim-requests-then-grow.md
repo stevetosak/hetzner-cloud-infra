@@ -71,12 +71,14 @@ metrics-server, cert-manager, about 250 MiB).
       backup. Its 160 Mi request was set from a 120 MiB peak on 2026-11-07;
       it uses about 25 MiB between backups. About 190 MiB back if the backup
       peak allows about 64 Mi. The value lives on the `ObjectStore`, and a
-      change there restarts the Cluster, so it runs in one restart with the
-      postgres container's change from 384 to 256 Mi (operator, 2026-11-16,
+      change there restarts the Cluster: the primary takes no writes for
+      about 3.5 minutes. The postgres container's change from 384 to 256 Mi
+      (operator, 2026-11-16,
       [ADR 0013](../adr/0013-requests-follow-measured-peaks-and-the-clusters-own-workloads-carry-no-cpu-limit.md)
-      Amendment): about 256 MiB more back. The primary takes no writes for
-      about 3.5 minutes; the Cluster is applied by hand, with the operator's
-      yes.
+      Amendment), first held back for this restart, goes with the restart of
+      the [Providers Plan](./providers-the-platform-adapts-to-more-than-one.md)'s
+      Placement step instead (operator, 2026-11-23), so this one changes only
+      the sidecar.
 - [ ] Grafana capped by its VPA: a memory `maxAllowed` of about 512 Mi, so
       the recommendation stops following its start spike. Grafana has no
       memory limit since the move to `InPlaceOrRecreate`, so a start above
