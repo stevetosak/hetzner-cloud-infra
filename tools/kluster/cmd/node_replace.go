@@ -42,6 +42,15 @@ func nodeReplace(ctx context.Context, a *app, name string) error {
 	if err := checkWorkerName(name, a.cfg.ControlPlane.Name); err != nil {
 		return err
 	}
+	p, err := a.provisionerOf(name)
+	if err != nil {
+		return err
+	}
+	return p.replace(ctx, a, name)
+}
+
+// nodeReplaceHcloud is node replace of a Hetzner server of the Worker set.
+func nodeReplaceHcloud(ctx context.Context, a *app, name string) error {
 	path, err := a.workerSetPath()
 	if err != nil {
 		return err

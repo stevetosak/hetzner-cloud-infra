@@ -14,11 +14,17 @@
 #      control. Flannel does not resize an existing flannel.1: change a
 #      running cluster with `kluster node pod-mtu`.
 #
-#   2. --iface-regex=^10\.0\.  Without it flannel binds the first interface it
-#      finds, which is the PUBLIC NIC. Pod traffic would then leave the private
-#      network, and the derived MTU would be wrong as well. The pattern matches
-#      the private address 10.0.x.x only: the public address does not match, the
-#      WireGuard address 10.100.0.1 does not match, and loopback does not match.
+#   2. --iface-regex=^10\.0\. then --iface-regex=^10\.101\.  Without them
+#      flannel binds the first interface it finds, which is the PUBLIC NIC. Pod
+#      traffic would then leave the private network, and the derived MTU would
+#      be wrong as well. Flannel tries the patterns in order and takes the
+#      first match (v0.28.9 main.go). A Hetzner server matches the first, its
+#      private address 10.0.x.x; a machine outside Hetzner has none and
+#      matches the second, its wg-mesh address 10.101.x.x (ADR 0016). The
+#      public address, the VPN address 10.100.0.x and loopback match neither.
+#      The cost: a Hetzner server that lost its private address binds wg-mesh
+#      instead of failing to start, so the Flannel Stage's interface check is
+#      the guard on the Control Plane.
 #
 #   3. The kube-flannel container's resources, sized by ADR 0013 from the
 #      2026-11-01..06 peaks (peak 21 MiB, 19m CPU), against upstream's 100m /
@@ -160,6 +166,7 @@ spec:
         - --ip-masq
         - --kube-subnet-mgr
         - '--iface-regex=^10\.0\.'
+        - '--iface-regex=^10\.101\.'
         command:
         - /opt/bin/flanneld
         env:

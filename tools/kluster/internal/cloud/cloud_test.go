@@ -150,6 +150,25 @@ func TestIsSSHRule(t *testing.T) {
 	}
 }
 
+// The rule the Terraform switch allow_mesh_udp writes (infra/shared/firewall.tf).
+func TestIsMeshRule(t *testing.T) {
+	port := func(p string) *string { return &p }
+	tests := []struct {
+		r    hcloud.FirewallRule
+		want bool
+	}{
+		{hcloud.FirewallRule{Direction: "in", Protocol: "udp", Port: port("51821")}, true},
+		{hcloud.FirewallRule{Direction: "in", Protocol: "udp", Port: port("51820")}, false},
+		{hcloud.FirewallRule{Direction: "in", Protocol: "tcp", Port: port("51821")}, false},
+		{hcloud.FirewallRule{Direction: "out", Protocol: "udp", Port: port("51821")}, false},
+	}
+	for _, tt := range tests {
+		if got := IsMeshRule(tt.r); got != tt.want {
+			t.Errorf("IsMeshRule(%+v) = %v", tt.r, got)
+		}
+	}
+}
+
 // A server's auto-deleted primary IP is gone by the time down reaches it:
 // that is done, not an error.
 func TestDeleteAllTreatsNotFoundAsDeleted(t *testing.T) {

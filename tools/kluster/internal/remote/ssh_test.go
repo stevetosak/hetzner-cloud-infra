@@ -1,10 +1,12 @@
 package remote
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -71,6 +73,10 @@ func handleConn(t *testing.T, nConn net.Conn, config *ssh.ServerConfig) {
 	go ssh.DiscardRequests(reqs)
 
 	for newChannel := range chans {
+		if newChannel.ChannelType() == "direct-tcpip" {
+			go forward(newChannel)
+			continue
+		}
 		if newChannel.ChannelType() != "session" {
 			_ = newChannel.Reject(ssh.UnknownChannelType, "unsupported channel type")
 			continue
@@ -298,5 +304,74 @@ func TestSudoRunsEveryCommandThroughSudo(t *testing.T) {
 	calls, _ := os.ReadFile(log)
 	if n := strings.Count(string(calls), "-n sh -c"); n != 2 {
 		t.Errorf("sudo ran %d commands, want 2:\n%s", n, calls)
+	}
+}
+
+// forward serves a direct-tcpip channel, as sshd does for `ssh -J`.
+func forward(nc ssh.NewChannel) {
+	var target struct {
+		Host       string
+		Port       uint32
+		OriginHost string
+		OriginPort uint32
+	}
+	if err := ssh.Unmarshal(nc.ExtraData(), &target); err != nil {
+		_ = nc.Reject(ssh.ConnectionFailed, err.Error())
+		return
+	}
+	conn, err := net.Dial("tcp", net.JoinHostPort(target.Host, fmt.Sprint(target.Port)))
+	if err != nil {
+		_ = nc.Reject(ssh.ConnectionFailed, err.Error())
+		return
+	}
+	ch, reqs, err := nc.Accept()
+	if err != nil {
+		_ = conn.Close()
+		return
+	}
+	go ssh.DiscardRequests(reqs)
+	go func() { _, _ = io.Copy(ch, conn); _ = ch.CloseWrite() }()
+	_, _ = io.Copy(conn, ch)
+	_ = conn.Close()
+	_ = ch.Close()
+}
+
+// The jump: a session to the second host runs inside the first one's
+// connection, and its host key is checked like any other.
+func TestDialThroughAJump(t *testing.T) {
+	jumpAddr, jumpKey := testServer(t)
+	targetAddr, targetKey := testServer(t)
+	jump := dialForTest(t, jumpAddr, jumpKey)
+	defer jump.Close()
+	ctx := context.Background()
+	c, err := DialVia(ctx, jump.DialContext, targetAddr, Config{User: "test", Auth: ssh.Password("x"), HostKeyCallback: FixedHostKey(targetKey)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if out, err := c.Run(ctx, "echo through"); err != nil || out != "through" {
+		t.Fatalf("got %q, %v", out, err)
+	}
+	if _, err := DialVia(ctx, jump.DialContext, targetAddr, Config{User: "test", Auth: ssh.Password("x"), HostKeyCallback: FixedHostKey(jumpKey)}); !IsHostKeyError(err) {
+		t.Fatalf("a wrong key through the jump: got %v", err)
+	}
+}
+
+func TestFingerprintHostKey(t *testing.T) {
+	addr, key := testServer(t)
+	ctx := context.Background()
+	var seen ssh.PublicKey
+	c, err := Dial(ctx, addr, Config{User: "test", Auth: ssh.Password("x"), HostKeyCallback: FingerprintHostKey(ssh.FingerprintSHA256(key), &seen)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = c.Close()
+	if seen == nil || !bytes.Equal(seen.Marshal(), key.Marshal()) {
+		t.Error("the accepted key was not kept")
+	}
+	var none ssh.PublicKey
+	_, err = Dial(ctx, addr, Config{User: "test", Auth: ssh.Password("x"), HostKeyCallback: FingerprintHostKey("SHA256:AAAA", &none)})
+	if !IsHostKeyError(err) || none != nil {
+		t.Fatalf("another fingerprint: got %v, kept %v", err, none)
 	}
 }

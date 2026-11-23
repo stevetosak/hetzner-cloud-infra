@@ -5,10 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
-	"os"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -17,6 +18,7 @@ import (
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/config"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/filediff"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/kube"
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/nodeset"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/provision"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/remote"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/sshgate"
@@ -27,20 +29,65 @@ import (
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/workerset"
 )
 
-var nodeAddFlags struct {
-	serverType string
+// addFlags are node add's flags. Each belongs to one provisioner.
+type addFlags struct {
+	provisioner string
+	serverType  string // hcloud
+	site        string // byo, first run
+	bootstrap   string // byo, second run
+	hostKey     string // byo, second run
+}
+
+var nodeAddFlags addFlags
+
+// check refuses a flag of another provisioner than the machine's, so a run
+// never seems to use a value it ignores.
+func (f addFlags) check(kind string) error {
+	var wrong []string
+	if kind != nodeset.ProvisionerHcloud && f.serverType != "" {
+		wrong = append(wrong, "--server-type")
+	}
+	if kind != nodeset.ProvisionerByo {
+		for flag, v := range map[string]string{"--site": f.site, "--bootstrap": f.bootstrap, "--host-key": f.hostKey} {
+			if v != "" {
+				wrong = append(wrong, flag)
+			}
+		}
+	}
+	if len(wrong) > 0 {
+		slices.Sort(wrong)
+		return fmt.Errorf("%s: not a flag of provisioner %s", strings.Join(wrong, ", "), kind)
+	}
+	return nil
 }
 
 func init() {
 	nodeCmd.AddCommand(nodeAddCmd)
-	nodeAddCmd.Flags().StringVar(&nodeAddFlags.serverType, "server-type", "",
-		"the new Worker's Hetzner server type (default: workers.serverType in kluster.yaml); it goes into the Worker set on the first run")
+	fl := nodeAddCmd.Flags()
+	fl.StringVar(&nodeAddFlags.provisioner, "provisioner", "",
+		"what makes a new machine: hcloud (a Hetzner server in the Worker set, the default) or byo (a machine you installed); a declared machine keeps the Node set's")
+	fl.StringVar(&nodeAddFlags.serverType, "server-type", "",
+		"hcloud: the new Worker's Hetzner server type (default: workers.serverType in kluster.yaml); it goes into the Worker set on the first run")
+	fl.StringVar(&nodeAddFlags.site, "site", "",
+		"byo, first run: the Node set site the new machine stands on")
+	fl.StringVar(&nodeAddFlags.bootstrap, "bootstrap", "",
+		"byo, second run: the address kluster logs in at the first time (the machine's own, read on its console)")
+	fl.StringVar(&nodeAddFlags.hostKey, "host-key", "",
+		"byo, second run: the SHA256 fingerprint of /etc/ssh/ssh_host_ed25519_key.pub, read on the machine's console with ssh-keygen -lf")
 }
 
 var nodeAddCmd = &cobra.Command{
 	Use:   "add <name>",
-	Short: "Add one Worker: declare it in the Worker set, then create, build and join it (docs/runbook/workers.md)",
-	Long: "Run twice. A name the environment's Worker set does not declare gets its entry first: the " +
+	Short: "Add one Worker: declare it, then build and join it (docs/runbook/workers.md)",
+	Long: "Run twice, whatever the provisioner. --provisioner byo takes a machine you installed: the first run " +
+		"(--site) writes its entry, with the next free mesh address, into the Node set's machines; commit it. The " +
+		"second run (--bootstrap, --host-key) logs in at its own address only with the host key fingerprint you " +
+		"read on its console, rotates the key, builds it, joins it to the mesh, pins its key at its mesh address " +
+		"and reaches it from then on through the Control Plane, joins it with the kubelet of a machine outside " +
+		"Hetzner, writes its profile and closes it with the site firewall " +
+		"(docs/runbook/workers.md#add-a-bring-your-own-machine). It refuses until every Node has joined the mesh " +
+		"and both Hetzner firewalls admit the mesh port. The rest describes the default, hcloud. " +
+		"A name the environment's Worker set does not declare gets its entry first: the " +
 		"lowest free private and VPN address and the server type (--server-type, or workers.serverType), " +
 		"written to the set under --apply. A server type Hetzner cannot deliver in the Control Plane's " +
 		"location is refused before the write. kluster then stops, " +
@@ -77,6 +124,22 @@ func nodeAdd(ctx context.Context, a *app, name string) error {
 	if err := checkWorkerName(name, a.cfg.ControlPlane.Name); err != nil {
 		return err
 	}
+	set, err := a.nodeSet()
+	if err != nil {
+		return err
+	}
+	p, kind, err := provisionerFor(set, name, nodeAddFlags.provisioner)
+	if err != nil {
+		return err
+	}
+	if err := nodeAddFlags.check(kind); err != nil {
+		return err
+	}
+	return p.add(ctx, a, name)
+}
+
+// nodeAddHcloud is node add of a Hetzner server of the Worker set.
+func nodeAddHcloud(ctx context.Context, a *app, name string) error {
 	path, err := a.workerSetPath()
 	if err != nil {
 		return err
@@ -302,21 +365,16 @@ func (a *app) declareWorker(ctx context.Context, set *workerset.Set, name, st st
 // writeSet writes an edited Worker set over the file, keeping its mode, and
 // reads it back: ok must hold for what the file now declares.
 func writeSet(path string, updated []byte, ok func(*workerset.Set) bool) error {
-	info, err := os.Stat(path)
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(path, updated, info.Mode().Perm()); err != nil {
-		return err
-	}
-	back, err := workerset.Load(path)
-	if err != nil {
-		return err
-	}
-	if !ok(back) {
-		return fmt.Errorf("read back: %s is not the edit kluster wrote", path)
-	}
-	return nil
+	return writeBack(path, updated, func() error {
+		back, err := workerset.Load(path)
+		if err != nil {
+			return err
+		}
+		if !ok(back) {
+			return fmt.Errorf("read back: %s is not the edit kluster wrote", path)
+		}
+		return nil
+	})
 }
 
 // nextWorker is the entry a new Worker of server type st gets: the lowest

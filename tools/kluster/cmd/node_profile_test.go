@@ -20,8 +20,8 @@ func profileNodes(names ...string) []kube.Node {
 	return nodes
 }
 
-func hetzner(servers ...*cloud.Server) hetznerNodes {
-	return hetznerNodes{controlPlane: "k8s-cp", workers: []string{"k8swk1", "k8swk2"}, servers: servers, site: hel1Site}
+func hetzner(servers ...*cloud.Server) nodeSites {
+	return nodeSites{controlPlane: "k8s-cp", workers: []string{"k8swk1", "k8swk2"}, servers: servers, site: hel1Site}
 }
 
 func names(t []error) string { return fmt.Sprint(t) }
@@ -48,14 +48,14 @@ func TestProfileTargetsEveryHetznerNode(t *testing.T) {
 func TestProfileTargetsRefuses(t *testing.T) {
 	for _, c := range []struct {
 		name    string
-		h       hetznerNodes
+		h       nodeSites
 		nodes   []kube.Node
 		only    string
 		targets int
 		want    string
 	}{
 		{"unknown node", hetzner(&cloud.Server{Name: "k8swk1", Location: "hel1"}), profileNodes("k8swk1", "ts1-a"), "", 1,
-			"Node ts1-a is neither k8s-cp nor in the Worker set"},
+			"Node ts1-a is neither k8s-cp, in the Worker set nor a byo machine of the Node set"},
 		{"no server", hetzner(), profileNodes("k8swk1"), "", 0, "Node k8swk1 has no Hetzner server"},
 		{"other location", hetzner(&cloud.Server{Name: "k8swk1", Location: "fsn1"}), profileNodes("k8swk1"), "", 0,
 			`k8swk1 stands in "fsn1", but the Node set's hcloud site is hel1`},
@@ -78,6 +78,17 @@ func TestProfileTargetsOnlyTheNamedNode(t *testing.T) {
 	h := hetzner(&cloud.Server{Name: "k8swk1", Location: "hel1"}, &cloud.Server{Name: "k8swk2", Location: "hel1"})
 	targets, problems := h.targets(profileNodes("k8swk1", "k8swk2", "ts1-a"), "k8swk2")
 	if len(problems) > 0 || len(targets) != 1 || targets[0].Node != "k8swk2" {
+		t.Fatalf("targets %+v, problems %v", targets, problems)
+	}
+}
+
+// A byo machine's Node gets the profile of its own site.
+func TestProfileTargetsAByoMachine(t *testing.T) {
+	h := hetzner(&cloud.Server{Name: "k8swk1", Location: "hel1"})
+	ts1 := nodeset.Site{Name: "ts1", Provider: "self-hosted", Reliability: "best-effort", Reach: "nat"}
+	h.byo = []nodeset.Machine{{Name: "tswk1", Site: ts1, Provisioner: nodeset.ProvisionerByo}}
+	targets, problems := h.targets(profileNodes("k8swk1", "tswk1"), "")
+	if len(problems) > 0 || len(targets) != 2 || targets[1].Node != "tswk1" || targets[1].Site != ts1 {
 		t.Fatalf("targets %+v, problems %v", targets, problems)
 	}
 }

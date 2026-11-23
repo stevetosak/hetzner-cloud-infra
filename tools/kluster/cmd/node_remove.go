@@ -52,6 +52,15 @@ func nodeRemove(ctx context.Context, a *app, name string) error {
 	if err := checkWorkerName(name, a.cfg.ControlPlane.Name); err != nil {
 		return err
 	}
+	p, err := a.provisionerOf(name)
+	if err != nil {
+		return err
+	}
+	return p.remove(ctx, a, name)
+}
+
+// nodeRemoveHcloud is node remove of a Hetzner server of the Worker set.
+func nodeRemoveHcloud(ctx context.Context, a *app, name string) error {
 	path, err := a.workerSetPath()
 	if err != nil {
 		return err

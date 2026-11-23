@@ -26,7 +26,7 @@ var nodeProfileCmd = &cobra.Command{
 		"Worker set belong to the Node set's hcloud site; kluster refuses a Node whose Hetzner server stands " +
 		"in another location. On the Control Plane it sets the site's labels under " +
 		nodeset.Prefix + ", removes any other key under that prefix, and reads them back. Labels outside the " +
-		"prefix stay. A Node that is neither the Control Plane nor in the Worker set is reported, not changed. " +
+		"prefix stay. A byo machine of the Node set gets its own site's profile. A Node kluster knows no site for is reported, not changed. " +
 		"node add and cp init run the same Stage after each join. Live goes through WireGuard and opens " +
 		"nothing; a rehearsal opens bootstrap SSH on the Control Plane firewall and closes it at the end.",
 	Args: cobra.MaximumNArgs(1),
@@ -59,6 +59,10 @@ func nodeProfile(ctx context.Context, a *app, only string) error {
 	if !a.env.IsLive() {
 		a.warnOpenSSH(ctx)
 	}
+	nodeSet, err := a.nodeSet()
+	if err != nil {
+		return err
+	}
 	return a.onControlPlane(ctx, func(cp *stage.Host) error {
 		if cp == nil {
 			fmt.Fprintln(a.out, "Plan Mode: the Control Plane was not reached, so no Node is read; --apply opens bootstrap SSH and reads them")
@@ -68,7 +72,7 @@ func nodeProfile(ctx context.Context, a *app, only string) error {
 		if err != nil {
 			return err
 		}
-		h := hetznerNodes{controlPlane: a.cfg.ControlPlane.Name, workers: set.Names(), servers: servers, site: site}
+		h := nodeSites{controlPlane: a.cfg.ControlPlane.Name, workers: set.Names(), servers: servers, site: site, byo: byoMachines(nodeSet)}
 		targets, problems := h.targets(nodes, only)
 		opts := stage.Options{Apply: a.mode.Apply, Out: a.out}
 		for _, t := range targets {
@@ -89,21 +93,22 @@ func nodeProfile(ctx context.Context, a *app, only string) error {
 	})
 }
 
-// hetznerNodes is what tells kluster a Node's site: the Control Plane and
-// the Worker set are Hetzner servers, and every Hetzner server belongs to
-// the hcloud site.
-type hetznerNodes struct {
+// nodeSites is what tells kluster a Node's site: the Control Plane and the
+// Worker set are Hetzner servers, and every Hetzner server belongs to the
+// hcloud site; a byo machine of the Node set belongs to its own site.
+type nodeSites struct {
 	controlPlane string
 	workers      []string
 	servers      []*cloud.Server
 	site         nodeset.Site
+	byo          []nodeset.Machine
 }
 
 // targets are the profile Stages of the Nodes, or of the one named only,
 // and the Nodes refused: a Node kluster knows no site for, a Node with no
 // server behind it, a server outside the site's location, and a named Node
 // the cluster does not have.
-func (h hetznerNodes) targets(nodes []kube.Node, only string) ([]stages.NodeProfile, []error) {
+func (h nodeSites) targets(nodes []kube.Node, only string) ([]stages.NodeProfile, []error) {
 	var targets []stages.NodeProfile
 	var problems []error
 	found := false
@@ -113,7 +118,11 @@ func (h hetznerNodes) targets(nodes []kube.Node, only string) ([]stages.NodeProf
 		}
 		found = true
 		if n.Name != h.controlPlane && !slices.Contains(h.workers, n.Name) {
-			problems = append(problems, fmt.Errorf("Node %s is neither %s nor in the Worker set: kluster knows no site for it", n.Name, h.controlPlane))
+			if i := slices.IndexFunc(h.byo, func(m nodeset.Machine) bool { return m.Name == n.Name }); i >= 0 {
+				targets = append(targets, stages.NodeProfile{Node: n.Name, Site: h.byo[i].Site})
+				continue
+			}
+			problems = append(problems, fmt.Errorf("Node %s is neither %s, in the Worker set nor a byo machine of the Node set: kluster knows no site for it", n.Name, h.controlPlane))
 			continue
 		}
 		i := slices.IndexFunc(h.servers, func(s *cloud.Server) bool { return s.Name == n.Name })

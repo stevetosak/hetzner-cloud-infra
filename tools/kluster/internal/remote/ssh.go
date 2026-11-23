@@ -147,6 +147,27 @@ func FixedHostKey(key ssh.PublicKey) ssh.HostKeyCallback {
 	}
 }
 
+// FingerprintHostKey accepts only a host key whose SHA256 fingerprint is
+// want, as `ssh-keygen -lf` prints it (SHA256:…), and keeps the key it
+// accepted in seen. It is how kluster trusts a machine the first time: the
+// operator reads the fingerprint on the machine's own console.
+func FingerprintHostKey(want string, seen *ssh.PublicKey) ssh.HostKeyCallback {
+	return func(hostname string, _ net.Addr, key ssh.PublicKey) error {
+		if ssh.FingerprintSHA256(key) != want {
+			return &HostKeyMismatch{Host: hostname}
+		}
+		*seen = key
+		return nil
+	}
+}
+
+// DialContext opens a connection from the host this client is logged in to,
+// as `ssh -J` does: kluster reaches a machine behind the Control Plane this
+// way.
+func (c *Client) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	return c.conn.DialContext(ctx, network, addr)
+}
+
 // Auth is the identity file if one is given, otherwise the ssh-agent.
 func Auth(keyPath string) (ssh.AuthMethod, error) {
 	if keyPath == "" {

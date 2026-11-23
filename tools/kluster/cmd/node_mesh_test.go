@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/cloud"
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/mesh"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/meshstore"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/nodeset"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/stage"
@@ -141,8 +142,10 @@ func TestMeshSortRefuses(t *testing.T) {
 	const outside = `sites:
   hel1: {provider: hcloud, reliability: high, reach: public, meshSubnet: 10.101.0.0/24}
   ts1: {provider: self-hosted, reliability: best-effort, reach: nat, meshSubnet: 10.101.1.0/24}
+  ovh1: {provider: ovhcloud, reliability: high, reach: public, meshSubnet: 10.101.2.0/24}
 machines:
   box1: {site: ts1, provisioner: byo, meshAddress: 10.101.1.1}
+  vps1: {site: ovh1, provisioner: byo, meshAddress: 10.101.2.1}
   k8swk1: {site: hel1, provisioner: hcloud, meshAddress: 10.101.0.11}
   k8swk9: {site: hel1, provisioner: hcloud, meshAddress: 10.101.0.19}
   k8swk2: {site: hel1, provisioner: hcloud, meshAddress: 10.101.0.12}
@@ -150,17 +153,34 @@ machines:
 	i := meshInventoryOf(t, outside, meshServer("k8swk1", "10.0.2.6", "203.0.113.11"))
 	i.servers = append(i.servers, &cloud.Server{Name: "k8swk9", Location: "hel1"})
 	ready, refused := i.sort()
-	if len(ready) != 1 || ready[0].machine.Name != "k8swk1" {
-		t.Errorf("ready %+v, want only k8swk1", ready)
+	var names []string
+	for _, h := range ready {
+		names = append(names, h.machine.Name)
+	}
+	if !slices.Equal(names, []string{"box1", "k8swk1"}) {
+		t.Errorf("ready %v, want box1 and k8swk1", names)
+	}
+	if ready[0].server != nil {
+		t.Error("a byo machine got a Hetzner server")
 	}
 	for name, want := range map[string]string{
-		"box1":   "logs in only to Hetzner servers",
+		"vps1":   "byo machine vps1 stands on site ovh1, whose reach is public",
 		"k8swk9": "neither k8s-cp nor in the Worker set",
 		"k8swk2": "has no Hetzner server",
 	} {
 		if err := refused[name]; err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: refused with %v, want %q", name, err, want)
 		}
+	}
+}
+
+// A byo machine cannot take the name of a Hetzner server.
+func TestMeshSortRefusesAByoMachineWithAWorkersName(t *testing.T) {
+	src := strings.Replace(meshNodeSet, "  k8swk2: {site: hel1, provisioner: hcloud, meshAddress: 10.101.0.12}\n",
+		"  k8swk2: {site: ts1, provisioner: byo, meshAddress: 10.101.1.2}\n", 1)
+	_, refused := meshInventoryOf(t, src, meshServers()...).sort()
+	if err := refused["k8swk2"]; err == nil || !strings.Contains(err.Error(), "k8s-cp or the Worker set holds that name") {
+		t.Fatalf("got %v", err)
 	}
 }
 
@@ -364,10 +384,13 @@ func TestMeshRunApplyFailsOnAMissingKey(t *testing.T) {
 	}
 }
 
-// meshWithOutsider adds a machine kluster cannot log in to.
+// meshWithOutsider adds a machine kluster cannot build: a byo machine on a
+// public site.
 func meshWithOutsider(t *testing.T, r *meshRun) {
 	t.Helper()
-	const src = meshNodeSet + "  box1: {site: ts1, provisioner: byo, meshAddress: 10.101.1.1}\n"
+	src := strings.Replace(meshNodeSet, "machines:\n",
+		"  ovh1: {provider: ovhcloud, reliability: high, reach: public, meshSubnet: 10.101.2.0/24}\nmachines:\n", 1) +
+		"  vps1: {site: ovh1, provisioner: byo, meshAddress: 10.101.2.1}\n"
 	r.inventory = meshInventoryOf(t, src, meshServers()...)
 }
 
@@ -381,7 +404,7 @@ func TestMeshRunOverTheWholeMeshFailsOnARefusedMachine(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "1 machine(s) refused") {
 		t.Fatalf("err = %v", err)
 	}
-	if !strings.Contains(out.String(), "refused: mesh machine box1") {
+	if !strings.Contains(out.String(), "refused: byo machine vps1") {
 		t.Errorf("output:\n%s", out.String())
 	}
 	if !slices.Contains(log.steps, "k8swk1:wireguard-mesh") {
@@ -403,8 +426,8 @@ func TestMeshRunNamedRefusedMachineFails(t *testing.T) {
 	store := &fakeMeshStore{entries: map[string]meshstore.Entry{}}
 	r := newTestMeshRun(t, store, &meshLog{}, true, io.Discard)
 	meshWithOutsider(t, r)
-	err := r.run(context.Background(), "box1")
-	if err == nil || !strings.Contains(err.Error(), "logs in only to Hetzner servers") {
+	err := r.run(context.Background(), "vps1")
+	if err == nil || !strings.Contains(err.Error(), "whose reach is public") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -442,8 +465,65 @@ func TestMeshSessionsDialOnceAndCloseOnlyWhatTheyDialled(t *testing.T) {
 }
 
 func TestMeshJoinStagesCheckBeforeTheKey(t *testing.T) {
-	got := fmt.Sprint(meshJoinStages()[0].Name(), " ", meshJoinStages()[1].Name())
+	got := fmt.Sprint(meshJoinStages(true)[0].Name(), " ", meshJoinStages(true)[1].Name())
 	if got != (stages.MeshJoinCheck{}).Name()+" "+(stages.MeshKey{}).Name() {
 		t.Errorf("order %s", got)
+	}
+	// Only a Hetzner server's private interface is exempt from the LAN check.
+	for _, hcloud := range []bool{true, false} {
+		if c := meshJoinStages(hcloud)[0].(stages.MeshJoinCheck); c.Hcloud != hcloud {
+			t.Errorf("meshJoinStages(%v) checks with Hcloud %v", hcloud, c.Hcloud)
+		}
+	}
+}
+
+// A byo machine behind NAT joins like any other, with the LAN check on its
+// every interface, and every joined machine gets the new peer.
+func TestMeshRunJoinsAByoMachine(t *testing.T) {
+	machineKeys["box1"] = meshKeyOf(9)
+	t.Cleanup(func() { delete(machineKeys, "box1") })
+	store := &fakeMeshStore{entries: map[string]meshstore.Entry{
+		"k8s-cp": joinedEntry("k8s-cp", "10.101.0.1"),
+		"k8swk1": joinedEntry("k8swk1", "10.101.0.11"),
+		"k8swk2": joinedEntry("k8swk2", "10.101.0.12"),
+	}}
+	log := &meshLog{}
+	r := newTestMeshRun(t, store, log, true, io.Discard)
+	r.inventory = meshInventoryOf(t, meshNodeSet+"  box1: {site: ts1, provisioner: byo, meshAddress: 10.101.1.1}\n", meshServers()...)
+	var checks []stages.MeshJoinCheck
+	configs := map[string]mesh.Config{}
+	r.runStages = func(ctx context.Context, s []stage.Stage, h *stage.Host) error {
+		for _, st := range s {
+			switch v := st.(type) {
+			case stages.MeshJoinCheck:
+				checks = append(checks, v)
+			case stages.WireGuardMesh:
+				configs[h.Name] = v.Config
+			}
+		}
+		return log.runStages(ctx, s, h)
+	}
+	if err := r.run(context.Background(), "box1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(checks) != 1 || checks[0].Hcloud {
+		t.Errorf("box1's join checks %+v, want one with its LAN checked", checks)
+	}
+	if !slices.Equal(store.puts, []string{"box1"}) {
+		t.Errorf("store writes %v", store.puts)
+	}
+	box := configs["box1"]
+	if len(box.Peers) != 3 || box.ListenPort != 0 {
+		t.Fatalf("box1's config %+v, want 3 peers and no listen port", box)
+	}
+	for _, p := range box.Peers {
+		if !p.Endpoint.IsValid() || p.Keepalive != mesh.Keepalive {
+			t.Errorf("box1's peer %s has endpoint %v keepalive %d: a NAT machine dials out and keeps the path open", p.Name, p.Endpoint, p.Keepalive)
+		}
+	}
+	cp := configs["k8s-cp"]
+	i := slices.IndexFunc(cp.Peers, func(p mesh.Peer) bool { return p.Name == "box1" })
+	if i < 0 || cp.Peers[i].Endpoint.IsValid() {
+		t.Errorf("k8s-cp's peer for box1: %+v, want one without an endpoint", cp.Peers)
 	}
 }

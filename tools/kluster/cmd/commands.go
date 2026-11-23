@@ -260,7 +260,11 @@ func (a *app) firstLogins(ctx context.Context, servers map[string]string) ([]*st
 }
 
 // dialer opens root connections that accept only what cb accepts.
-func (a *app) dialer() stages.Dialer {
+func (a *app) dialer() stages.Dialer { return a.dialerAs("root", false) }
+
+// dialerAs is a Dialer that logs in as user: root on a fresh Hetzner server,
+// the operator's user with sudo on a machine the operator installed.
+func (a *app) dialerAs(user string, sudo bool) stages.Dialer {
 	return func(ctx context.Context, addr string, cb ssh.HostKeyCallback) (io.Closer, error) {
 		auth, err := remote.Auth(a.cfg.SSH.IdentityFile)
 		if err != nil {
@@ -268,7 +272,7 @@ func (a *app) dialer() stages.Dialer {
 		}
 		wait, cancel := context.WithTimeout(ctx, time.Minute)
 		defer cancel()
-		return remote.DialWait(wait, addr, remote.Config{User: "root", Auth: auth, HostKeyCallback: cb}, 2*time.Second)
+		return remote.DialWait(wait, addr, remote.Config{User: user, Auth: auth, HostKeyCallback: cb, Sudo: sudo}, 2*time.Second)
 	}
 }
 
