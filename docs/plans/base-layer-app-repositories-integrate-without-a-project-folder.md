@@ -94,7 +94,12 @@ proven by a refused connection from a test pod in the rehearsal project and on
 the live cluster.
 
 - [ ] Choose the NetworkPolicy enforcer in a grill: Cilium, Canal or
-      kube-router.
+      kube-router. The grill also checks, in the chosen version's source,
+      whether the enforcer keeps the bring-your-own machine's site firewall in
+      force: that firewall blocks pods from the LAN in the host's nftables
+      forward chain, and Cilium's eBPF host routing may send pod packets past
+      that chain (assumed, not checked)
+      ([Add a bring-your-own machine](../runbook/workers.md#add-a-bring-your-own-machine)).
 - [ ] Roll the enforcer out, rehearsal project first, with a default deny per
       Application namespace and the allows the platform services need.
 - [ ] Apply Pod Security `restricted` and a ResourceQuota to every

@@ -75,9 +75,10 @@ kubelet cannot set or change a key under a
 `node-restriction.kubernetes.io/` prefix: the kubelet's own flag check refuses
 it at registration, and the NodeRestriction admission plugin refuses it on
 update (read in the kubernetes v1.37.0 source). A machine therefore cannot
-claim a capability it lacks, and a placement rule can trust the label. A
-kubelet outside Hetzner sets `topology.kubernetes.io/zone` and `region` to its
-site, which it is allowed to do.
+claim a capability it lacks, and a placement rule can trust the label. The
+site label is also the zone a placement rule reads; no kubelet sets
+`topology.kubernetes.io/zone` or `region`, because the Hetzner Nodes carry
+neither.
 
 ### Placement follows the profile
 
@@ -126,7 +127,7 @@ Plane Endpoint `k8s-cp.tosak.internal` still resolves to `10.0.1.5` on every
 machine, and the API server's certificate does not change. The Control Plane is
 a mesh member like any other. The VPN `wg0` keeps its one job, operator
 traffic, and the operator reaches a machine outside Hetzner through it: from
-the laptop over `wg0` to `k8s-cp`, then over `wg-mesh`.
+the laptop over `wg0` to `k8s-cp`, then by an SSH jump over `wg-mesh`.
 
 A pod packet between sites is VXLAN inside WireGuard, so packet sizes are
 planned for the smallest link: the tunnel MTU is 1400, Flannel's
@@ -172,22 +173,25 @@ node without the driver
 ### Workers come and go through one command set
 
 Every Worker, on every provider, is added, removed, listed and replaced through
-`kluster node add|remove|list|replace`. Each entry names its provider, and a
-provisioner per provider does that provider's part: `hcloud` creates the server
-with Terraform as today, and `byo`, bring your own, takes a machine the
-operator has set up. The host Stages are shared; the kubelet flags, the mesh
-peer and the Node check come from the provider. Machines that Terraform does
-not create are listed in a Node set file per environment, which the first
-`node add` run writes and the operator commits before the second, the same rule
-as the Worker set. The repository is public, so the file holds no public
-address of a self-hosted site, and such a site's name, `ts1` and on, tells
-nothing of where it is.
+`kluster node add|remove|list|replace`. Each machine names its provisioner,
+and the provisioner does that machine's part: `hcloud` creates the server with
+Terraform as today, and `byo`, bring your own, takes a machine the operator
+has set up. A provisioner is never read from a site's provider, because one
+site can hold machines of two. The host Stages are shared; the kubelet flags,
+the mesh peer and the Node check come from the provisioner. Every machine of
+the mesh is listed in the `machines` section of the Node set file of its
+environment, with its site, its provisioner and its mesh address; the first
+`node add` run of a byo machine writes its entry and the operator commits it
+before the second, the same rule as the Worker set. The repository is public,
+so the file holds no address of a self-hosted site, and such a site's name,
+`ts1` and on, tells nothing of where it is.
 
 A bring-your-own machine is reached once at its own address, with the
 cluster's key put in at install and its host key checked against the
-fingerprint the operator reads on the provider's console; the host key is then
-rotated. After that, kluster and the operator reach it only through the hub,
-and its public port 22 closes.
+fingerprint the operator reads on the machine's console; the host key is then
+rotated. After that, kluster and the operator reach it only through the
+Control Plane, by an SSH jump over `wg-mesh`, and the machine's own firewall
+takes no new connection from anywhere but the mesh.
 
 A dead Worker is removed on any provider. After 20 minutes NotReady or
 Unknown, it gets the `node.kubernetes.io/out-of-service` taint, so its pods are
@@ -343,3 +347,52 @@ driver, and `hcloud-volumes-retain` leaves `core/cnpg`, so Argo CD no longer
 manages it. The `csi` Stage refuses a class file whose location is not the
 name of the `hcloud` site in the environment's Node set, and it only applies:
 no kluster run deletes a live class.
+
+**2026-11-23 — building the bring-your-own provisioner.** Building `byo`
+settled six details, and the text above is corrected to match.
+
+Every machine names its provisioner. The first build took "a machine of the
+mesh on a site that is not `hcloud`" to mean `byo`, which holds only while one
+other provisioner exists; an `ovh` provisioner in part C, or virtual machines on
+the self-hosted machine in the
+[Elastic nodes](../plans/elastic-nodes-the-cluster-grows-and-shrinks-on-spare-compute.md)
+Plan, would break it, and one site can hold machines of two provisioners. The
+Node set therefore holds one top-level `machines` section, each entry with its
+site, its provisioner and its mesh address, and the `mesh` section keeps only
+the relay. kluster refuses an unknown provisioner, an `hcloud` machine off the
+`hcloud` site, and any other provisioner on it.
+
+kluster reaches a byo machine after its first login by an SSH jump through the
+Control Plane, not by a routed path. The grill of 2026-11-17 had chosen to give
+the laptop's VPN peer the mesh range and make `k8s-cp` forward between `wg0` and
+`wg-mesh`, with a route back to the VPN on every machine outside Hetzner. That
+cannot work in a rehearsal, whose VPN addresses are the live ones that the
+laptop routes to the live hub. The jump is one path for both environments,
+needs no change on the laptop and none in the mesh, which keeps carrying node
+addresses only. It depends on TCP forwarding in the Control Plane's sshd, which
+`sshd -T` showed on, with `permitopen any`, on live on 2026-11-23.
+
+The bootstrap address and the host key's fingerprint are flags of the second
+`node add` run, not entries in the file: both are read on the machine's console
+at that moment, both are used once, and a LAN address in a public file only
+goes stale. The machine is installed with the user every Worker has, `tosak`,
+with the cluster's key and sudo without a password.
+
+The machine's own firewall is wider than closing port 22. A Node listens on
+every address on the kubelet's 10250, kube-proxy's 10256, node-exporter's 9100
+and the NodePorts (`ss -ltn` on `k8s-cp`, 2026-11-23), which every device on a
+home LAN could reach. An nftables table of its own, loaded at boot, takes new
+connections only from `wg-mesh`, loopback and the machine's pods, and keeps
+pods from every private address range but the cluster's. A test in network
+namespaces proves both. The byo kubelet sets no topology labels: the Hetzner
+Nodes carry no `topology.kubernetes.io/zone` or `region` (read on live the same
+day), so a rule on those labels would see only byo machines, and the admin site
+label already serves as the zone.
+
+A byo machine on a site with a public address is refused for now. Its peers
+would need that address, and neither the Node set nor the mesh store holds
+one; the OVHcloud node of part C decides where it lives. Flannel picks a
+machine's address with a second `--iface-regex=^10\.101\.` after `^10\.0\.`,
+as the design said; Flannel tries the patterns in order (v0.28.9 source), so a
+Hetzner server keeps its private address. The join check also refuses a LAN
+inside `10.245.0.0/16`, which ADR 0001 keeps for a move of the pods to Cilium.

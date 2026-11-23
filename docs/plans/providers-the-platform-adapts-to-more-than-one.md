@@ -161,10 +161,25 @@ then brought back by `kluster node add`.
       ([the CSI driver](../runbook/control-plane.md#8c-the-csi-driver)). Live
       since 2026-11-22: the classes changed in place, and a test claim got a
       volume whose PV requires `hel1`, which was deleted with its claim.
-- [ ] Bring-your-own nodes in kluster: the `byo` provisioner, the kubelet
+- [x] Bring-your-own nodes in kluster: the `byo` provisioner, the kubelet
       settings above, the best-effort taint at registration, the bootstrap with a
       console-checked host key, and a ready check that no longer waits for an
-      `hcloud://` providerID.
+      `hcloud://` providerID
+      ([Add a bring-your-own machine](../runbook/workers.md#add-a-bring-your-own-machine)).
+      Each machine of the Node set's `machines` section names its provisioner;
+      kluster reaches a byo machine by an SSH jump through the Control Plane
+      once it has joined the mesh, and closes it with a site firewall that
+      takes new connections only from `wg-mesh` and keeps its pods off the
+      LAN. Flannel gets a second `--iface-regex` for `wg-mesh`, in Git only
+      ([ADR 0016, Amendment 2026-11-23](../adr/0016-every-provider-is-a-set-of-capabilities-and-workers-of-any-provider-join-as-equals.md#amendments)).
+      Built on 2026-11-23 and proven by unit tests, the site firewall in network
+      namespaces and the jump against an SSH server in the test process; no
+      byo machine has been built yet.
+- [ ] `node remove` and `node replace` for a byo machine: drain, delete the
+      Node, `kubeadm reset` over the jump, its key out of `mesh-peers` and its
+      entry out of the Node set, then the mesh without it. Until then both
+      refuse a byo machine and name the steps by hand
+      ([Take a bring-your-own machine out](../runbook/workers.md#take-a-bring-your-own-machine-out)).
 - [ ] Placement: the required affinities on capabilities (PostgreSQL, Envoy,
       Stalwart), the preferred zone of the data for apps with PostgreSQL, and
       the best-effort toleration for Grafana and cert-manager.
@@ -175,6 +190,9 @@ then brought back by `kluster node add`.
       self-hosted machine joins the rehearsal, and the three checks of the finish line
       pass there. The rehearsal's cost needs the operator's yes.
 - [ ] Live: the self-hosted machine is reset, joins live, and the three checks pass again.
+      First `core/cni/flannel.yaml` with its second `--iface-regex` is applied
+      on live by hand (`core/cni` is not synced), which rolls the Flannel
+      DaemonSet on every node.
 
 ## Part C: the platform runs with no Hetzner node
 
