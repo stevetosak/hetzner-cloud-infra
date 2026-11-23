@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/netip"
 	"os"
 	"regexp"
 	"slices"
@@ -80,9 +81,11 @@ func (s Site) Labels() map[string]string {
 
 // Set is one environment's Node set file.
 type Set struct {
-	Path  string
-	sites map[string]Site
-	mesh  *Mesh
+	Path    string
+	src     []byte
+	sites   map[string]Site
+	subnets map[string]netip.Prefix // each site's meshSubnet
+	mesh    *Mesh
 }
 
 // Load reads and validates the Node set file at path.
@@ -97,25 +100,35 @@ func Load(path string) (*Set, error) {
 // Parse reads and validates a Node set from src; path names it in errors.
 func Parse(path string, src []byte) (*Set, error) {
 	var f struct {
-		Sites map[string]Site `yaml:"sites"`
-		Mesh  *meshFile       `yaml:"mesh"`
+		Sites    map[string]Site        `yaml:"sites"`
+		Machines map[string]machineFile `yaml:"machines"`
+		Mesh     *meshFile              `yaml:"mesh"`
 	}
 	dec := yaml.NewDecoder(bytes.NewReader(src))
 	dec.KnownFields(true)
 	if err := dec.Decode(&f); err != nil {
 		return nil, fmt.Errorf("parsing the Node set %s: %w", path, err)
 	}
-	s := &Set{Path: path, sites: map[string]Site{}}
+	s := &Set{Path: path, src: src, sites: map[string]Site{}}
 	for name, site := range f.Sites {
 		site.Name = name
 		s.sites[name] = site
 	}
-	mesh, meshErr := parseMesh(s.sites, f.Mesh)
+	mesh, subnets, meshErr := parseMesh(s.sites, f.Machines, f.Mesh)
 	if err := errors.Join(s.validate(), meshErr); err != nil {
 		return nil, fmt.Errorf("invalid Node set %s: %w", path, err)
 	}
-	s.mesh = mesh
+	s.mesh, s.subnets = mesh, subnets
 	return s, nil
+}
+
+// Bytes is the file as it was read.
+func (s *Set) Bytes() []byte { return s.src }
+
+// Site finds a site by its name.
+func (s *Set) Site(name string) (Site, bool) {
+	site, ok := s.sites[name]
+	return site, ok
 }
 
 // Hcloud is the site of the Hetzner Cloud servers. A valid set has exactly

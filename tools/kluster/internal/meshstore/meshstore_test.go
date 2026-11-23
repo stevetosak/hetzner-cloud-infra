@@ -135,10 +135,9 @@ func testMesh(t *testing.T) *nodeset.Mesh {
 sites:
   hel1: {provider: hcloud, reliability: high, reach: public, meshSubnet: 10.101.0.0/24}
   ts1: {provider: self-hosted, reliability: best-effort, reach: nat, meshSubnet: 10.101.1.0/24}
-mesh:
-  machines:
-    wk1: {site: hel1, address: 10.101.0.11}
-    box1: {site: ts1, address: 10.101.1.1}
+machines:
+  wk1: {site: hel1, provisioner: hcloud, meshAddress: 10.101.0.11}
+  box1: {site: ts1, provisioner: byo, meshAddress: 10.101.1.1}
 `))
 	if err != nil {
 		t.Fatal(err)

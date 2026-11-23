@@ -32,11 +32,10 @@ const meshNodeSet = `sites:
     reliability: best-effort
     reach: nat
     meshSubnet: 10.101.1.0/24
-mesh:
-  machines:
-    k8s-cp: {site: hel1, address: 10.101.0.1}
-    k8swk1: {site: hel1, address: 10.101.0.11}
-    k8swk2: {site: hel1, address: 10.101.0.12}
+machines:
+  k8s-cp: {site: hel1, provisioner: hcloud, meshAddress: 10.101.0.1}
+  k8swk1: {site: hel1, provisioner: hcloud, meshAddress: 10.101.0.11}
+  k8swk2: {site: hel1, provisioner: hcloud, meshAddress: 10.101.0.12}
 `
 
 func meshKeyOf(b byte) string {
@@ -142,12 +141,11 @@ func TestMeshSortRefuses(t *testing.T) {
 	const outside = `sites:
   hel1: {provider: hcloud, reliability: high, reach: public, meshSubnet: 10.101.0.0/24}
   ts1: {provider: self-hosted, reliability: best-effort, reach: nat, meshSubnet: 10.101.1.0/24}
-mesh:
-  machines:
-    box1: {site: ts1, address: 10.101.1.1}
-    k8swk1: {site: hel1, address: 10.101.0.11}
-    k8swk9: {site: hel1, address: 10.101.0.19}
-    k8swk2: {site: hel1, address: 10.101.0.12}
+machines:
+  box1: {site: ts1, provisioner: byo, meshAddress: 10.101.1.1}
+  k8swk1: {site: hel1, provisioner: hcloud, meshAddress: 10.101.0.11}
+  k8swk9: {site: hel1, provisioner: hcloud, meshAddress: 10.101.0.19}
+  k8swk2: {site: hel1, provisioner: hcloud, meshAddress: 10.101.0.12}
 `
 	i := meshInventoryOf(t, outside, meshServer("k8swk1", "10.0.2.6", "203.0.113.11"))
 	i.servers = append(i.servers, &cloud.Server{Name: "k8swk9", Location: "hel1"})
@@ -369,7 +367,7 @@ func TestMeshRunApplyFailsOnAMissingKey(t *testing.T) {
 // meshWithOutsider adds a machine kluster cannot log in to.
 func meshWithOutsider(t *testing.T, r *meshRun) {
 	t.Helper()
-	const src = meshNodeSet + "    box1: {site: ts1, address: 10.101.1.1}\n"
+	const src = meshNodeSet + "  box1: {site: ts1, provisioner: byo, meshAddress: 10.101.1.1}\n"
 	r.inventory = meshInventoryOf(t, src, meshServers()...)
 }
 
