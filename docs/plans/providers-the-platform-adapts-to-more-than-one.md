@@ -180,9 +180,20 @@ then brought back by `kluster node add`.
       entry out of the Node set, then the mesh without it. Until then both
       refuse a byo machine and name the steps by hand
       ([Take a bring-your-own machine out](../runbook/workers.md#take-a-bring-your-own-machine-out)).
-- [ ] Placement: the required affinities on capabilities (PostgreSQL, Envoy,
+- [x] Placement: the required affinities on capabilities (PostgreSQL, Envoy,
       Stalwart), the preferred zone of the data for apps with PostgreSQL, and
-      the best-effort toleration for Grafana and cert-manager.
+      the best-effort toleration for Grafana and cert-manager
+      ([ADR 0016, Amendment 2026-11-23](../adr/0016-every-provider-is-a-set-of-capabilities-and-workers-of-any-provider-join-as-equals.md#amendments)).
+      Envoy and Stalwart require `load-balancer=hcloud` and PostgreSQL
+      `block-volumes=hcloud`; `authos-api`, `doma` and Stalwart prefer the
+      site of the PostgreSQL primary through the kustomize Component
+      `core/placement/data-zone`; Grafana and cert-manager carry only the
+      toleration. Live since 2026-11-23: each rule was read on the running
+      pods after Argo CD synced the merge. The Cluster's restart, which also
+      took the postgres container to 256 Mi, left the primary without writes
+      for about 3 minutes; then it took a write, streamed to the replica and
+      archived its next WAL segment. No Node carries the best-effort taint
+      yet, so the rules move no pod until the rehearsal.
 - [ ] The dead-node remover: a small Go controller in the cluster that taints
       and deletes a node NotReady for 20 minutes, never the control plane.
 - [ ] The self-hosted machine, reinstalled as a clean Ubuntu Server.
