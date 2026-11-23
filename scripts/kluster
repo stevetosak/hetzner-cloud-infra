@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# The kluster dispatcher: runs the kluster of the checkout you are in, and
+# builds it first when its source changed. ~/.local/bin/kluster is a link to
+# this file:
+#
+#   ln -sfn "$PWD/scripts/kluster" ~/.local/bin/kluster
+#
+# Each checkout or worktree builds its own binary, tools/kluster/kluster
+# (git-ignored), so two checkouts on different branches never share a stale
+# one. Outside a checkout it runs the checkout this file lives in. A file or a
+# directory under tools/kluster that is newer than the binary means the source
+# changed: an edit, a pull or a branch switch writes the files it changes.
+set -euo pipefail
+
+readonly module='module github.com/stevetosak/hetzner-cloud-infra/tools/kluster'
+
+is_checkout() {
+	[[ -f "$1/tools/kluster/go.mod" ]] && grep -qxF "$module" "$1/tools/kluster/go.mod"
+}
+
+top=$(git rev-parse --show-toplevel 2>/dev/null || true)
+if [[ -z "$top" ]] || ! is_checkout "$top"; then
+	self=$(readlink -f "${BASH_SOURCE[0]}")
+	top=$(cd "$(dirname "$self")/.." && pwd)
+	if ! is_checkout "$top"; then
+		echo "kluster: no hetzner-cloud-infra checkout here or at $top" >&2
+		exit 1
+	fi
+fi
+
+src="$top/tools/kluster"
+bin="$src/kluster"
+changed=$(find "$src" -newer "$bin" ! -path "$bin" ! -name 'kluster.build.*' -print -quit 2>/dev/null || true)
+if [[ ! -x "$bin" || -n "$changed" ]]; then
+	echo "kluster: building $bin from its source" >&2
+	tmp="$bin.build.$$"
+	if ! (cd "$src" && go build -o "$tmp" .); then
+		echo "kluster: the build failed; fix the source and run kluster again" >&2
+		exit 1
+	fi
+	mv -f "$tmp" "$bin"
+	# The rename also touched $src; the binary must be newer than it.
+	touch "$bin"
+fi
+exec "$bin" "$@"

@@ -23,7 +23,7 @@ Terraform output.
 Environment for every Terraform command, from `tools/kluster`:
 
 ```
-go run . exec -- <command>
+kluster exec -- <command>
 ```
 
 `kluster exec` reads the environment's Bitwarden item and gives the command the

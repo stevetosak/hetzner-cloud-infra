@@ -40,7 +40,7 @@ The namespace and the CRDs first, then everything else.
     kubectl apply --server-side -f core/argocd/crds.yaml
 
     # The one Secret nothing creates (secrets.yaml), from tools/kluster:
-    go run . secrets apply --apply argocd/argocd-notifications-secret
+    kluster secrets apply --apply argocd/argocd-notifications-secret
 
     # Namespaces first: the AppProjects deny Namespaces, so ArgoCD cannot
     # make them.

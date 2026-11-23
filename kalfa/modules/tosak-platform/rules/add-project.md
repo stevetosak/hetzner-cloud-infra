@@ -75,9 +75,9 @@ Deleting the ApplicationSet does not delete the workloads (`preserveResourcesOnD
 4. **Secrets**, committed encrypted with SOPS and age. No `init_secrets.sh` (retired). Each Secret is an entry in the Secret Catalog `secrets.yaml`: its `<namespace>/<name>`, its file `manifests/<name>.enc.yaml`, and where each key comes from (`generated`, `issued` from a Bitwarden item `kluster/*`, `copy` of another key, or `literal`). Then, from `tools/kluster`:
 
    ```bash
-   go run . secrets generate --apply          # missing generated values and every copy
-   go run . secrets pull --apply              # issued values from Bitwarden
-   go run . secrets apply --apply <namespace>/<name>
+   kluster secrets generate --apply          # missing generated values and every copy
+   kluster secrets pull --apply              # issued values from Bitwarden
+   kluster secrets apply --apply <namespace>/<name>
    ```
 
    Every write runs in Plan Mode without `--apply`, and no command prints a value. The commands that decrypt read the age key from Bitwarden, so the Operator runs them in their own terminal. Only `data` is encrypted; the repository is public.
@@ -92,7 +92,7 @@ Deleting the ApplicationSet does not delete the workloads (`preserveResourcesOnD
 ## The first deploy, in order
 
 1. Merge the infra PR with the project's files (overlay, namespace file, AppProject, generator line, `allowedRoutes`, `apps.json`, Secret Catalog entry, database); `kluster services check` passes. `core-argocd` and `core-cnpg` sync their parts.
-2. Create the namespace and the Secrets: `go run . services seed --env live` (Plan Mode), then `--apply`; or one Secret with `go run . secrets apply --apply <namespace>/<name>`.
+2. Create the namespace and the Secrets: `kluster services seed --env live` (Plan Mode), then `--apply`; or one Secret with `kluster secrets apply --apply <namespace>/<name>`.
 3. `kubectl apply -f manifests/configmap.yaml -f manifests/service.yaml`
 4. `kubectl apply -f projects/<project>/httproute.yaml`
 5. Trigger the app repository's CI, so its deploy job bumps the overlay tag.

@@ -20,7 +20,7 @@ Terraform output.
 Environment for every Terraform command, from `tools/kluster`:
 
 ```
-go run . exec -- <command>
+kluster exec -- <command>
 ```
 
 `kluster exec` reads the environment's Bitwarden item (`kluster/live`) and
@@ -30,7 +30,7 @@ carry a `TF_VAR_` prefix — a backend block cannot read Terraform variables.
 The commands below were run in 2026-09 with the same three variables exported
 from `infra/.envrc`, which was deleted on 2026-10-20; the one block that named
 the file now names `kluster exec`, and a bare `terraform` line elsewhere reads
-as `go run . exec -- terraform` today.
+as `kluster exec -- terraform` today.
 
 ---
 
@@ -891,8 +891,8 @@ ssh cp-dev@10.100.0.1 'echo VPN_SSH_OK; echo "peer: $SSH_CONNECTION"'
 
 ```
 cd tools/kluster
-go run . exec -- terraform -chdir=../../infra/shared plan -out=<scratch>/close22.tfplan
-go run . exec -- terraform -chdir=../../infra/shared apply <scratch>/close22.tfplan
+kluster exec -- terraform -chdir=../../infra/shared plan -out=<scratch>/close22.tfplan
+kluster exec -- terraform -chdir=../../infra/shared apply <scratch>/close22.tfplan
 ```
 
 No `-var` is needed; both variables default to false.

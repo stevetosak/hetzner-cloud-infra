@@ -72,8 +72,8 @@ merges, or the next morning reports "no Restore Drill has ever passed".
 ```sh
 kubectl apply -f core/pg-drill/namespace.yaml
 cd tools/kluster   # the three Secrets; key names only, never values
-go run . secrets apply pg-drill/r2-drill-results-credentials pg-drill/r2-readonly-credentials pg-drill/telegram pg-drill/scw-mail-readonly
-go run . secrets apply --apply pg-drill/r2-drill-results-credentials pg-drill/r2-readonly-credentials pg-drill/telegram pg-drill/scw-mail-readonly
+kluster secrets apply pg-drill/r2-drill-results-credentials pg-drill/r2-readonly-credentials pg-drill/telegram pg-drill/scw-mail-readonly
+kluster secrets apply --apply pg-drill/r2-drill-results-credentials pg-drill/r2-readonly-credentials pg-drill/telegram pg-drill/scw-mail-readonly
 cd ../..
 kubectl diff  -k core/pg-drill
 kubectl apply -k core/pg-drill
