@@ -193,6 +193,7 @@ var clusterRanges = []struct {
 	{"the services", netip.MustParsePrefix("10.96.0.0/16")},
 	{"the VPN", netip.MustParsePrefix("10.100.0.0/24")},
 	{"the mesh", nodeset.MeshRange},
+	{"the range kept for a move of the pods to Cilium", netip.MustParsePrefix("10.245.0.0/16")},
 }
 
 var privateNetworkRange = netip.MustParsePrefix("10.0.0.0/16")

@@ -11,10 +11,9 @@ import (
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/stage"
 )
 
-// KubePrep installs the Kubernetes packages and sets the three things that
-// must be right before `kubeadm init` or `kubeadm join` and are silent when
-// wrong: the Endpoint in /etc/hosts, the kubelet's private node IP, and the
-// external cloud provider.
+// KubePrep installs the Kubernetes packages and sets the things that must be
+// right before `kubeadm init` or `kubeadm join` and are silent when wrong:
+// the Endpoint in /etc/hosts and the kubelet's arguments.
 type KubePrep struct {
 	// Version is an exact release (v1.37.0). The apt channel is its minor;
 	// the packages are pinned to the patch, so a Worker matches the Control
@@ -22,10 +21,49 @@ type KubePrep struct {
 	Version    string
 	Endpoint   string // k8s-cp.tosak.internal
 	EndpointIP string // the Control Plane's private address, on every node
-	PrivateIP  string // this host's private address, the kubelet's node IP
+	Kubelet    KubeletArgs
 	// HoldCNI holds kubernetes-cni too: on a Worker it owns /opt/cni/bin
 	// (docs/runbook/workers.md, step 5).
 	HoldCNI bool
+}
+
+// KubeletArgs are the kubelet's own flags, in /etc/default/kubelet. They hold
+// what differs per node; kubeadm's kubelet-config ConfigMap holds the rest.
+type KubeletArgs struct {
+	// NodeIP is the node's InternalIP: the private address of a Hetzner
+	// server, the mesh address of any other machine.
+	NodeIP string
+	// CloudProviderExternal waits for a cloud controller to initialize the
+	// Node: set on a Hetzner server, which the hcloud controller manages.
+	CloudProviderExternal bool
+	// ProviderID is set by the kubelet itself on a machine no cloud
+	// controller manages: kluster://<site>/<node> (ADR 0016).
+	ProviderID string
+	// Taints are registered with the Node, as key=value:Effect. A kubelet
+	// cannot change its taints after registration, but sets these at it.
+	Taints []string
+	// Labels are registered with the Node, as key=value; a kubelet may set
+	// only the keys NodeRestriction allows, such as node.kubernetes.io/*.
+	Labels []string
+}
+
+// String is the file's one line. A Hetzner server's line is the one every
+// live node already holds, so its Probe still passes.
+func (a KubeletArgs) String() string {
+	line := "KUBELET_EXTRA_ARGS=--node-ip=" + a.NodeIP
+	if a.CloudProviderExternal {
+		line += " --cloud-provider=external"
+	}
+	if a.ProviderID != "" {
+		line += " --provider-id=" + a.ProviderID
+	}
+	if len(a.Taints) > 0 {
+		line += " --register-with-taints=" + strings.Join(a.Taints, ",")
+	}
+	if len(a.Labels) > 0 {
+		line += " --node-labels=" + strings.Join(a.Labels, ",")
+	}
+	return line
 }
 
 func (KubePrep) Name() string    { return "kube-prep" }
@@ -41,9 +79,7 @@ func (k KubePrep) held() []string {
 	return h
 }
 
-func (k KubePrep) kubeletArgs() string {
-	return "KUBELET_EXTRA_ARGS=--node-ip=" + k.PrivateIP + " --cloud-provider=external"
-}
+func (k KubePrep) kubeletArgs() string { return k.Kubelet.String() }
 
 // pkgVersion is the apt version glob for the release: v1.37.0 → 1.37.0-*.
 func (k KubePrep) pkgVersion() string { return strings.TrimPrefix(k.Version, "v") + "-*" }
@@ -65,7 +101,7 @@ apt-mark hold %[5]s
 # the Control Plane Endpoint (ADR 0006)
 grep -qxF '%[3]s' /etc/hosts || echo '%[3]s' >> /etc/hosts
 
-# kubelet: private address, and external cloud provider
+# kubelet: the node's own arguments
 echo '%[4]s' > /etc/default/kubelet
 systemctl daemon-reexec
 systemctl enable kubelet

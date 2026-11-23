@@ -441,7 +441,7 @@ func (a *app) preJoinStages(h workerHost) []stage.Stage {
 		stages.At(stages.BaseHost{User: c.Node.User, Containerd: c.Versions.Containerd, Runc: c.Versions.Runc},
 			"docs/runbook/workers.md#3-base-host-setup"),
 		stages.At(stages.KubePrep{Version: c.Versions.Kubernetes, Endpoint: c.ControlPlane.Endpoint,
-			EndpointIP: c.ControlPlane.PrivateIP, PrivateIP: h.Worker.PrivateIP, HoldCNI: true},
+			EndpointIP: c.ControlPlane.PrivateIP, Kubelet: hetznerKubelet(h.Worker.PrivateIP), HoldCNI: true},
 			"docs/runbook/workers.md#5-kubernetes-packages-and-pre-join-configuration"),
 		stages.WireGuardSpoke{
 			Address:     h.Worker.VpnIP + "/" + strconv.Itoa(h.subnetBits),
@@ -452,6 +452,12 @@ func (a *app) preJoinStages(h workerHost) []stage.Stage {
 	}
 }
 
+// hetznerKubelet is the kubelet of a Hetzner server: its private address,
+// and the hcloud cloud controller to initialize its Node.
+func hetznerKubelet(privateIP string) stages.KubeletArgs {
+	return stages.KubeletArgs{NodeIP: privateIP, CloudProviderExternal: true}
+}
+
 func (a *app) hubPeer(h workerHost) stage.Stage {
 	return stages.HubPeer{
 		Peer: wgconf.Peer{Name: h.Worker.Name, PublicKey: h.WorkerKey, AllowedIPs: h.Worker.VpnIP + "/32"},
@@ -460,7 +466,7 @@ func (a *app) hubPeer(h workerHost) stage.Stage {
 }
 
 func (a *app) nodeReady(h workerHost) stage.Stage {
-	return stages.NodeReady{Node: h.Worker.Name, PrivateIP: h.Worker.PrivateIP, ServerID: h.Server.ID,
+	return stages.NodeReady{Node: h.Worker.Name, InternalIP: h.Worker.PrivateIP, ProviderID: "hcloud://" + h.Server.ID,
 		Every: 5 * time.Second, Timeout: nodeReadyTimeout}
 }
 

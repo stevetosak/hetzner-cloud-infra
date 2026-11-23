@@ -79,6 +79,71 @@ func (s Site) Labels() map[string]string {
 	return l
 }
 
+// ReliabilityTaint is the taint every Node of a best-effort site carries, so
+// only the workloads that tolerate it run there (ADR 0016).
+var ReliabilityTaint = Taint{Key: "tosak.net/reliability", Value: "best-effort", Effect: "NoSchedule"}
+
+// Taint is a Node taint.
+type Taint struct{ Key, Value, Effect string }
+
+// String is the taint as the kubelet's --register-with-taints and `kubectl
+// taint` write it.
+func (t Taint) String() string { return t.Key + "=" + t.Value + ":" + t.Effect }
+
+// Taint is the reliability taint of the site's Nodes; false for a site of high
+// reliability, whose Nodes carry none.
+func (s Site) Taint() (Taint, bool) {
+	if s.Reliability != "best-effort" {
+		return Taint{}, false
+	}
+	return ReliabilityTaint, true
+}
+
+// TaintChange is what turns a Node's reliability taint into its site's:
+// RemoveKey drops every taint with the key, then Add, when set, is added.
+type TaintChange struct {
+	RemoveKey bool
+	Add       string
+}
+
+// Empty reports whether the Node already carries the site's taint.
+func (c TaintChange) Empty() bool { return !c.RemoveKey && c.Add == "" }
+
+// DiffTaint compares a Node's taints, each as Taint.String writes it, with
+// its site's. Only the reliability key counts: every other taint belongs to
+// someone else.
+func DiffTaint(have []string, s Site) TaintChange {
+	want, wanted := s.Taint()
+	var c TaintChange
+	found := false
+	for _, t := range have {
+		if !strings.HasPrefix(t, ReliabilityTaint.Key+"=") && !strings.HasPrefix(t, ReliabilityTaint.Key+":") {
+			continue
+		}
+		if wanted && t == want.String() {
+			found = true
+			continue
+		}
+		c.RemoveKey = true
+	}
+	if wanted && (!found || c.RemoveKey) {
+		c.Add = want.String()
+	}
+	return c
+}
+
+// String names the change: "remove tosak.net/reliability; add …".
+func (c TaintChange) String() string {
+	var parts []string
+	if c.RemoveKey {
+		parts = append(parts, "remove taint "+ReliabilityTaint.Key)
+	}
+	if c.Add != "" {
+		parts = append(parts, "add taint "+c.Add)
+	}
+	return strings.Join(parts, "; ")
+}
+
 // Set is one environment's Node set file.
 type Set struct {
 	Path    string

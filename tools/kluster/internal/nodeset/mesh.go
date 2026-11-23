@@ -38,6 +38,11 @@ type Machine struct {
 	Address     netip.Addr // the mesh address
 }
 
+// ProviderID is the providerID the kubelet of a machine outside Hetzner
+// sets. The hcloud cloud controller fails its lookup of that prefix and
+// leaves the Node in place (ADR 0016).
+func (m Machine) ProviderID() string { return "kluster://" + m.Site.Name + "/" + m.Name }
+
 // Mesh is every machine of the Node set and the mesh's relay. Relay names the
 // machine that carries the traffic between two NAT sites; it is empty when no
 // pair needs one.
