@@ -38,6 +38,9 @@ type Store interface {
 	Entries(ctx context.Context) (map[string]Entry, error)
 	// Put writes one entry and leaves the others as they are.
 	Put(ctx context.Context, e Entry) error
+	// Remove takes one machine's entry out and leaves the others; an entry
+	// that is not there is no error.
+	Remove(ctx context.Context, name string) error
 }
 
 // ConfigMapClient is the part of kube.Kubectl the store uses.
@@ -45,6 +48,7 @@ type ConfigMapClient interface {
 	ConfigMap(ctx context.Context, namespace, name string) (map[string]string, bool, error)
 	CreateConfigMap(ctx context.Context, namespace, name string) error
 	PatchConfigMapData(ctx context.Context, namespace, name, key, value string) error
+	RemoveConfigMapKey(ctx context.Context, namespace, name, key string) error
 }
 
 // ConfigMap is the Store in the ConfigMap kube-system/mesh-peers.
@@ -90,6 +94,19 @@ func (s ConfigMap) Put(ctx context.Context, e Entry) error {
 		return err
 	}
 	return s.Client.PatchConfigMapData(ctx, Namespace, Name, e.Name, string(v))
+}
+
+// Remove removes only this machine's data key. A store that does not exist
+// holds no entry, so there is nothing to remove.
+func (s ConfigMap) Remove(ctx context.Context, name string) error {
+	data, found, err := s.Client.ConfigMap(ctx, Namespace, Name)
+	if err != nil {
+		return err
+	}
+	if _, held := data[name]; !found || !held {
+		return nil
+	}
+	return s.Client.RemoveConfigMapKey(ctx, Namespace, Name, name)
 }
 
 // Check refuses a store that does not agree with the Node set: anyone who can

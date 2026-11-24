@@ -120,6 +120,62 @@ func TestWithMachineRefuses(t *testing.T) {
 	}
 }
 
+// node remove of a byo machine takes out exactly its entry, in either style,
+// and every other line stays, the comments included.
+func TestWithoutMachineRemovesOnlyTheEntry(t *testing.T) {
+	head := sitesWithSubnets + `machines:
+  # the Control Plane
+  k8s-cp: {site: hel1, provisioner: hcloud, meshAddress: 10.101.0.1} # first
+`
+	tail := `  k8swk1:
+    site: hel1
+    provisioner: hcloud
+    meshAddress: 10.101.0.11
+# after the section
+mesh:
+  relay: k8s-cp
+`
+	for name, entry := range map[string]string{
+		"flow":  "  tswk1: {site: ts1, provisioner: byo, meshAddress: 10.101.1.1} # the box\n",
+		"block": "  tswk1:\n    site: ts1\n    provisioner: byo\n    # its address\n    meshAddress: 10.101.1.1\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			out, err := parse(t, head+entry+tail).WithoutMachine("tswk1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(out) != head+tail {
+				t.Errorf("got\n%s\nwant\n%s", out, head+tail)
+			}
+			if _, ok := parse(t, string(out)).Mesh().Machine("tswk1"); ok {
+				t.Error("the read-back still declares tswk1")
+			}
+		})
+	}
+}
+
+func TestWithoutMachineRefuses(t *testing.T) {
+	two := sitesWithSubnets + `machines:
+  k8s-cp: {site: hel1, provisioner: hcloud, meshAddress: 10.101.0.1}
+  tswk1: {site: ts1, provisioner: byo, meshAddress: 10.101.1.1}
+`
+	for name, tc := range map[string]struct {
+		src, machine, want string
+	}{
+		"not declared": {two, "tswk2", "declares no machine tswk2"},
+		"no machines":  {sitesWithSubnets, "tswk1", "declares no machine tswk1"},
+		"the relay":    {two + "mesh:\n  relay: k8s-cp\n", "k8s-cp", "is the mesh's relay"},
+		"the only one": {sitesWithSubnets + "machines:\n  tswk1: {site: ts1, provisioner: byo, meshAddress: 10.101.1.1}\n", "tswk1", "the only machine"},
+		"flow section": {sitesWithSubnets + "machines: {k8s-cp: {site: hel1, provisioner: hcloud, meshAddress: 10.101.0.1}, tswk1: {site: ts1, provisioner: byo, meshAddress: 10.101.1.1}}\n", "tswk1", "not a block mapping"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := parse(t, tc.src).WithoutMachine(tc.machine); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("want a refusal naming %q, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
 func TestNextMeshAddressTakesTheLowestFree(t *testing.T) {
 	src := sitesWithSubnets + `machines:
   k8s-cp: {site: hel1, provisioner: hcloud, meshAddress: 10.101.0.1}

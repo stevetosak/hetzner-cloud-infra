@@ -77,6 +77,7 @@ func meshInventoryOf(t *testing.T, src string, servers ...*cloud.Server) meshInv
 type fakeMeshStore struct {
 	entries map[string]meshstore.Entry
 	puts    []string
+	removes []string
 }
 
 func (s *fakeMeshStore) Entries(context.Context) (map[string]meshstore.Entry, error) {
@@ -90,6 +91,12 @@ func (s *fakeMeshStore) Entries(context.Context) (map[string]meshstore.Entry, er
 func (s *fakeMeshStore) Put(_ context.Context, e meshstore.Entry) error {
 	s.puts = append(s.puts, e.Name)
 	s.entries[e.Name] = e
+	return nil
+}
+
+func (s *fakeMeshStore) Remove(_ context.Context, name string) error {
+	s.removes = append(s.removes, name)
+	delete(s.entries, name)
 	return nil
 }
 

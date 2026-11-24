@@ -185,6 +185,17 @@ func TestPatchConfigMapDataSendsOneKey(t *testing.T) {
 	}
 }
 
+func TestRemoveConfigMapKeySetsItNull(t *testing.T) {
+	r := &recorder{}
+	if err := (Kubectl{Exec: r}).RemoveConfigMapKey(context.Background(), "kube-system", "mesh-peers", "tswk1"); err != nil {
+		t.Fatal(err)
+	}
+	want := `KUBECONFIG=/etc/kubernetes/admin.conf kubectl '-n' 'kube-system' 'patch' 'configmap' 'mesh-peers' '--type' 'merge' '-p' '{"data":{"tswk1":null}}'`
+	if r.cmd != want {
+		t.Errorf("ran\n%s\nwant\n%s", r.cmd, want)
+	}
+}
+
 // answer is an Exec that prints one fixed output.
 type answer struct {
 	recorder

@@ -23,8 +23,14 @@ func init() {
 
 var nodeReplaceCmd = &cobra.Command{
 	Use:   "replace <name>",
-	Short: "Replace one Worker: take it out, delete its server, create it again under the same name and build it (docs/runbook/workers.md)",
-	Long: "One run. The Worker keeps its entry in the Worker set, so no commit is needed. kluster first " +
+	Short: "Replace one Worker: take it out, delete its server, create it again under the same name and build it; a byo machine is rebuilt in place (docs/runbook/workers.md)",
+	Long: "One run, with no commit. A byo machine of the Node set is rebuilt in place " +
+		"(docs/runbook/workers.md#take-a-bring-your-own-machine-out): after node add's byo checks and the checks " +
+		"below, kluster drains and deletes its Node, resets it over the jump (kubeadm reset and the pod network's " +
+		"leftovers) and builds and joins it again as node add does. Its entry, mesh key, site firewall and pins " +
+		"stay; a dead or reinstalled machine goes out with node remove --unreachable and comes back with node add. " +
+		"The rest describes a Hetzner Worker. " +
+		"The Worker keeps its entry in the Worker set. kluster first " +
 		"plans the replacement of exactly that server with a seeded host key and refuses a plan that would " +
 		"do anything else. It refuses while a CNPG Cluster has an instance that is not ready, and while the " +
 		"Worker is the only Ready one. It drains and deletes the Node, removes the hub peer, drops the " +
@@ -42,7 +48,7 @@ func nodeReplace(ctx context.Context, a *app, name string) error {
 	if err := checkWorkerName(name, a.cfg.ControlPlane.Name); err != nil {
 		return err
 	}
-	p, err := a.provisionerOf(name)
+	p, _, err := a.provisionerOf(name)
 	if err != nil {
 		return err
 	}
