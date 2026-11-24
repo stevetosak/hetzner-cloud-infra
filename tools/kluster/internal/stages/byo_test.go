@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -189,5 +190,84 @@ func TestSiteFirewallScript(t *testing.T) {
 	}
 	if (SiteFirewall{}).hash() == (SiteFirewall{Public: true}).hash() {
 		t.Error("two rule sets have one hash")
+	}
+}
+
+// byo-reset clears what kubeadm reset leaves of the pod network, and deletes
+// an interface only when it is there, so a second run passes under set -e.
+func TestByoResetScript(t *testing.T) {
+	s := ByoReset{}.script()
+	reset := strings.Index(s, "kubeadm reset -f")
+	for _, want := range []string{"rm -rf /etc/cni/net.d /var/lib/cni /run/flannel",
+		"if ip link show cni0 >/dev/null 2>&1; then ip link delete cni0; fi",
+		"if ip link show flannel.1 >/dev/null 2>&1; then ip link delete flannel.1; fi"} {
+		if at := strings.Index(s, want); at < reset || reset < 0 {
+			t.Errorf("missing, or before kubeadm reset: %q\n%s", want, s)
+		}
+	}
+	syntaxCheck(t, s)
+}
+
+// The machine's session runs over wg-mesh: only the timer deletes the
+// interface, after the site firewall and the key are gone.
+func TestByoLeaveTakesWgMeshDownLast(t *testing.T) {
+	s := ByoLeave{}.script()
+	timer := strings.Index(s, "systemd-run")
+	if timer < 0 {
+		t.Fatalf("no timer:\n%s", s)
+	}
+	for _, before := range []string{"nft delete table inet kluster_site", "rm -f " + siteFirewallFile, "systemctl disable " + meshUnit, "rm -f " + meshConf} {
+		if at := strings.Index(s, before); at < 0 || at > timer {
+			t.Errorf("%q is missing or after the timer", before)
+		}
+	}
+	if strings.Count(s, "ip link delete "+"wg-mesh") != 1 || strings.Index(s, "ip link delete wg-mesh") < timer {
+		t.Errorf("wg-mesh is deleted outside the timer:\n%s", s)
+	}
+	if strings.Contains(s, "flush ruleset") {
+		t.Error("byo-leave flushes rules that are not kluster's")
+	}
+	syntaxCheck(t, s)
+}
+
+// The Probe right after byo-leave runs while wg-mesh still carries the
+// session: a pending timer counts as down, and an interface with no timer
+// does not.
+func TestByoLeaveProbeInBash(t *testing.T) {
+	ctx := context.Background()
+	for _, c := range []struct {
+		name, ip, timer string
+		going           bool
+	}{
+		{"link up, timer pending", "exit 0", "exit 0", true},
+		{"link up, no timer", "exit 0", "exit 3", false},
+		{"link gone", "exit 1", "exit 3", true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			sh := stubbedCommands(t, map[string]string{
+				"ip":        c.ip,
+				"nft":       "exit 1",
+				"systemctl": `case "$*" in *` + meshDownUnit + `.timer*) ` + c.timer + ` ;; *) exit 1 ;; esac`,
+			})
+			st, err := ByoLeave{}.Probe(ctx, &stage.Host{Exec: sh})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if failed := strings.Contains(st.Detail, "not yet") && strings.Contains(st.Detail, "mesh-going-down"); failed == c.going {
+				t.Errorf("got %+v, want mesh-going-down passing %v", st, c.going)
+			}
+		})
+	}
+}
+
+// syntaxCheck parses a script with bash -n under the header runScript adds.
+func syntaxCheck(t *testing.T, script string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "s.sh")
+	if err := os.WriteFile(path, []byte(strict+script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("bash", "-n", path).CombinedOutput(); err != nil {
+		t.Fatalf("bash -n: %v\n%s", err, out)
 	}
 }

@@ -435,6 +435,18 @@ func (k Kubectl) PatchConfigMapData(ctx context.Context, namespace, name, key, v
 	return err
 }
 
+// RemoveConfigMapKey removes one key of a ConfigMap's data with a merge patch
+// that sets it to null; every other key stays, and a key that is not there
+// is no error.
+func (k Kubectl) RemoveConfigMapKey(ctx context.Context, namespace, name, key string) error {
+	patch, err := json.Marshal(map[string]any{"data": map[string]any{key: nil}})
+	if err != nil {
+		return err
+	}
+	_, err = k.Run(ctx, "-n", namespace, "patch", "configmap", name, "--type", "merge", "-p", string(patch))
+	return err
+}
+
 // Database is a CloudNativePG Cluster as the database gate reads it.
 type Database struct {
 	Namespace string

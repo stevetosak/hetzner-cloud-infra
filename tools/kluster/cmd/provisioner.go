@@ -52,14 +52,13 @@ func provisionerFor(set *nodeset.Set, name, asked string) (provisioner, string, 
 }
 
 // provisionerOf is the provisioner of a machine node remove or replace
-// names.
-func (a *app) provisionerOf(name string) (provisioner, error) {
+// names, and its kind.
+func (a *app) provisionerOf(name string) (provisioner, string, error) {
 	set, err := a.nodeSet()
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	p, _, err := provisionerFor(set, name, "")
-	return p, err
+	return provisionerFor(set, name, "")
 }
 
 // hcloudProvisioner is a Hetzner server of the Worker set, created with
@@ -86,19 +85,10 @@ func (byoProvisioner) add(ctx context.Context, a *app, name string) error {
 	return byoAdd(ctx, a, name)
 }
 
-func (byoProvisioner) remove(_ context.Context, _ *app, name string) error {
-	return byoNotRemovable("remove", name)
+func (byoProvisioner) remove(ctx context.Context, a *app, name string) error {
+	return byoRemove(ctx, a, name)
 }
 
-func (byoProvisioner) replace(_ context.Context, _ *app, name string) error {
-	return byoNotRemovable("replace", name)
-}
-
-// byoNotRemovable refuses node remove and replace on a byo machine, and names
-// the steps by hand until kluster takes them.
-func byoNotRemovable(command, name string) error {
-	return fmt.Errorf("%[2]s is a byo machine, and node %[1]s does not take one out yet (a step of the Providers Plan). "+
-		"By hand, as in docs/runbook/workers.md#take-a-bring-your-own-machine-out: kubectl drain %[2]s --ignore-daemonsets "+
-		"--delete-emptydir-data; kubectl delete node %[2]s; on the machine, kubeadm reset -f; remove its data key from "+
-		"kube-system/mesh-peers and its entry from the Node set; then kluster node mesh --apply", command, name)
+func (byoProvisioner) replace(ctx context.Context, a *app, name string) error {
+	return byoReplace(ctx, a, name)
 }

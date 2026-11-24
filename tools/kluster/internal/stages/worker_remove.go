@@ -85,6 +85,39 @@ func (d Drain) Act(ctx context.Context, h *stage.Host) error {
 	return err
 }
 
+// Cordon marks a Node unschedulable without a drain, on the Control Plane.
+// node remove --unreachable uses it on a Node whose kubelet does not answer:
+// a drain would wait on pods no kubelet ends, and DeleteNode takes only a
+// cordoned Node.
+type Cordon struct {
+	Node string
+}
+
+func (Cordon) Name() string    { return "cordon" }
+func (Cordon) Runbook() string { return byoOutRunbook }
+
+func (c Cordon) Probe(ctx context.Context, h *stage.Host) (stage.Status, error) {
+	n, err := findNode(ctx, h, c.Node)
+	switch {
+	case err != nil:
+		return stage.Status{}, err
+	case n == nil:
+		return stage.Status{Done: true, Detail: "no Node " + c.Node}, nil
+	case !n.Unschedulable:
+		return stage.Status{Detail: "not yet: Node " + c.Node + " takes new pods"}, nil
+	}
+	return stage.Status{Done: true, Detail: "Node " + c.Node + " cordoned"}, nil
+}
+
+func (c Cordon) Preview(context.Context, *stage.Host) (string, error) {
+	return "kubectl cordon " + c.Node + "\n", nil
+}
+
+func (c Cordon) Act(ctx context.Context, h *stage.Host) error {
+	_, err := kube.Kubectl{Exec: h.Exec}.Run(ctx, "cordon", c.Node)
+	return err
+}
+
 // DeleteNode deletes a drained Worker's Node, on the Control Plane. A Node
 // left behind would hand its taints and labels to a later server of the same
 // name (infra/workers/main.tf).

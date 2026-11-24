@@ -24,6 +24,7 @@ type fakeCluster struct {
 	exists  bool
 	creates int
 	patches []string
+	removes []string
 	err     error
 }
 
@@ -41,6 +42,12 @@ func (f *fakeCluster) CreateConfigMap(context.Context, string, string) error {
 func (f *fakeCluster) PatchConfigMapData(_ context.Context, _, _, key, value string) error {
 	f.patches = append(f.patches, key)
 	f.data[key] = value
+	return nil
+}
+
+func (f *fakeCluster) RemoveConfigMapKey(_ context.Context, _, _, key string) error {
+	f.removes = append(f.removes, key)
+	delete(f.data, key)
 	return nil
 }
 
@@ -85,6 +92,37 @@ func TestPutKeepsTheOtherEntries(t *testing.T) {
 	}
 	if got := slices.Sorted(maps.Keys(f.data)); !slices.Equal(got, []string{"box1", "wk1"}) {
 		t.Errorf("keys = %v", got)
+	}
+}
+
+func TestRemoveTakesOutOnlyItsKey(t *testing.T) {
+	f := &fakeCluster{}
+	s := ConfigMap{Client: f}
+	ctx := context.Background()
+	for _, e := range []Entry{entry("box1", "ts1", "10.101.1.1", keyA), entry("wk1", "hel1", "10.101.0.11", keyB)} {
+		if err := s.Put(ctx, e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.Remove(ctx, "box1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := slices.Sorted(maps.Keys(f.data)); !slices.Equal(got, []string{"wk1"}) {
+		t.Errorf("keys = %v", got)
+	}
+	// A second run finds nothing to remove and writes nothing.
+	if err := s.Remove(ctx, "box1"); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(f.removes, []string{"box1"}) {
+		t.Errorf("removes = %v, want one", f.removes)
+	}
+}
+
+func TestRemoveFromAMissingStoreWritesNothing(t *testing.T) {
+	f := &fakeCluster{}
+	if err := (ConfigMap{Client: f}).Remove(context.Background(), "box1"); err != nil || len(f.removes) != 0 || f.creates != 0 {
+		t.Fatalf("err %v, removes %v, creates %d", err, f.removes, f.creates)
 	}
 }
 

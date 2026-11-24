@@ -119,6 +119,8 @@ line.
 
 ## Remove a Worker
 
+This section is for a Hetzner Worker; a byo machine leaves in one run
+([Take a bring-your-own machine out](#take-a-bring-your-own-machine-out)).
 `kluster node remove <name>` also runs twice, the other way round. The first
 run takes the Worker out of the cluster, out of the hub and out of the set, and
 leaves the server; the second deletes the server. It refuses a VPN address that
@@ -400,8 +402,10 @@ named run, because a new key changes the peers of the others. A machine that
 fails its config does not stop the rest, and the run fails at the end.
 
 kluster compares the store with the Node set before it changes anything. After a
-machine leaves the `machines` section, the run is refused until its data key is
-removed from `kube-system/mesh-peers`; `node remove` does not remove it.
+machine leaves the `machines` section by hand, the run is refused until its data
+key is removed from `kube-system/mesh-peers`. `node remove` of a byo machine
+removes both ([Take a bring-your-own machine out](#take-a-bring-your-own-machine-out));
+`node remove` of a Hetzner Worker does not touch the store.
 
 The store keeps no history. Its public record is the mesh catalog: `peers.json`
 on the branch `mesh-catalog`, with each machine's name, site, mesh address and
@@ -527,22 +531,67 @@ again.
 
 ## Take a bring-your-own machine out
 
-`node remove` and `node replace` refuse a byo machine until the Providers Plan
-step that adds it. By hand, with the operator's yes for each write:
+A byo machine has no server to delete and no Terraform state, so
+`kluster node remove <name>` takes it out in one run, and the machine is left
+as it was after its install: it takes SSH at its own address again and can
+join another cluster, a rehearsal machine moving to live for example, with
+`node add --bootstrap --host-key` and no reinstall. The installed packages
+stay. `node replace <name>` rebuilds the machine in place, also in one run and
+with no commit.
 
 ```sh
-kubectl drain tswk1 --ignore-daemonsets --delete-emptydir-data
-kubectl delete node tswk1
-ssh -J k8s-cp tosak@10.101.1.1 'sudo kubeadm reset -f'
-kubectl -n kube-system patch configmap mesh-peers --type json \
-  -p '[{"op":"remove","path":"/data/tswk1"}]'
-# remove the machine's entry from the Node set's machines and commit it
-kluster node mesh --apply                     # takes its peer off every machine
+./kluster node remove tswk1                  # Plan Mode
+./kluster node remove tswk1 --apply
+git add ../../infra/nodes/live.yaml && git commit -m "…"
 ```
 
-A machine that goes to another cluster next, such as from a rehearsal to live,
-is reinstalled or reset: **byo-check** refuses a machine whose CA is another
-cluster's.
+Before anything changes, the run refuses an uncommitted Node set and the mesh's
+relay, then runs the database gate and the last-Worker check of "Replace a
+Worker", then logs in to the machine through the jump. Then:
+
+| Where | Stage | What it does |
+|---|---|---|
+| Control Plane | **drain**, **delete-node** | As in "Remove a Worker" |
+| the machine | **byo-reset** | `kubeadm reset -f`, then what it leaves of the pod network: `/etc/cni/net.d`, `/var/lib/cni`, `/run/flannel`, `cni0` and `flannel.1` |
+| the machine | **byo-leave** | Removes the site firewall (unit, file and the `inet kluster_site` table), disables `wg-quick@wg-mesh`, deletes its config and key, and starts the transient timer `kluster-mesh-down`, which deletes `wg-mesh` 10 seconds later |
+
+The session to the machine runs over `wg-mesh`, so the interface goes last,
+from the timer; the **byo-leave** Probe passes while the timer is pending.
+kluster then dials the machine's SSH port at its mesh address through the
+Control Plane, which still holds its peer, until the dial fails, for one minute
+at most. Then the machine's data key leaves `kube-system/mesh-peers`, its entry
+leaves the Node set (read back), its pin at the mesh address is dropped, and
+every other machine's `wg-mesh` is brought to its config as `node mesh` does.
+If that last step fails, the machine is already out of the cluster and its
+records: `kluster node mesh --apply` finishes it.
+
+kubeadm v1.37.0 stops the kubelet and removes the Kubernetes containers, the
+cluster's CA, the kubeconfig files and `/var/lib/kubelet`, but no CNI file and
+no iptables rule (read in `cmd/kubeadm/app/cmd/phases/reset/cleanupnode.go` on
+2026-11-24). **byo-reset** removes the pod network's files and interfaces
+because a new Node can get another pod subnet, and the bridge plugin refuses a
+`cni0` that holds the old one. The iptables chains of kube-proxy and Flannel
+stay; both rewrite their own at the next join.
+
+`--unreachable` is for a machine kluster cannot log in to: dead, powered off,
+reinstalled, or one whose run stopped after it left the mesh. It refuses a
+Ready Node, whose kubelet still answers. Otherwise it runs **cordon** and
+**delete-node** with no drain, which would wait on pods no kubelet ends, and
+the pod garbage collector deletes them; nothing runs on the machine, and the
+store, the Node set, the pin and the mesh follow as above. A machine taken out
+this way still holds its mesh key and site firewall, so it is reinstalled
+before it joins again.
+
+`node replace` runs the byo checks of `node add` (every Node in the mesh, both
+Hetzner firewalls open on the mesh port), the database gate and the last-Worker
+check, then **drain**, **delete-node** and **byo-reset**, and builds the machine
+again over the jump as `node add` does, with its entry, mesh key, site firewall
+and pins kept. A dead or reinstalled machine goes out with
+`node remove --unreachable` and comes back with `node add`.
+
+Both commands are proven by unit tests of the order, the gates and the
+refusals, and **byo-leave**'s Probe in bash with stubbed commands; no byo
+machine has left a cluster yet.
 
 ## Change the pod MTU
 

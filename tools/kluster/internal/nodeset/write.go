@@ -84,6 +84,52 @@ func (s *Set) WithMachine(m NewMachine) ([]byte, error) {
 	return out, nil
 }
 
+// WithoutMachine is the file without one machine's entry. Only the entry's
+// lines go, so every other line stays as it is, a comment above the entry
+// included (the diff shows it); the result is parsed again, so a set the
+// parser refuses is never written. The mesh's relay is refused: the NAT sites
+// would lose their path to each other.
+func (s *Set) WithoutMachine(name string) ([]byte, error) {
+	if s.mesh == nil {
+		return nil, fmt.Errorf("%s declares no machine %s", s.Path, name)
+	}
+	if _, ok := s.mesh.Machine(name); !ok {
+		return nil, fmt.Errorf("%s declares no machine %s", s.Path, name)
+	}
+	if s.mesh.Relay == name {
+		return nil, fmt.Errorf("%s is the mesh's relay in %s: name another relay first", name, s.Path)
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(s.src, &doc); err != nil {
+		return nil, fmt.Errorf("parsing the Node set %s: %w", s.Path, err)
+	}
+	_, machines := entry(doc.Content[0], "machines")
+	if machines == nil || machines.Kind != yaml.MappingNode || machines.Style&yaml.FlowStyle != 0 {
+		return nil, fmt.Errorf("%s: the machines section is not a block mapping; remove machine %s by hand", s.Path, name)
+	}
+	if len(machines.Content) == 2 {
+		return nil, fmt.Errorf("%s: %s is the only machine; remove the machines section by hand", s.Path, name)
+	}
+	lines := strings.Split(strings.TrimRight(string(s.src), "\n"), "\n")
+	for i := 0; i+1 < len(machines.Content); i += 2 {
+		key, value := machines.Content[i], machines.Content[i+1]
+		if key.Value != name {
+			continue
+		}
+		lines = slices.Delete(lines, key.Line-1, lastLine(value))
+		break
+	}
+	out := []byte(strings.Join(lines, "\n") + "\n")
+	back, err := Parse(s.Path, out)
+	if err != nil {
+		return nil, err
+	}
+	if _, still := back.Mesh().Machine(name); still {
+		return nil, fmt.Errorf("%s: the entry of %s spans lines kluster cannot remove; remove it by hand", s.Path, name)
+	}
+	return out, nil
+}
+
 // intoMachines adds the entry after the last line of a block mapping.
 func intoMachines(lines []string, machines *yaml.Node, m NewMachine) ([]string, error) {
 	if machines.Kind != yaml.MappingNode || machines.Style&yaml.FlowStyle != 0 || len(machines.Content) == 0 {

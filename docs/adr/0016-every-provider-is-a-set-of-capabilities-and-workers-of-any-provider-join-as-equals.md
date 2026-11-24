@@ -430,3 +430,25 @@ Grafana and cert-manager carry only the toleration, with no preference for
 either reliability. The scheduler's own scoring places them, so a Node of high
 reliability and a best-effort one stay equal choices, and an empty self-hosted
 machine will most likely take them at their next restart.
+
+**2026-11-24 — a bring-your-own machine leaves in one run, and `replace`
+rebuilds it in place.** Building `node remove` and `node replace` for `byo`
+settled three details. A byo machine has no server to delete and no Terraform
+state, so `node remove` takes it out in one run instead of the Hetzner Worker's
+two, and writes the Node set last for the operator to commit. It leaves the
+machine as it was after its install, not only reset: after `kubeadm reset` it
+removes the pod network's files and interfaces, the site firewall, and
+`wg-mesh` with its key, so the machine takes SSH at its own address again and
+moves from a rehearsal to live with `node add` and no reinstall. `wg-mesh`
+goes last, from a timer, because the session to the machine runs over it, and
+kluster proves it gone by a dial through the Control Plane that fails.
+
+A machine kluster cannot log in to, dead, powered off or reinstalled, is taken
+out with `--unreachable`: its Node is cordoned and deleted without a drain, and
+its key, entry and pin go, while a Ready Node is refused because its kubelet
+still answers. `node replace` cannot make a new byo machine as it makes a new
+Hetzner server, so it rebuilds the machine in place, with its entry, mesh key,
+site firewall and pins kept, and a reinstalled machine goes through
+`node remove --unreachable` and `node add`. All three are the operator's
+choices of 2026-11-24, and unit tests prove the order, the gates and the
+refusals; no byo machine has left a cluster yet.

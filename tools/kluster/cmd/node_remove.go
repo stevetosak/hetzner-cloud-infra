@@ -14,6 +14,7 @@ import (
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/filediff"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/intent"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/kube"
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/meshstore"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/provision"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/sshgate"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/stage"
@@ -24,12 +25,23 @@ import (
 
 func init() {
 	nodeCmd.AddCommand(nodeRemoveCmd)
+	nodeRemoveCmd.Flags().BoolVar(&nodeRemoveFlags.unreachable, "unreachable", false,
+		"byo: take out a machine kluster cannot log in to (dead, powered off or reinstalled), or finish a run that stopped after it left the mesh: "+
+			"no drain and no step on the machine; a Ready Node is refused")
 }
 
 var nodeRemoveCmd = &cobra.Command{
 	Use:   "remove <name>",
-	Short: "Remove one Worker: take it out of the cluster and the hub, then delete its server (docs/runbook/workers.md)",
-	Long: "Run twice. While the environment's Worker set declares the name, kluster refuses while a CNPG " +
+	Short: "Remove one Worker: take it out of the cluster and the hub, then delete its server; a byo machine leaves in one run (docs/runbook/workers.md)",
+	Long: "A byo machine of the Node set leaves in one run (docs/runbook/workers.md#take-a-bring-your-own-machine-out): " +
+		"after the same checks, kluster drains and deletes its Node, resets it over the jump (kubeadm reset and the " +
+		"pod network's leftovers), takes the site firewall and wg-mesh with its key off it, and checks that it no " +
+		"longer answers at its mesh address. Then its key leaves " + meshstore.Namespace + "/" + meshstore.Name + ", its entry " +
+		"the Node set and its pin the pins, and every other machine's wg-mesh is brought to its config; commit the " +
+		"Node set. The machine takes SSH at its own address again and can join another cluster with node add. " +
+		"--unreachable takes out a machine kluster cannot log in to: no drain and no step on the machine, a Ready " +
+		"Node refused. The rest describes a Hetzner Worker. " +
+		"Run twice. While the environment's Worker set declares the name, kluster refuses while a CNPG " +
 		"Cluster has an instance that is not ready, and while the Worker is the only Ready one; then it drains the Node " +
 		"(PodDisruptionBudgets hold the drain, for 5 minutes at most), deletes it, removes the Worker's " +
 		"peer from the hub without restarting the hub, drops the pin at its VPN address and, under " +
@@ -52,8 +64,11 @@ func nodeRemove(ctx context.Context, a *app, name string) error {
 	if err := checkWorkerName(name, a.cfg.ControlPlane.Name); err != nil {
 		return err
 	}
-	p, err := a.provisionerOf(name)
+	p, kind, err := a.provisionerOf(name)
 	if err != nil {
+		return err
+	}
+	if err := nodeRemoveFlags.check(kind); err != nil {
 		return err
 	}
 	return p.remove(ctx, a, name)
@@ -163,10 +178,15 @@ func (a *app) retire(ctx context.Context, cp *stage.Host, w workerset.Worker) er
 // retireStages take a Worker out of the cluster and the hub, on the
 // Control Plane.
 func retireStages(w workerset.Worker) []stage.Stage {
+	return append(nodeOutStages(w.Name), stages.HubPeerRemove{AllowedIPs: w.VpnIP + "/32", Now: time.Now})
+}
+
+// nodeOutStages drain and delete a Node, on the Control Plane: every
+// machine's way out of the cluster.
+func nodeOutStages(name string) []stage.Stage {
 	return []stage.Stage{
-		stages.Drain{Node: w.Name, Timeout: drainTimeout},
-		stages.DeleteNode{Node: w.Name},
-		stages.HubPeerRemove{AllowedIPs: w.VpnIP + "/32", Now: time.Now},
+		stages.Drain{Node: name, Timeout: drainTimeout},
+		stages.DeleteNode{Node: name},
 	}
 }
 

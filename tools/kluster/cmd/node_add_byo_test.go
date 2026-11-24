@@ -132,12 +132,3 @@ func TestFingerprintShape(t *testing.T) {
 		}
 	}
 }
-
-func TestByoNotRemovableNamesTheStepsByHand(t *testing.T) {
-	err := byoNotRemovable("remove", "tswk1")
-	for _, want := range []string{"kubectl drain tswk1", "kubectl delete node tswk1", "kubeadm reset -f", "kube-system/mesh-peers", "kluster node mesh --apply"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("the refusal lacks %q: %v", want, err)
-		}
-	}
-}
