@@ -489,8 +489,11 @@ best-effort site, and the label
 `node.kubernetes.io/exclude-from-external-load-balancers=true`. In the source of the
 hcloud cloud controller v1.37.0, its lookup of that providerID fails with an
 error, so it never deletes the Node
-([ADR 0016](../adr/0016-every-provider-is-a-set-of-capabilities-and-workers-of-any-provider-join-as-equals.md));
-no running cluster has shown it yet.
+([ADR 0016](../adr/0016-every-provider-is-a-set-of-capabilities-and-workers-of-any-provider-join-as-equals.md)).
+Live showed it on 2026-11-24: a Node with the providerID
+`kluster://probe/node-controller-probe` stayed NotReady for 21 minutes, the
+controller logged the failed lookup every 5 seconds, and only node-controller
+deleted the Node.
 **node-ready** waits for that providerID and that label, and for the mesh
 address as InternalIP.
 

@@ -204,7 +204,7 @@ then brought back by `kluster node add`.
       for about 3 minutes; then it took a write, streamed to the replica and
       archived its next WAL segment. No Node carries the best-effort taint
       yet, so the rules move no pod until the rehearsal.
-- [ ] The dead-node remover: a small Go controller in the cluster that taints
+- [x] The dead-node remover: a small Go controller in the cluster that taints
       and deletes a node NotReady for 20 minutes, never the control plane.
       Built as `node-controller` in the kluster module, its image on GHCR,
       with the volume guard, the majority guard and the pause annotation of
