@@ -1,15 +1,21 @@
 # Synced by the Application core-nodes (ADR 0010). NOT listed: the namespace,
 # which `kluster services seed` applies, and mesh-catalog-github.enc.yaml,
 # which `kluster secrets apply` owns (secrets.yaml).
-#
-# node-controller.yaml and vpa.yaml are not listed yet: the pull request that
-# switches node-controller on lists them, with an `images:` entry that pins
-# the digest node-controller.yml printed, once the first image exists.
+
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - rbac.yaml
   - cronjob.yaml
+  - node-controller.yaml
+  - vpa.yaml
+# node-controller's image (ADR 0016, Amendment 2026-11-24): the digest
+# .github/workflows/node-controller.yml printed in its job summary on master.
+# A reviewed PR changes it by hand; tag-bump never does.
+images:
+  - name: ghcr.io/stevetosak/kluster-node-controller
+    newTag: alpha-4b5ae6cf95ad7070ac42ed85a6a52a36f258079f
+    digest: sha256:dd1e5d9a9dbc1c7db15b862df457f2ab02ac01aea2134f301b347dd45e957fd0
 # send.sh stays a real file, tested as such (mesh-catalog/send.test.mjs). The
 # name gets a content hash, so a changed script rolls into the CronJob.
 configMapGenerator:

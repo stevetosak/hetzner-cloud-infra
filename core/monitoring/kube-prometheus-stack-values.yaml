@@ -170,9 +170,9 @@ alertmanager:
       resolve_timeout: 5m
     # The chart's defaults: a critical alert silences the warning and info
     # alerts of the same name and namespace; InfoInhibitor silences info.
-    # VPAResized is info but goes to the Alert Chat (ADR 0014), so
-    # InfoInhibitor leaves it alone: it fires in every namespace that has
-    # no warning, which would hold back every resize notice.
+    # VPAResized (ADR 0014) and NodeRemoved (ADR 0016) are info but go to
+    # the Alert Chat, so InfoInhibitor leaves them alone: it fires in every
+    # namespace that has no warning, which would hold back each notice.
     inhibit_rules:
       - source_matchers: ['severity = critical']
         target_matchers: ['severity =~ warning|info']
@@ -181,7 +181,7 @@ alertmanager:
         target_matchers: ['severity = info']
         equal: [namespace, alertname]
       - source_matchers: ['alertname = InfoInhibitor']
-        target_matchers: ['severity = info', 'alertname != VPAResized']
+        target_matchers: ['severity = info', 'alertname != VPAResized', 'alertname != NodeRemoved']
         equal: [namespace]
       - target_matchers: ['alertname = InfoInhibitor']
     route:
@@ -211,6 +211,10 @@ alertmanager:
           matchers: ['alertname = "VPAResized"']
           group_wait: 5m
           group_interval: 5m
+        # A Node that node-controller deleted (ADR 0016, Amendment 2026-11-24):
+        # info, yet the operator sees each one, never a resolved message.
+        - receiver: telegram-notice
+          matchers: ['alertname = "NodeRemoved"']
         # info stays in Grafana (ADR 0011).
         - receiver: 'null'
           matchers: ['severity = "info"']
