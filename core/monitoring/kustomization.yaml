@@ -30,9 +30,9 @@ resources:
   # The VPA updater's counters and the resize and node alerts (ADR 0014).
   - monitors/vpa.yaml
   - rules/autoscaling.yaml
-  # Not yet: monitors/node-controller.yaml and rules/node-controller.yaml come
-  # in with node-controller itself (core/nodes/kustomization.yaml), or
-  # NodeControllerDown fires for a controller that does not run yet.
+  # node-controller, which removes a dead Worker (ADR 0016, Amendment 2026-11-24).
+  - monitors/node-controller.yaml
+  - rules/node-controller.yaml
 
 # The pinned upstream dashboards (dashboards/fetch.sh), one ConfigMap each.
 # Grafana's sidecar loads every ConfigMap with grafana_dashboard: "1".
