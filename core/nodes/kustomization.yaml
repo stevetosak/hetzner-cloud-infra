@@ -1,6 +1,10 @@
 # Synced by the Application core-nodes (ADR 0010). NOT listed: the namespace,
 # which `kluster services seed` applies, and mesh-catalog-github.enc.yaml,
 # which `kluster secrets apply` owns (secrets.yaml).
+#
+# node-controller.yaml and vpa.yaml are not listed yet: the pull request that
+# switches node-controller on lists them, with an `images:` entry that pins
+# the digest node-controller.yml printed, once the first image exists.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:

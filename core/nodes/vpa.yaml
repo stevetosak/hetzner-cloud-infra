@@ -1,0 +1,22 @@
+# The VerticalPodAutoscaler of node-controller (ADR 0014).
+# updateMode InPlaceOrRecreate: the updater resizes the running pod in place, and
+# evicts it only when the node cannot fit the new request.
+# RequestsOnly: VPA sets requests, never limits. minAllowed is the ADR 0013
+# floor (10m, 32Mi).
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: node-controller
+  namespace: nodes
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: node-controller
+  updatePolicy:
+    updateMode: InPlaceOrRecreate
+  resourcePolicy:
+    containerPolicies:
+      - containerName: "*"
+        controlledValues: RequestsOnly
+        minAllowed: {cpu: 10m, memory: 32Mi}

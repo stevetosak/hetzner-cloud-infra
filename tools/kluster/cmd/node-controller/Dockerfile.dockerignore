@@ -1,0 +1,6 @@
+# The build context is tools/kluster; BuildKit reads this file because it sits
+# next to the Dockerfile. Only the Go sources go in.
+kluster
+kluster.build.*
+**/testdata
+.git

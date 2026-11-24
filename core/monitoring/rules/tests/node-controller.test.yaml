@@ -1,0 +1,80 @@
+# Unit tests of rules/node-controller.yaml. Run by core/monitoring/check-rules.sh,
+# which writes the rule files next to this one as <metadata.name>.rules.yaml.
+# time() in a test is the evaluation time in seconds from 0.
+rule_files: [node-controller.rules.yaml]
+evaluation_interval: 1m
+
+tests:
+  # ts1 is deleted at 20 m: the gauge appears with the time of the delete.
+  # The notice fires at once and clears 15 minutes later.
+  - interval: 1m
+    input_series:
+      - {series: 'node_controller_removed_timestamp_seconds{job="monitoring/node-controller",namespace="nodes",node="ts1",reason="no-volume"}', values: '_x20 1200x40'}
+    alert_rule_test:
+      - {eval_time: 15m, alertname: NodeRemoved}
+      - eval_time: 22m
+        alertname: NodeRemoved
+        exp_alerts:
+          - exp_labels: {severity: info, job: monitoring/node-controller, namespace: nodes, node: ts1, reason: no-volume}
+            exp_annotations:
+              summary: "node-controller removed the Node ts1 (no-volume)."
+              description: >-
+                ts1 was not Ready for 20 minutes; its pods were
+                force-deleted and its Node deleted. Bring the machine back with
+                `kluster node add ts1` from tools/kluster. The steps:
+                kubectl get events -n default --field-selector involvedObject.name=ts1.
+      - {eval_time: 36m, alertname: NodeRemoved}
+
+  # A guard holds k8swk3 from 0 m; it alerts after a minute. ts1 is paused,
+  # which is the operator's own choice and never alerts.
+  - interval: 1m
+    input_series:
+      - {series: 'node_controller_held{job="monitoring/node-controller",namespace="nodes",node="k8swk3",reason="volume-attached"}', values: '1x30'}
+      - {series: 'node_controller_held{job="monitoring/node-controller",namespace="nodes",node="ts1",reason="paused"}', values: '1x30'}
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: NodeRemovalHeld
+        exp_alerts:
+          - exp_labels: {severity: warning, namespace: nodes, node: k8swk3, reason: volume-attached}
+            exp_annotations:
+              summary: "node-controller holds k8swk3, not Ready for 20 minutes (volume-attached)."
+              description: >-
+                volume-attached: a volume is attached and the provider does not
+                report the server off; power it off in the provider's console, or,
+                once it is surely dead, `kluster node remove k8swk3 --unreachable`.
+                mass-guard: half or more of the Workers are not Ready, which points
+                at the Control Plane's side; look there first.
+                pause-invalid: the annotation tosak.net/dead-node-remover.pause-until
+                is not an RFC 3339 time; fix it or remove it.
+
+  # The controller passes every minute until 10 m, then stops while its pod
+  # is still scraped: the last pass is over 5 minutes old from 15 m, and the
+  # alert fires 5 minutes after that.
+  - interval: 1m
+    input_series:
+      - {series: 'up{job="monitoring/node-controller"}', values: '1x40'}
+      - {series: 'node_controller_last_pass_timestamp_seconds{job="monitoring/node-controller",namespace="nodes"}', values: '0+60x10 600x30'}
+    alert_rule_test:
+      - {eval_time: 10m, alertname: NodeControllerDown}
+      - {eval_time: 19m, alertname: NodeControllerDown}
+      - eval_time: 22m
+        alertname: NodeControllerDown
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations: &down
+              summary: "node-controller has made no pass for 5 minutes: a dead Worker is not removed."
+              description: >-
+                kubectl -n nodes get pods -l app=node-controller, and its log. A pass
+                fails when the API refuses a call: the log names it.
+
+  # No pod is scraped at all: the alert fires after 5 minutes.
+  - interval: 1m
+    input_series:
+      - {series: 'up{job="monitoring/node-controller"}', values: '0x20'}
+    alert_rule_test:
+      - {eval_time: 4m, alertname: NodeControllerDown}
+      - eval_time: 6m
+        alertname: NodeControllerDown
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations: *down

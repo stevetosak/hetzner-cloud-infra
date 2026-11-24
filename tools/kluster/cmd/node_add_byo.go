@@ -35,12 +35,6 @@ const byoRelease = "24.04"
 // balancer's targets; its kubelet registers it.
 const excludeFromLoadBalancers = "node.kubernetes.io/exclude-from-external-load-balancers"
 
-// byoTimeouts are how long a byo build waits for its Node.
-const (
-	byoRegisterTimeout = 2 * time.Minute
-	byoPoll            = 5 * time.Second
-)
-
 // fingerprint is a SHA256 host key fingerprint as `ssh-keygen -lf` prints it.
 var fingerprint = regexp.MustCompile(`^SHA256:[A-Za-z0-9+/]{43}$`)
 
@@ -296,15 +290,11 @@ func (b *byoBuild) run(ctx context.Context) error {
 		return err
 	}
 	c := a.cfg
-	join := []stage.Stage{
-		stages.Join{ControlPlane: b.cp.Exec, Endpoint: c.ControlPlane.Endpoint},
-		stages.NodeRegistered{ControlPlane: b.cp.Exec, Node: m.Name, Every: byoPoll, Timeout: byoRegisterTimeout},
-	}
-	if err := stage.Run(ctx, join, h, b.opts()); err != nil {
+	if err := stage.Run(ctx, joinStages(b.cp.Exec, c.ControlPlane.Endpoint, m.Name), h, b.opts()); err != nil {
 		return err
 	}
 	ready := stages.NodeReady{Node: m.Name, InternalIP: m.Address.String(), ProviderID: m.ProviderID(),
-		Labels: map[string]string{excludeFromLoadBalancers: "true"}, Every: byoPoll, Timeout: nodeReadyTimeout}
+		Labels: map[string]string{excludeFromLoadBalancers: "true"}, Every: nodePoll, Timeout: nodeReadyTimeout}
 	if err := stage.Run(ctx, []stage.Stage{ready, stages.NodeProfile{Node: m.Name, Site: m.Site}}, b.cp, b.opts()); err != nil {
 		return err
 	}
@@ -485,7 +475,7 @@ func (a *app) planByo(ctx context.Context, m nodeset.Machine) error {
 	}
 	fmt.Fprintf(a.out, "then: write its mesh key to %s/%s, bring every joined machine's wg-mesh to its config, and pin its key at %s through %s\n",
 		meshstore.Namespace, meshstore.Name, m.Address, c.ControlPlane.Name)
-	if err := stage.PlanNew(ctx, []stage.Stage{stages.Join{Endpoint: c.ControlPlane.Endpoint}, stages.NodeRegistered{Node: m.Name, Timeout: byoRegisterTimeout}}, m.Name, a.out); err != nil {
+	if err := stage.PlanNew(ctx, joinStages(nil, c.ControlPlane.Endpoint, m.Name), m.Name, a.out); err != nil {
 		return err
 	}
 	ready := stages.NodeReady{Node: m.Name, InternalIP: m.Address.String(), ProviderID: m.ProviderID(), Timeout: nodeReadyTimeout}

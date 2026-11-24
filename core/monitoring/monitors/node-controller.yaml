@@ -1,0 +1,17 @@
+# Scrapes node-controller (core/nodes): what it did to which Node and why,
+# what holds it, and when its last pass ran. rules/node-controller.yaml turns
+# them into the removal notice and two warnings (ADR 0016, Amendment
+# 2026-11-24).
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: node-controller
+  namespace: monitoring
+spec:
+  namespaceSelector:
+    matchNames: [nodes]
+  selector:
+    matchLabels:
+      app: node-controller
+  podMetricsEndpoints:
+    - port: http
