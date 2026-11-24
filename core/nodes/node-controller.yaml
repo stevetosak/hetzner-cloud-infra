@@ -1,0 +1,127 @@
+# node-controller: removes a dead Worker (ADR 0016, Amendment 2026-11-24).
+# After 20 minutes not Ready a Worker gets the out-of-service taint and is
+# deleted, unless a guard holds it: an attached volume its provider does not
+# report off, half or more of the Workers down, or the pause annotation
+#
+#   kubectl annotate node <name> tosak.net/dead-node-remover.pause-until=2026-11-25T18:00:00Z
+#
+# The code is tools/kluster/cmd/node-controller and internal/deadnode; the
+# image comes from .github/workflows/node-controller.yml, and
+# kustomization.yaml pins its digest by hand (a reviewed PR, never tag-bump).
+#
+# What it may do, and why:
+#   nodes                  get/list/watch to read them; update to add and
+#                          remove the out-of-service taint; delete to remove
+#   volumeattachments      get/list/watch: the volume guard
+#   pods                   list: a tainted Node's pods, before its delete
+#   events                 create/patch: the steps on each Node. Node Events
+#                          land in `default`, which the core AppProject does
+#                          not reach, so this is cluster-wide.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: node-controller
+  namespace: nodes
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: node-controller
+rules:
+  - apiGroups: ['']
+    resources: [nodes]
+    verbs: [get, list, watch, update, delete]
+  - apiGroups: [storage.k8s.io]
+    resources: [volumeattachments]
+    verbs: [get, list, watch]
+  - apiGroups: ['']
+    resources: [pods]
+    verbs: [list]
+  - apiGroups: ['']
+    resources: [events]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: node-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: node-controller
+subjects:
+  - kind: ServiceAccount
+    name: node-controller
+    namespace: nodes
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: node-controller
+  namespace: nodes
+  labels:
+    app: node-controller
+spec:
+  # One copy. Every step is safe to repeat, so the moment of two copies a
+  # rolling update would give does no harm either; Recreate avoids it.
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: node-controller
+  template:
+    metadata:
+      labels:
+        app: node-controller
+    spec:
+      serviceAccountName: node-controller
+      # No toleration of the best-effort taint: it runs on a Worker of high
+      # reliability. When its own Worker dies, Kubernetes moves it after 5
+      # minutes; the 20 minutes count from the dead Node's own condition, so
+      # the move costs nothing.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: node-controller
+          image: ghcr.io/stevetosak/kluster-node-controller
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ['ALL']
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          # Ready once the caches have synced and a pass ended without an
+          # error in the last 90 seconds (three passes).
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          # The first guess of ADR 0013; VPA sizes it from there (vpa.yaml)
+          # and, as an own workload, it has no memory limit (ADR 0014).
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

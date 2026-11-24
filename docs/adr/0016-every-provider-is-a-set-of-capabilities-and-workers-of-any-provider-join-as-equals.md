@@ -197,9 +197,12 @@ A dead Worker is removed on any provider. After 20 minutes NotReady or
 Unknown, it gets the `node.kubernetes.io/out-of-service` taint, so its pods are
 force-deleted and StatefulSet pods such as the Argo CD application controller
 start elsewhere instead of waiting on a node that does not answer; then its
-Node object is deleted. A small Go controller in the cluster does this, so it
-acts when nobody runs kluster, and it never removes the Control Plane. A
-bring-your-own machine keeps its mesh peer and comes back through
+Node object is deleted. A small Go controller in the cluster, `node-controller`,
+does this, so it acts when nobody runs kluster, and it never removes the
+Control Plane. Two guards hold it back: a Worker with an attached volume is
+removed only once its provider reports it off, and nothing is removed unless
+more than half of the Workers are Ready (Amendment 2026-11-24). A removed
+machine of any provider keeps its mesh peer and comes back through
 `kluster node add`, because a running kubelet does not register again after
 its Node is deleted: nothing resets its registration flag (kubernetes v1.37.0
 source). Growing and shrinking the cluster by itself, with a floor of three
@@ -271,12 +274,15 @@ Worker, which adds its latency and bandwidth to those pairs and fails with it.
 🔴 Kubernetes documents the `out-of-service` taint for a node that is already
 shut down or powered off, and says to verify that before the taint is added
 ([non-graceful node shutdown](https://kubernetes.io/docs/concepts/cluster-administration/node-shutdown/),
-read 2026-11-17). The dead-node controller cannot verify it. A Worker cut off
-from the Control Plane while it still runs, a self-hosted site whose link drops for
-example, gets the taint after 20 minutes like a dead one: its pods are
-force-deleted and their volumes detached while the machine may still be
-writing, and a StatefulSet pod can run twice until the link returns. How the
-controller guards that case is decided when it is built in part B.
+read 2026-11-17). The dead-node controller cannot verify it for a Worker whose
+provider reports no power state. Such a Worker, cut off from the Control Plane
+while it still runs, a self-hosted site whose link drops for example, gets the
+taint after 20 minutes like a dead one when it holds no volume: its pods are
+force-deleted and a pod, StatefulSet pods included, can run twice until the
+link returns, cut off from the API server. A Worker that holds a volume is
+spared that only by waiting: a hung Hetzner server keeps the status `running`,
+so the controller holds it until the operator powers it off
+(Amendment 2026-11-24).
 
 ## Amendments
 
@@ -452,3 +458,74 @@ site firewall and pins kept, and a reinstalled machine goes through
 `node remove --unreachable` and `node add`. All three are the operator's
 choices of 2026-11-24, and unit tests prove the order, the gates and the
 refusals; no byo machine has left a cluster yet.
+
+**2026-11-24 — how the dead-node controller guards a Worker that still
+runs.** The design left open how the controller avoids harm to a Worker that is
+cut off but not dead, because it cannot see power from inside the cluster. The
+operator's grill of 2026-11-24 settled it, and the text above is corrected to
+match.
+
+The guard follows what can be lost. Two machines writing one block volume is
+the real damage, and a VolumeAttachment shows exactly that. A Worker with no
+VolumeAttachment is tainted and deleted after 20 minutes: the worst case is a
+pod that runs twice until the link returns, unable to reach the API server. A
+Worker with one is tainted only when it also carries
+`node.cloudprovider.kubernetes.io/shutdown`, which the hcloud CCM sets on a
+NotReady Node whose server Hetzner reports `off`, takes off when the Node is
+Ready again, and never sets on a `kluster://` providerID (hcloud CCM v1.37.0
+with `k8s.io/cloud-provider` v0.36.4, source read 2026-11-24); without it, the
+controller holds the Node and warns. On live only the two PostgreSQL instances
+hold volumes (`kubectl get pvc -A`, 2026-11-24), and the Hetzner CSI node plugin
+runs only on Hetzner servers, so a byo Worker cannot hold one today and the
+guard covers a future volume driver there without a change. Fencing was the
+alternative: powering a Hetzner server off through its API needs a read-write
+project token inside the cluster, which can also delete servers, and a byo
+machine could only fence itself with an agent on every node, which the mesh
+design of 2026-11-18 put off. Both are left to the
+[Elastic nodes](../plans/elastic-nodes-the-cluster-grows-and-shrinks-on-spare-compute.md)
+Plan. After the taint, the controller waits for the Node's pods and
+VolumeAttachments to go, for 5 minutes at most, checks that it is still not
+Ready, and only then deletes it; a Node that turns Ready in between gets the
+taint back off.
+
+A second guard watches the whole cluster. Some faults make every Worker
+NotReady while all of them still run and serve: kubelet client certificates
+that expire together, a broken network between the Control Plane and the
+Workers. The controller's own ServiceAccount token keeps working through them,
+so without a guard it would force-delete every pod on every Worker without a
+volume, with no Ready Node left to take them. It therefore acts only while more
+than half of the Workers are Ready, and otherwise holds and says why.
+Kubernetes' node controller has the same instinct, stopping evictions in a
+cluster of 50 Nodes or fewer once 55 % of a zone's Nodes are unhealthy
+(Kubernetes documentation, "Nodes", read 2026-11-24), but neither the
+out-of-service taint nor a Node delete goes through those evictions. With
+several virtual machines on one self-hosted host, one power or link fault there
+can trip this guard; both guards then fail safe, and the Elastic nodes Plan
+revisits it with a label for a VM's host and the hypervisor as a power signal.
+
+Planned work has its own pause: the Node annotation
+`tosak.net/dead-node-remover.pause-until`, holding a UTC time, keeps the
+controller off that Node until then. A cordon was the other candidate; it has
+no end, so a forgotten one disables the controller on that Node for good, and a
+cordon on the Node of the PostgreSQL primary starts a switchover. A removed
+Worker of any provider comes back only through `kluster node add`. A machine
+that boots again registers its Node by itself, but without its profile labels,
+which no kubelet can set, so it runs no workload that needs a capability until
+then; a machine that kept running never registers again, and the Hetzner path
+of `node add` gains the stage that restarts its kubelet, which the byo path
+already has.
+
+The controller is a second binary of the kluster module, so the label, taint
+and providerID definitions it acts on are the ones kluster writes, and the
+gRPC server of the Elastic nodes Plan can reuse the mesh store and the byo
+Stages. Its rules sit in one pure decision package on top of client-go. Its
+image breaks the rule that every image lives on Docker Hub: it is
+`ghcr.io/stevetosak/kluster-node-controller`, which only this repository's
+workflows can push. A Docker Hub token cannot be limited to one repository
+(Docker documentation, access token permissions, read 2026-11-24), every
+application repository holds one, and this controller can delete Nodes. For
+the same reason a new image reaches the cluster only through a reviewed pull
+request that pins its digest, never through the tag-bump App. It reports
+through Prometheus, with `NodeRemoved` as a notice and `NodeRemovalHeld` and
+`NodeControllerDown` as warnings in the Alert Chat, and through Events on the
+Node.

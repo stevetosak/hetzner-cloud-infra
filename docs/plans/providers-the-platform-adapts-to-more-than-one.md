@@ -89,7 +89,10 @@ after that only through the hub. A dead node, NotReady for 20 minutes, is
 removed automatically on any provider: a controller in the cluster gives it
 the `node.kubernetes.io/out-of-service` taint, so StatefulSet pods such as the
 Argo CD application controller restart elsewhere, and then deletes the Node.
-The control plane is never removed this way. A removed machine that comes back
+The control plane is never removed this way, a node with an attached volume
+only once its provider reports it off, and no node while half or more of the
+Workers are not Ready
+([ADR 0016, Amendment 2026-11-24](../adr/0016-every-provider-is-a-set-of-capabilities-and-workers-of-any-provider-join-as-equals.md#amendments)). A removed machine that comes back
 returns through `kluster node add`, because a running kubelet does not register
 again after its Node is deleted (kubernetes v1.37.0 source). Growing and
 shrinking the cluster by itself is a separate Plan,
@@ -203,6 +206,11 @@ then brought back by `kluster node add`.
       yet, so the rules move no pod until the rehearsal.
 - [ ] The dead-node remover: a small Go controller in the cluster that taints
       and deletes a node NotReady for 20 minutes, never the control plane.
+      Built as `node-controller` in the kluster module, its image on GHCR,
+      with the volume guard, the majority guard and the pause annotation of
+      the grill of 2026-11-24; proven by unit tests, a k3d test in CI, an hour
+      on live with no action, and a fake Node on live removed with its
+      `NodeRemoved` notice.
 - [ ] The self-hosted machine, reinstalled as a clean Ubuntu Server.
 - [ ] Rehearsal: `rehearsal.tfvars` moves off `cx23` to a type in stock, the
       self-hosted machine joins the rehearsal, and the three checks of the finish line
@@ -250,9 +258,5 @@ storage and the node network each run on other providers.
   yet, or in the
   [Elastic nodes](./elastic-nodes-the-cluster-grows-and-shrinks-on-spare-compute.md)
   Plan. Until then the Node set refuses a second machine on such a site.
-- How the dead-node remover guards a Worker that is cut off but still
-  running: Kubernetes documents the `out-of-service` taint for a node that is
-  already powered off, and the remover cannot see that
-  ([ADR 0016](../adr/0016-every-provider-is-a-set-of-capabilities-and-workers-of-any-provider-join-as-equals.md#what-it-costs)).
 - The name of what tosak.net is. It runs on other providers' compute, so
   "cloud platform" may not fit; the operator has not chosen a name.

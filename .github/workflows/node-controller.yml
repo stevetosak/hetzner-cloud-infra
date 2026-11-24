@@ -1,0 +1,115 @@
+# node-controller (ADR 0016, Amendment 2026-11-24; core/nodes/README.md).
+#
+# On a pull request: the unit tests of its rules and of its cluster side, the
+# k3d test against a real API server with the real RBAC, and an image build
+# that pushes nothing.
+# On a push to master that changes tools/kluster: the same tests, then the
+# image goes to ghcr.io/stevetosak/kluster-node-controller as latest and
+# alpha-<full sha>, pushed with this workflow's own GITHUB_TOKEN. Only this
+# repository can push it: a Docker Hub token cannot be limited to one
+# repository, and every app repository holds one.
+#
+# Nothing here deploys. A new image goes live through a pull request that pins
+# its digest (the job summary prints it) in core/nodes/kustomization.yaml.
+name: node-controller
+
+on:
+  pull_request:
+    paths:
+      - 'tools/kluster/**'
+      - 'core/nodes/node-controller.yaml'
+      - '.github/workflows/node-controller.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'tools/kluster/**'
+      - 'core/nodes/node-controller.yaml'
+      - '.github/workflows/node-controller.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: tools/kluster/go.mod
+          cache-dependency-path: tools/kluster/go.sum
+      - name: vet
+        working-directory: tools/kluster
+        run: go vet ./cmd/node-controller ./internal/deadnode ./internal/nodecontroller && go vet -tags k3d ./internal/nodecontroller
+      - name: unit tests
+        working-directory: tools/kluster
+        run: go test -race -count=1 ./internal/deadnode ./internal/nodecontroller
+
+  k3d:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: tools/kluster/go.mod
+          cache-dependency-path: tools/kluster/go.sum
+      - name: k3d v5.8.3
+        run: |
+          curl -fsSL -o /tmp/k3d https://github.com/k3d-io/k3d/releases/download/v5.8.3/k3d-linux-amd64
+          echo 'dbaa79a76ace7f4ca230a1ff41dc7d8a5036a8ad0309e9c54f9bf3836dbe853e  /tmp/k3d' | sha256sum -c -
+          sudo install -m 0755 /tmp/k3d /usr/local/bin/k3d
+      - name: k3d test
+        run: tools/kluster/internal/nodecontroller/k3d-test.sh
+
+  image:
+    needs: [test, k3d]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v4
+      - name: log in to ghcr.io
+        if: github.event_name == 'push'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: build, and push on master
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: tools/kluster
+          file: tools/kluster/cmd/node-controller/Dockerfile
+          push: ${{ github.event_name == 'push' }}
+          tags: |
+            ghcr.io/stevetosak/kluster-node-controller:latest
+            ghcr.io/stevetosak/kluster-node-controller:alpha-${{ github.sha }}
+      - name: the digest to pin
+        if: github.event_name == 'push'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            echo '### node-controller image'
+            echo
+            echo 'Pin it in `core/nodes/kustomization.yaml`:'
+            echo
+            echo '```yaml'
+            echo 'images:'
+            echo '  - name: ghcr.io/stevetosak/kluster-node-controller'
+            echo "    newTag: alpha-${GITHUB_SHA}"
+            echo "    digest: ${DIGEST}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

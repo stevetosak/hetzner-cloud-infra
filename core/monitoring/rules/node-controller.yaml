@@ -1,0 +1,67 @@
+# The alerts of node-controller, which removes a dead Worker (ADR 0016,
+# Amendment 2026-11-24; core/nodes/README.md).
+#
+#   NodeRemoved          a notification for each Node it deleted (Alertmanager
+#                        route in kube-prometheus-stack-values.yaml)
+#   NodeRemovalHeld      a Worker due for removal that a guard holds; a pause
+#                        is the operator's own choice and does not alert
+#   NodeControllerDown   no pass for 5 minutes, or no scrape at all
+#
+# KubeNodeNotReady (the chart's, 15 minutes) comes first; these follow at 20.
+#
+# The notice reads a gauge holding the time of the delete, not the counter of
+# actions: a counter series appears already at 1, which increase() misses.
+# The gauge lives as long as the controller's pod; a restart of Prometheus in
+# the 15 minutes after a removal sends the notice again.
+#
+# Unit tests: rules/tests/node-controller.test.yaml, run by check-rules.sh.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: node-controller
+  namespace: monitoring
+spec:
+  groups:
+    - name: node-controller
+      rules:
+        - alert: NodeRemoved
+          expr: time() - node_controller_removed_timestamp_seconds < 900
+          labels:
+            severity: info
+          annotations:
+            summary: "node-controller removed the Node {{ $labels.node }} ({{ $labels.reason }})."
+            description: >-
+              {{ $labels.node }} was not Ready for 20 minutes; its pods were
+              force-deleted and its Node deleted. Bring the machine back with
+              `kluster node add {{ $labels.node }}` from tools/kluster. The steps:
+              kubectl get events -n default --field-selector involvedObject.name={{ $labels.node }}.
+
+        - alert: NodeRemovalHeld
+          expr: max by (namespace, node, reason) (node_controller_held{reason!="paused"}) == 1
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "node-controller holds {{ $labels.node }}, not Ready for 20 minutes ({{ $labels.reason }})."
+            description: >-
+              volume-attached: a volume is attached and the provider does not
+              report the server off; power it off in the provider's console, or,
+              once it is surely dead, `kluster node remove {{ $labels.node }} --unreachable`.
+              mass-guard: half or more of the Workers are not Ready, which points
+              at the Control Plane's side; look there first.
+              pause-invalid: the annotation tosak.net/dead-node-remover.pause-until
+              is not an RFC 3339 time; fix it or remove it.
+
+        - alert: NodeControllerDown
+          expr: |
+            time() - max(node_controller_last_pass_timestamp_seconds) > 300
+              or
+            absent(up{job="monitoring/node-controller"} == 1)
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "node-controller has made no pass for 5 minutes: a dead Worker is not removed."
+            description: >-
+              kubectl -n nodes get pods -l app=node-controller, and its log. A pass
+              fails when the API refuses a call: the log names it.

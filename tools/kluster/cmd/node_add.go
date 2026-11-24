@@ -106,6 +106,25 @@ var nodeAddCmd = &cobra.Command{
 // initialize the new Node.
 const nodeReadyTimeout = 5 * time.Minute
 
+// How long a build waits for a deleted Node to register again after its
+// kubelet restarts, and how often it looks.
+const (
+	registerTimeout = 2 * time.Minute
+	nodePoll        = 5 * time.Second
+)
+
+// joinStages join a machine of any provisioner to the cluster, on the
+// machine. A machine that joined before skips the join, and when the
+// dead-node controller deleted its Node, NodeRegistered restarts its kubelet,
+// which never registers again while it runs (ADR 0016, Amendment
+// 2026-11-24). cp is nil in Plan Mode.
+func joinStages(cp stage.Exec, endpoint, node string) []stage.Stage {
+	return []stage.Stage{
+		stages.Join{ControlPlane: cp, Endpoint: endpoint},
+		stages.NodeRegistered{ControlPlane: cp, Node: node, Every: nodePoll, Timeout: registerTimeout},
+	}
+}
+
 // dnsLabel is a valid server and Node name.
 var dnsLabel = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
@@ -557,8 +576,7 @@ func (a *app) planNewWorker(ctx context.Context, w workerset.Worker, cpSrv *clou
 		return err
 	}
 	fmt.Fprintf(a.out, "then: pin the host key of %s at its VPN address %s\n", w.Name, w.VpnIP)
-	join := stages.Join{Endpoint: a.cfg.ControlPlane.Endpoint}
-	if err := stage.PlanNew(ctx, []stage.Stage{join}, w.Name, a.out); err != nil {
+	if err := stage.PlanNew(ctx, joinStages(nil, a.cfg.ControlPlane.Endpoint, w.Name), w.Name, a.out); err != nil {
 		return err
 	}
 	site, err := a.hcloudSite()
@@ -629,8 +647,7 @@ func (a *app) buildWorker(ctx context.Context, w workerset.Worker, srv, cpSrv *c
 	}
 	// The join runs over the public session: a rehearsal's VPN addresses
 	// are the live ones, which the laptop routes to the live hub.
-	join := stages.Join{ControlPlane: cp.Exec, Endpoint: a.cfg.ControlPlane.Endpoint}
-	if err := stage.Run(ctx, []stage.Stage{join}, wh, opts); err != nil {
+	if err := stage.Run(ctx, joinStages(cp.Exec, a.cfg.ControlPlane.Endpoint, w.Name), wh, opts); err != nil {
 		return err
 	}
 	if err := stage.Run(ctx, []stage.Stage{a.nodeReady(h), stages.NodeProfile{Node: w.Name, Site: site}}, cp, opts); err != nil {

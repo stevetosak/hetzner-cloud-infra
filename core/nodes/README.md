@@ -40,3 +40,40 @@ kubectl create job --from=cronjob/mesh-catalog -n nodes mesh-catalog-manual-$(da
 ```
 
 Tests: `node --test 'core/nodes/mesh-catalog/*.test.mjs'` (needs bash and jq).
+
+## node-controller
+
+Removes a dead Worker on any provider (ADR 0016, Amendment 2026-11-24): after
+20 minutes not Ready it gets the `node.kubernetes.io/out-of-service` taint, so
+its pods are force-deleted and start elsewhere, and once they are gone (or 5
+minutes later) its Node is deleted. It never touches the Control Plane.
+
+```
+every 30 s: Nodes and VolumeAttachments from the cache
+  internal/deadnode.Decide → taint | delete | untaint | hold
+    Worker Ready again while tainted         → untaint
+    not Ready < 20 min                       → nothing
+    pause-until not passed (or unreadable)   → hold  (paused | pause-invalid)
+    half or more of the Workers not Ready    → hold  (mass-guard)
+    a VolumeAttachment, provider not "off"   → hold  (volume-attached)
+    otherwise                                → taint, then delete
+```
+
+- **Pause it for planned work** on one Node, until a UTC time:
+  `kubectl annotate node <name> tosak.net/dead-node-remover.pause-until=2026-11-25T18:00:00Z`.
+  The pause ends by itself; `kubectl annotate node <name> tosak.net/dead-node-remover.pause-until-` ends it now.
+- **Bring a removed machine back** with `kluster node add <name>`: a machine
+  that kept running never registers its Node again, and one that booted again
+  comes back without its profile labels.
+- **What it tells**: `NodeRemoved` (a notice), `NodeRemovalHeld` and
+  `NodeControllerDown` (warnings) in the Alert Chat
+  (`core/monitoring/rules/node-controller.yaml`), and Events on the Node:
+  `kubectl get events -n default --field-selector involvedObject.kind=Node`.
+- **The image** is `ghcr.io/stevetosak/kluster-node-controller`, built and
+  pushed by `.github/workflows/node-controller.yml` on a merge to `master`
+  that changes `tools/kluster`. A new image goes live only through a pull
+  request that pins its digest in `kustomization.yaml`, never through
+  tag-bump: this controller can delete Nodes.
+- **Tests**: `go test ./internal/deadnode ./internal/nodecontroller` in
+  `tools/kluster`, and the k3d test against a real API server,
+  `tools/kluster/internal/nodecontroller/k3d-test.sh`.

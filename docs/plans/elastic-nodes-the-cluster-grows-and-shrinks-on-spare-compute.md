@@ -77,3 +77,17 @@ a delete that would break the floor is refused.
 - The autoscaler adds a Deployment to a cluster whose worker memory requests
   were at 75 % on 2026-11-16; its own request is measured before it moves to
   live.
+- Several VMs on the self-hosted machine fail together when it loses power or
+  its link. The dead-node controller acts only while more than half of the
+  Workers are Ready, so a site that holds half of them stops it, which fails
+  safe but leaves the VMs' Nodes in place
+  ([ADR 0016, Amendment 2026-11-24](../adr/0016-every-provider-is-a-set-of-capabilities-and-workers-of-any-provider-join-as-equals.md#amendments)).
+  A label for a VM's host, a count per site that never covers the Control
+  Plane's own site, and the hypervisor's report of a VM that is off as a power
+  signal are the candidates.
+- An agent on every node could restart a kubelet whose Node was deleted, fence
+  a machine cut off from the Control Plane and its peers, and pull the mesh
+  configuration instead of kluster's push over SSH. It acts on a node's own
+  credentials, so it must never be able to write the profile labels. Whether
+  it comes with this Plan, as a DaemonSet or a systemd unit, needs an ADR 0016
+  Amendment.

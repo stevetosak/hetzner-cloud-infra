@@ -7,6 +7,7 @@ import (
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/cloud"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/config"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/kube"
+	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/stages"
 	"github.com/stevetosak/hetzner-cloud-infra/tools/kluster/internal/workerset"
 )
 
@@ -103,5 +104,22 @@ func TestCheckNewWorker(t *testing.T) {
 	err := checkNewWorker(&bad, w)
 	if err == nil || !strings.Contains(err.Error(), "10.0.2.9") || !strings.Contains(err.Error(), "running") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// Every provisioner joins through joinStages, so a machine whose Node the
+// dead-node controller deleted comes back through node add: the join is
+// skipped, and NodeRegistered restarts the kubelet and waits for the Node.
+func TestJoinStagesBringBackADeletedNode(t *testing.T) {
+	got := joinStages(nil, "k8s-api.tosak.net:6443", "k8swk3")
+	if len(got) != 2 {
+		t.Fatalf("joinStages = %d stages, want the join and NodeRegistered", len(got))
+	}
+	if j, ok := got[0].(stages.Join); !ok || j.Endpoint != "k8s-api.tosak.net:6443" {
+		t.Errorf("stage 0 = %#v, want the Join to the endpoint", got[0])
+	}
+	r, ok := got[1].(stages.NodeRegistered)
+	if !ok || r.Node != "k8swk3" || r.Timeout != registerTimeout || r.Every != nodePoll {
+		t.Errorf("stage 1 = %#v, want NodeRegistered for k8swk3", got[1])
 	}
 }
