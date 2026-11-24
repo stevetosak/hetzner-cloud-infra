@@ -175,11 +175,18 @@ then brought back by `kluster node add`.
       Built on 2026-11-23 and proven by unit tests, the site firewall in network
       namespaces and the jump against an SSH server in the test process; no
       byo machine has been built yet.
-- [ ] `node remove` and `node replace` for a byo machine: drain, delete the
+- [x] `node remove` and `node replace` for a byo machine: drain, delete the
       Node, `kubeadm reset` over the jump, its key out of `mesh-peers` and its
-      entry out of the Node set, then the mesh without it. Until then both
-      refuse a byo machine and name the steps by hand
+      entry out of the Node set, then the mesh without it
       ([Take a bring-your-own machine out](../runbook/workers.md#take-a-bring-your-own-machine-out)).
+      `node remove` is one run and leaves the machine as after its install:
+      the pod network's leftovers, the site firewall and `wg-mesh` with its
+      key go too, so it can join another cluster without a reinstall.
+      `--unreachable` takes out a machine kluster cannot log in to, and
+      `node replace` rebuilds the machine in place
+      ([ADR 0016, Amendment 2026-11-24](../adr/0016-every-provider-is-a-set-of-capabilities-and-workers-of-any-provider-join-as-equals.md#amendments)).
+      Built on 2026-11-24 and proven by unit tests; no byo machine has left a
+      cluster yet.
 - [x] Placement: the required affinities on capabilities (PostgreSQL, Envoy,
       Stalwart), the preferred zone of the data for apps with PostgreSQL, and
       the best-effort toleration for Grafana and cert-manager
