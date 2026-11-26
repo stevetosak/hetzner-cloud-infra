@@ -8,13 +8,16 @@
 # `kluster up` builds what it declares and never writes it (ADR 0009,
 # Amendment 2026-10-25). `kluster node add` and `node remove` edit it; commit
 # each edit before the next run, or kluster refuses to plan.
+#
+# The type is cpx22, not live's cx23: the CX series is not expected back in
+# stock, and a rehearsal never waits for it (2026-11-19).
 workers = {
   k8swk1 = {
     labels = {
       role = "worker"
     }
     private_ip  = "10.0.2.6"
-    server_type = "cx23"
+    server_type = "cpx22"
     vpn_ip      = "10.100.0.2"
   }
   k8swk2 = {
@@ -22,7 +25,7 @@ workers = {
       role = "worker"
     }
     private_ip  = "10.0.2.7"
-    server_type = "cx23"
+    server_type = "cpx22"
     vpn_ip      = "10.100.0.3"
   }
   k8swk3 = {
@@ -30,7 +33,7 @@ workers = {
       role = "worker"
     }
     private_ip  = "10.0.2.8"
-    server_type = "cx23"
+    server_type = "cpx22"
     vpn_ip      = "10.100.0.4"
   }
 }

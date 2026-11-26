@@ -190,5 +190,6 @@ empty; it prints `read back: the rehearsal project is empty`, and then reads
 the rehearsal bucket back empty. The watcher
 checks the same thing from outside every morning: the project must be empty,
 or its oldest billable resource younger than six hours, or a Telegram alert
-goes out. A rehearsal left running costs the monthly caps, about €32 a month,
+goes out. A rehearsal left running on cpx22 costs about €89 a month (Hetzner's
+prices of 2026-11-26),
 and Hetzner has no spending cap (assumed: none was found).
