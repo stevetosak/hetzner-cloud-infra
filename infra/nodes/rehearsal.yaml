@@ -2,6 +2,9 @@
 # It declares the same sites as live; see live.yaml for the fields and the
 # sections. A site changed here for a test never changes the profile of a
 # live Node, and a machine declared here never joins live's mesh.
+#
+# The rehearsal runs the mesh before live does: every Hetzner machine is a
+# machine of the mesh, so a byo machine on ts1 can join.
 sites:
   hel1:
     provider: hcloud
@@ -9,7 +12,14 @@ sites:
     reach: public
     blockVolumes: hcloud
     loadBalancer: hcloud
+    meshSubnet: 10.101.0.0/24
   ts1:
     provider: self-hosted
     reliability: best-effort
     reach: nat
+    meshSubnet: 10.101.1.0/24
+machines:
+  k8s-cp: { site: hel1, provisioner: hcloud, meshAddress: 10.101.0.1 }
+  k8swk1: { site: hel1, provisioner: hcloud, meshAddress: 10.101.0.11 }
+  k8swk2: { site: hel1, provisioner: hcloud, meshAddress: 10.101.0.12 }
+  k8swk3: { site: hel1, provisioner: hcloud, meshAddress: 10.101.0.13 }

@@ -67,6 +67,12 @@ var RehearsalCuts = []Cut{
 		{What: "a probe of the live hosts: a Probe in monitoring targets something other than a private address or a cluster name",
 			Kind: "probes.monitoring.coreos.com", Namespace: "monitoring", AnyOfKind: true, Holds: insideTargetsOnly},
 	}},
+	{Dir: "nodes", Links: []LiveLink{
+		{What: "a write to the public branch mesh-catalog: CronJob nodes/mesh-catalog exists",
+			Kind: "cronjobs.batch", Namespace: "nodes", Name: "mesh-catalog", Holds: absent},
+		{What: "a write to the public branch mesh-catalog: the Secret nodes/mesh-catalog-github exists",
+			Kind: "secrets", Namespace: "nodes", Name: "mesh-catalog-github", Holds: absent},
+	}},
 	{Dir: "pg-drill", Links: []LiveLink{
 		{What: "a restore of the live backups: ObjectStore pg-drill/tosak-pg-backups-readonly does not read the rehearsal bucket",
 			Kind: "objectstores.barmancloud.cnpg.io", Namespace: "pg-drill", Name: "tosak-pg-backups-readonly", Holds: rehearsalBucket},

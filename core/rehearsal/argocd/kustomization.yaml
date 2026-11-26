@@ -13,7 +13,7 @@
 #   core ApplicationSet        the rehearsal list: limit-ranges out (it
 #                              writes only into application namespaces),
 #                              cert-manager, argocd, cnpg, monitoring,
-#                              pg-drill and reloader pointed at their
+#                              nodes, pg-drill and reloader pointed at their
 #                              rehearsal cuts; and branch
 #                              `rehearsal` instead of master, so a change is
 #                              rehearsed before it merges. Put it there with
@@ -65,6 +65,7 @@ patches:
           - {dir: gateway, path: core/gateway, namespace: envoy-gateway-system}
           - {dir: metrics-server, path: core/metrics-server, namespace: metrics-server}
           - {dir: monitoring, path: core/rehearsal/monitoring, namespace: monitoring}
+          - {dir: nodes, path: core/rehearsal/nodes, namespace: nodes}
           - {dir: pg-drill, path: core/rehearsal/pg-drill, namespace: pg-drill}
           - {dir: redis, path: core/redis, namespace: redis}
           - {dir: reloader, path: core/rehearsal/reloader, namespace: reloader}

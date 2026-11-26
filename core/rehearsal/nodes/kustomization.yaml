@@ -1,0 +1,47 @@
+# The rehearsal cut of core/nodes (ADR 0010, Amendment 2026-10-22,
+# decision 14). node-controller runs as on live, so a rehearsal proves the
+# removal of a dead Node. The CronJob mesh-catalog, its ServiceAccount, Role,
+# RoleBinding and script are cut: a rehearsal never writes to the public
+# branch mesh-catalog, and the Secret mesh-catalog-github carries
+# `rehearsal: omit` (secrets.yaml). The Stage rehearsal-cuts proves both are
+# absent.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../nodes
+patches:
+  - patch: |-
+      $patch: delete
+      apiVersion: batch/v1
+      kind: CronJob
+      metadata:
+        name: mesh-catalog
+        namespace: nodes
+  - patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: mesh-catalog
+        namespace: nodes
+  - patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: mesh-catalog
+        namespace: nodes
+  - patch: |-
+      $patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: Role
+      metadata:
+        name: mesh-catalog-read-store
+        namespace: kube-system
+  - patch: |-
+      $patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      metadata:
+        name: mesh-catalog-read-store
+        namespace: kube-system

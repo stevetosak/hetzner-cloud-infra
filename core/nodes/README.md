@@ -1,8 +1,9 @@
 # nodes
 
 The helpers that keep the nodes and their mesh in order (ADR 0016), in the
-namespace `nodes`. Synced by the Application `core-nodes`; not in a rehearsal,
-so a rehearsal never writes to the public branch `mesh-catalog`.
+namespace `nodes`. Synced by the Application `core-nodes`. A rehearsal syncs
+its cut, `core/rehearsal/nodes`: node-controller without the CronJob
+mesh-catalog, so a rehearsal never writes to the public branch `mesh-catalog`.
 
 ## The mesh catalog
 
