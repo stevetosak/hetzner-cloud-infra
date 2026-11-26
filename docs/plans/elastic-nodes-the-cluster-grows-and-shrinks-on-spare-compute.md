@@ -52,7 +52,13 @@ a delete that would break the floor is refused.
 - [ ] Decide in a grill the hypervisor on the self-hosted machine (KVM with
       libvirt, or another), the VM image, how much of its memory the host
       keeps, and how
-      the gRPC server reaches the hypervisor over the mesh.
+      the gRPC server reaches the hypervisor over the mesh. Part of it was
+      decided on 2026-11-24 for Providers part B: the hypervisor is Proxmox VE,
+      and a Node VM is a full clone of a template made from the Ubuntu 24.04
+      cloud image with cloud-init
+      ([Build a Node VM on a self-hosted site](../runbook/build-a-node-vm-on-a-self-hosted-site.md)).
+      Left for the grill: the memory per VM, and how the gRPC server reaches
+      the Proxmox API, since the host is not a Node and not in the mesh.
 - [ ] The VM image: Ubuntu Server that joins through the bring-your-own node
       steps, with the best-effort taint and a node group label.
 - [ ] The gRPC server: the `spare-vm` group (minimum 0, maximum set by the
@@ -65,10 +71,9 @@ a delete that would break the floor is refused.
 
 ## Open questions
 
-- In Providers part B the self-hosted machine is a node itself. Whether it stays one, or
-  becomes only the host of the VMs, is part of the hypervisor grill.
-- VMs on the self-hosted machine go down when it restarts. Whether they start again by
-  themselves or the autoscaler replaces them is open.
+- VMs on the self-hosted machine go down when it restarts. The Node VM of
+  Providers part B starts again by itself (Proxmox's Start at boot); whether
+  elastic VMs do the same or the autoscaler replaces them is open.
 - Several VMs on the self-hosted machine are several mesh machines on one site.
   The Node set refuses that until kluster builds the LAN host routes between
   them, and real hardware has to prove those routes, `rp_filter` included. They
