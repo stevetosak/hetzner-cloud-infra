@@ -211,7 +211,22 @@ then brought back by `kluster node add`.
       the grill of 2026-11-24; proven by unit tests, a k3d test in CI, an hour
       on live with no action, and a fake Node on live removed with its
       `NodeRemoved` notice.
-- [ ] The self-hosted machine, reinstalled as a clean Ubuntu Server.
+- [x] The self-hosted machine, reinstalled as a clean Ubuntu Server. Decided on
+      2026-11-24: Proxmox VE on the machine, and the Node one VM on it with
+      Ubuntu Server 24.04 from the cloud image, made through a template and
+      cloud-init ([Build a Node VM on a self-hosted site](../runbook/build-a-node-vm-on-a-self-hosted-site.md)).
+      Ubuntu on the hardware itself was the other option; Proxmox costs about
+      1.5 GiB of the machine's memory, and gives a remote console and
+      snapshots, a rehearsal VM that is deleted and made again for live, and
+      no reinstall when the [Elastic nodes Plan](./elastic-nodes-the-cluster-grows-and-shrinks-on-spare-compute.md)
+      adds VMs. One VM, not several: several do not fit the memory beside the
+      host without overcommit, and kluster refuses a second machine on a
+      self-hosted site until it builds the LAN routes. Proxmox over Incus for
+      its maturity and web UI. Proven on 2026-11-25 and 2026-11-26: one full
+      memory-test pass, then 24 hours idle with no machine-check error and none
+      of 84,377 pings to the gateway lost, and the four byo-check checks by hand
+      in the VM `ts1-wk1`. The operator reaches the host and the VM from
+      outside the site through Tailscale on the host.
 - [ ] Rehearsal: `rehearsal.tfvars` moves off `cx23` to a type in stock, the
       self-hosted machine joins the rehearsal, and the three checks of the finish line
       pass there. The rehearsal's cost needs the operator's yes.

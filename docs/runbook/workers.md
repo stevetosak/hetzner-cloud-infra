@@ -364,7 +364,7 @@ sites:
 machines:
   k8s-cp: { site: hel1, provisioner: hcloud, meshAddress: 10.101.0.1 }
   k8swk1: { site: hel1, provisioner: hcloud, meshAddress: 10.101.0.11 }
-  tswk1: { site: ts1, provisioner: byo, meshAddress: 10.101.1.1 }
+  ts1-wk1: { site: ts1, provisioner: byo, meshAddress: 10.101.1.1 }
 mesh:
   relay: k8swk1 # required with machines on two or more NAT sites
 ```
@@ -425,10 +425,10 @@ hold, and how to prove the rule is gone after the switch is turned off.
 A bring-your-own (byo) machine is one the operator installs: a self-hosted
 machine behind a router's NAT is the first
 ([ADR 0016](../adr/0016-every-provider-is-a-set-of-capabilities-and-workers-of-any-provider-join-as-equals.md#amendments)).
-🔴 No byo machine has been built yet. The proof so far is the unit tests, a
+🔴 No byo machine has joined a cluster yet. The proof so far is the unit tests, a
 test of the site firewall in network namespaces, and a test of the jump
-against an SSH server in the test process; the first real build is the
-Providers Plan's rehearsal.
+against an SSH server in the test process; the first join is the Providers
+Plan's rehearsal, with the VM `ts1-wk1`.
 
 A byo machine is built only when three things hold, and `node add` refuses
 until each does:
@@ -443,8 +443,10 @@ until each does:
 
 The machine is installed with Ubuntu Server 24.04 on amd64, the release of the
 Hetzner image, with its hostname set to the Node name, a user `tosak` that logs
-in with the cluster's key, and sudo without a password. On its console, before
-the second run:
+in with the cluster's key, and sudo without a password. On a self-hosted site it
+is a VM on Proxmox VE, where cloud-init sets all of this up and the console
+shows the host key ([Build a Node VM on a self-hosted site](./build-a-node-vm-on-a-self-hosted-site.md)).
+A machine installed by hand needs, on its console, before the second run:
 
 ```sh
 echo 'tosak ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/tosak
@@ -459,15 +461,17 @@ console:
 
 ```sh
 cd tools/kluster
-kluster node add tswk1 --provisioner byo --site ts1 --apply   # run 1: the entry
+kluster node add ts1-wk1 --provisioner byo --site ts1 --apply   # run 1: the entry
 git add ../../infra/nodes/live.yaml && git commit -m "…"
-kluster node add tswk1                                         # Plan Mode
-kluster node add tswk1 --bootstrap 192.168.1.20 \
-  --host-key SHA256:… --apply                                  # run 2
+kluster node add ts1-wk1                                          # Plan Mode
+kluster node add ts1-wk1 --bootstrap 192.168.1.20 \
+  --host-key SHA256:… --apply                                     # run 2
 ```
 
-Run 2 runs from a laptop on the machine's LAN, because it logs in at the
-bootstrap address directly, as `tosak`, and accepts only a host key with that
+Run 2 runs from a laptop on the machine's LAN, or from one with
+[the site's Tailscale route](./build-a-node-vm-on-a-self-hosted-site.md#reach-the-site-from-outside)
+to the machine (assumed: no run has used that route yet), because it logs in
+at the bootstrap address directly, as `tosak`, and accepts only a host key with that
 fingerprint, then pins it. It runs these Stages, each skipped when its
 Probe says done:
 
@@ -543,8 +547,8 @@ stay. `node replace <name>` rebuilds the machine in place, also in one run and
 with no commit.
 
 ```sh
-./kluster node remove tswk1                  # Plan Mode
-./kluster node remove tswk1 --apply
+./kluster node remove ts1-wk1                  # Plan Mode
+./kluster node remove ts1-wk1 --apply
 git add ../../infra/nodes/live.yaml && git commit -m "…"
 ```
 
