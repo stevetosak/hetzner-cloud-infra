@@ -179,9 +179,18 @@ pods (`resolvConf` in kluster's kubelet settings), also holds the router's
 link-local IPv6 server and the router's search domains: systemd-networkd takes
 both from the router's IPv6 advertisements, although the VM has no global IPv6
 address. Every pod on the Node would inherit those search domains. Read in the
-VM on 2026-11-25. kluster does not set a byo Node's resolver yet; before a byo
-Node joins live, it needs public resolvers, no search domain and no DNS from
-router advertisements. A rehearsal join does not wait for it.
+VM on 2026-11-25, and in a pod's `/etc/resolv.conf` on the Node in the
+rehearsal of 2026-11-26. kluster does not set a byo Node's resolver yet; before
+a byo Node joins live, it needs public resolvers, no search domain and no DNS
+from router advertisements. A rehearsal join does not wait for it.
+
+🔴 The reboot check above proves the VM comes back, not that its Node does.
+Proxmox's cloud-init data sets `manage_etc_hosts`, so every boot writes
+`/etc/hosts` again from cloud-init's template and drops the Control Plane
+endpoint that kluster adds at the join; the kubelet then cannot register.
+The rehearsal showed it after a power-off
+([workers runbook](./workers.md#add-a-bring-your-own-machine)). A Node VM needs
+that fixed before it joins live.
 
 ## Reach the site from outside
 
