@@ -227,9 +227,19 @@ then brought back by `kluster node add`.
       of 84,377 pings to the gateway lost, and the four byo-check checks by hand
       in the VM `ts1-wk1`. The operator reaches the host and the VM from
       outside the site through Tailscale on the host.
-- [ ] Rehearsal: `rehearsal.tfvars` moves off `cx23` to a type in stock, the
+- [x] Rehearsal: `rehearsal.tfvars` moves off `cx23` to a type in stock, the
       self-hosted machine joins the rehearsal, and the three checks of the finish line
-      pass there. The rehearsal's cost needs the operator's yes.
+      pass there. The rehearsal's cost needs the operator's yes. Done on
+      2026-11-26 on cpx22, about €0.16
+      ([Log](../logs/2026-11-27-a-self-hosted-node-joined-the-rehearsal-from-behind-nat-and-passed-the-three-checks.md)):
+      `ts1-wk1` joined over the site's Tailscale route with its profile and
+      taint; a pod on it reached DNS and a Service on hel1, and DF pings of the
+      pod MTU passed both ways to every Node; the hcloud CCM logged only its
+      failed lookups and the load balancer targets only Hetzner servers, with
+      no CSI node pod on `ts1-wk1`; powered off, it was removed by
+      node-controller after 20 minutes, its pod restarted on `k8swk3`, and
+      `node add` brought it back. The rehearsal also found that the VM's Node
+      does not come back by itself after a reboot.
 - [ ] Live: the self-hosted machine is reset, joins live, and the three checks pass again.
       First `core/cni/flannel.yaml` with its second `--iface-regex` is applied
       on live by hand (`core/cni` is not synced), which rolls the Flannel
@@ -264,10 +274,17 @@ storage and the node network each run on other providers.
 
 - OVHcloud's capability values (a private network, volumes, a load balancer for
   a VPS) are read from OVHcloud when its profile is written; none is assumed.
-- Two mesh details are not yet proven and go into the rehearsal: that Flannel
-  VXLAN bound to one interface sends to a VTEP the kernel routes through
-  `wg-mesh`, and that a mesh address reached over a host route on a
-  self-hosted site's LAN passes `rp_filter`.
+- That a mesh address reached over a host route on a self-hosted site's LAN
+  passes `rp_filter` is not proven; it needs two machines on one site. The
+  other mesh detail held in the rehearsal of 2026-11-26: Flannel VXLAN bound to
+  one interface sends to a VTEP the kernel routes through `wg-mesh`, with
+  full-size pod packets.
+- Before the self-hosted machine joins live, its Node VM keeps two settings
+  that cloud-init and systemd-networkd bring and kluster does not set yet: the
+  router's search domains and DNS server in the Node's resolver, and an
+  `/etc/hosts` written again at every boot, which drops the Control Plane
+  endpoint. Whether kluster fixes both in one byo Stage, or the VM's
+  cloud-init data does, is open.
 - Where the LAN host routes between two machines of one self-hosted site are
   built: in a separate Plan for the self-hosted machine, which does not exist
   yet, or in the

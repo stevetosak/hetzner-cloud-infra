@@ -72,8 +72,12 @@ a delete that would break the floor is refused.
 ## Open questions
 
 - VMs on the self-hosted machine go down when it restarts. The Node VM of
-  Providers part B starts again by itself (Proxmox's Start at boot); whether
-  elastic VMs do the same or the autoscaler replaces them is open.
+  Providers part B starts again by itself (Proxmox's Start at boot), but its
+  Node does not: cloud-init writes `/etc/hosts` again at every boot and drops
+  the Control Plane endpoint, so the kubelet cannot register until
+  `kluster node add` runs (rehearsal of 2026-11-26). Whether elastic VMs come
+  back the same way once that is fixed, or the autoscaler replaces them, is
+  open.
 - Several VMs on the self-hosted machine are several mesh machines on one site.
   The Node set refuses that until kluster builds the LAN host routes between
   them, and real hardware has to prove those routes, `rp_filter` included. They

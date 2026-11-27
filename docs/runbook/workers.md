@@ -3,7 +3,7 @@ title: "Workers — build runbook"
 description: "How kluster adds, removes and replaces a Worker, and every command that built and joined the first three by hand on 2026-09-20, with the checks that proved each step."
 type: procedure
 topics: [provisioning, kubernetes, networking]
-verified: 2026-11-22
+verified: 2026-11-26
 ---
 
 The numbered steps below were written verbatim as each command ran, on
@@ -339,11 +339,15 @@ Stage done.
 
 `wg-mesh` joins machines at different sites
 ([ADR 0016](../adr/0016-every-provider-is-a-set-of-capabilities-and-workers-of-any-provider-join-as-equals.md)).
-A Node set without `machines` changes nothing, and neither live nor the
-rehearsal has any yet. 🔴 `kluster node mesh` has not run on a cluster. The
-renderer's unit tests and a WireGuard test in network namespaces are its proof
-so far: a direct pair, a NAT pair and a relay between two NAT sites, with
-full-size packets on a 1460-byte link.
+A Node set without `machines` changes nothing. Live has none yet; the rehearsal
+Node set declares the four Hetzner machines, so every rehearsal builds the
+mesh. The mesh Stages first ran on a cluster in the rehearsal of 2026-11-26,
+from `up`, `node add` and `node remove`
+([Log](../logs/2026-11-27-a-self-hosted-node-joined-the-rehearsal-from-behind-nat-and-passed-the-three-checks.md));
+`kluster node mesh` itself has not run yet. Before that, the renderer's unit
+tests and a WireGuard test in network namespaces were the proof: a direct
+pair, a NAT pair and a relay between two NAT sites, with full-size packets on
+a 1460-byte link.
 
 ```sh
 cd tools/kluster
@@ -425,10 +429,12 @@ hold, and how to prove the rule is gone after the switch is turned off.
 A bring-your-own (byo) machine is one the operator installs: a self-hosted
 machine behind a router's NAT is the first
 ([ADR 0016](../adr/0016-every-provider-is-a-set-of-capabilities-and-workers-of-any-provider-join-as-equals.md#amendments)).
-🔴 No byo machine has joined a cluster yet. The proof so far is the unit tests, a
-test of the site firewall in network namespaces, and a test of the jump
-against an SSH server in the test process; the first join is the Providers
-Plan's rehearsal, with the VM `ts1-wk1`.
+The first byo join was the Providers Plan's rehearsal of 2026-11-26: the VM
+`ts1-wk1` joined from behind the site's NAT, passed the checks of the Plan's
+finish line, was removed by the dead-node remover after a power-off, came back
+with `node add`, and left with `node remove`
+([Log](../logs/2026-11-27-a-self-hosted-node-joined-the-rehearsal-from-behind-nat-and-passed-the-three-checks.md)).
+No byo machine has joined live yet.
 
 A byo machine is built only when three things hold, and `node add` refuses
 until each does:
@@ -470,7 +476,7 @@ kluster node add ts1-wk1 --bootstrap 192.168.1.20 \
 
 Run 2 runs from a laptop on the machine's LAN, or from one with
 [the site's Tailscale route](./build-a-node-vm-on-a-self-hosted-site.md#reach-the-site-from-outside)
-to the machine (assumed: no run has used that route yet), because it logs in
+to the machine (the rehearsal's run 2 went over that route), because it logs in
 at the bootstrap address directly, as `tosak`, and accepts only a host key with that
 fingerprint, then pins it. It runs these Stages, each skipped when its
 Probe says done:
@@ -536,6 +542,16 @@ flags: the kubelet of a running machine never registers again, so
 **node-registered** restarts it, and **node-profile** writes the admin labels
 again.
 
+🔴 **A Node VM on Proxmox does not come back by itself after a reboot.**
+Proxmox's cloud-init data sets `manage_etc_hosts`, so cloud-init writes
+`/etc/hosts` again at every boot and drops the Control Plane endpoint that
+**kube-prep** added; the kubelet then cannot resolve the API server and never
+registers. In the rehearsal the VM, powered on again, failed every
+registration with `lookup k8s-cp.tosak.internal … no such host` until
+`node add` wrote the line back, and registered four seconds later. A Hetzner
+server's cloud-init leaves `/etc/hosts` alone. Until kluster keeps the line
+over a boot, every reboot of such a VM needs `node add` again.
+
 ## Take a bring-your-own machine out
 
 A byo machine has no server to delete and no Terraform state, so
@@ -543,7 +559,8 @@ A byo machine has no server to delete and no Terraform state, so
 as it was after its install: it takes SSH at its own address again and can
 join another cluster, a rehearsal machine moving to live for example, with
 `node add --bootstrap --host-key` and no reinstall. The installed packages
-stay. `node replace <name>` rebuilds the machine in place, also in one run and
+stay, and so does the host key **rotate-host-key** made: the next
+`--host-key` is read on the console again, not taken from the install. `node replace <name>` rebuilds the machine in place, also in one run and
 with no commit.
 
 ```sh
@@ -597,8 +614,11 @@ and pins kept. A dead or reinstalled machine goes out with
 `node remove --unreachable` and comes back with `node add`.
 
 Both commands are proven by unit tests of the order, the gates and the
-refusals, and **byo-leave**'s Probe in bash with stubbed commands; no byo
-machine has left a cluster yet.
+refusals, and **byo-leave**'s Probe in bash with stubbed commands. `node remove`
+also ran in the rehearsal of 2026-11-26: every Stage passed, kluster read back
+that the machine no longer answered at its mesh address, and the machine took
+SSH at its LAN address again. `node replace` of a byo machine has not run on a
+cluster.
 
 ## Change the pod MTU
 

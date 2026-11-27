@@ -116,6 +116,8 @@ func TestCutsNameEveryLiveLink(t *testing.T) {
 		"secrets/telegram":                                           "secret/telegram",
 		"secrets/r2-drill-results-credentials":                       "secret/r2-drill-results-credentials",
 		"cronjobs.batch/restore-drill":                               `{"spec":{"jobTemplate":{"spec":{"template":{"spec":{"containers":[{"env":[]}]}}}}}}`,
+		"cronjobs.batch/mesh-catalog":                                `{"spec":{"schedule":"17 * * * *"}}`,
+		"secrets/mesh-catalog-github":                                "secret/mesh-catalog-github",
 	}}
 	var out bytes.Buffer
 	err := stage.Run(context.Background(), []stage.Stage{c}, h, stage.Options{Apply: true, Out: &out})
@@ -131,7 +133,7 @@ func TestCutsNameEveryLiveLink(t *testing.T) {
 			}
 		}
 	}
-	if n != 13 || !strings.Contains(err.Error(), "stops here") {
+	if n != 15 || !strings.Contains(err.Error(), "stops here") {
 		t.Errorf("%d links in the table; output:\n%s", n, out.String())
 	}
 }

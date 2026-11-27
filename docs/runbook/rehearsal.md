@@ -2,7 +2,7 @@
 title: "The rehearsal project: set up, run, clear away"
 description: "What the operator creates once so kluster can rehearse in a second Hetzner project, how a rehearsal run goes, and how to prove the project is empty again afterwards."
 type: procedure
-verified: 2026-10-25
+verified: 2026-11-26
 topics: [provisioning, security]
 ---
 
@@ -134,6 +134,21 @@ the first `up` finished every Stage, the reruns built nothing, and the
 A rehearsal never writes the database generation bump. The database Stages are
 in the [recovery runbook](./pg-recovery.md#the-stages-of-db-create).
 
+The rehearsal of 2026-11-26 ran `up` on cpx22 with the mesh in the Node set,
+and two things from it hold for every run
+([Log](../logs/2026-11-27-a-self-hosted-node-joined-the-rehearsal-from-behind-nat-and-passed-the-three-checks.md)).
+🔴 **Keep the laptop on one network while a run holds sessions.** Bootstrap
+SSH admits only the laptop's public address at the time of the plan, and a
+session from the old address is dead after a switch. kluster's close waits
+until the blocked read times out, about 15 minutes; then it closes SSH, and a
+rerun opens it for the new address and resumes, the database included
+(`db-preflight` reads `resumed: the Cluster is this run's render`). And while
+the rehearsal project holds 4 servers and the Gateway's load balancer, the
+mail load balancer is refused for the account's Primary IP limit, so
+`MailPortDown` fires and `monitoring-clean` waits to its timeout. A run whose
+only firing alert is `MailPortDown` is stopped there with Ctrl-C; `zone` then
+does not run.
+
 ## Look at a running rehearsal
 
 🔴 **Do not use the rehearsal kubeconfig while `wg0` holds live.**
@@ -190,5 +205,6 @@ empty; it prints `read back: the rehearsal project is empty`, and then reads
 the rehearsal bucket back empty. The watcher
 checks the same thing from outside every morning: the project must be empty,
 or its oldest billable resource younger than six hours, or a Telegram alert
-goes out. A rehearsal left running costs the monthly caps, about €32 a month,
+goes out. A rehearsal left running on cpx22 costs about €89 a month (Hetzner's
+prices of 2026-11-26),
 and Hetzner has no spending cap (assumed: none was found).
